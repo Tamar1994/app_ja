@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Já!",
+    "slug": "ja-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF6B00"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ja.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "O Já! precisa da sua localização para encontrar profissionais próximos.",
+        "NSLocationAlwaysUsageDescription": "O Já! usa sua localização para mostrar sua posição aos clientes."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF6B00"
+      },
+      "package": "com.ja.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "O Já! precisa da sua localização para conectar você com profissionais próximos."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}

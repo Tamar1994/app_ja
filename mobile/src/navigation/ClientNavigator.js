@@ -1,0 +1,71 @@
+import React from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
+
+import { colors } from '../theme';
+import HomeScreen from '../screens/client/HomeScreen';
+import RequestServiceScreen from '../screens/client/RequestServiceScreen';
+import SearchingScreen from '../screens/client/SearchingScreen';
+import TrackingScreen from '../screens/client/TrackingScreen';
+import HistoryScreen from '../screens/client/HistoryScreen';
+import ProfileScreen from '../screens/client/ProfileScreen';
+import ReviewScreen from '../screens/client/ReviewScreen';
+import HelpCenterScreen from '../screens/client/HelpCenterScreen';
+import SupportChatScreen from '../screens/client/SupportChatScreen';
+
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+function HomeStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="RequestService" component={RequestServiceScreen} />
+      <Stack.Screen name="Searching" component={SearchingScreen} />
+      <Stack.Screen name="Tracking" component={TrackingScreen} />
+      <Stack.Screen name="Review" component={ReviewScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function SupportStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
+      <Stack.Screen name="SupportChat" component={SupportChatScreen} />
+    </Stack.Navigator>
+  );
+}
+
+export default function ClientNavigator() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textLight,
+        tabBarStyle: {
+          backgroundColor: colors.white,
+          borderTopColor: colors.border,
+          paddingBottom: 6,
+          paddingTop: 4,
+          height: 62,
+        },
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+          if (route.name === 'HomeTab') iconName = focused ? 'home' : 'home-outline';
+          else if (route.name === 'HistoryTab') iconName = focused ? 'time' : 'time-outline';
+          else if (route.name === 'SupportTab') iconName = focused ? 'help-circle' : 'help-circle-outline';
+          else if (route.name === 'ProfileTab') iconName = focused ? 'person' : 'person-outline';
+          return <Ionicons name={iconName} size={size} color={color} />;
+        },
+      })}
+    >
+      <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: 'Início' }} />
+      <Tab.Screen name="HistoryTab" component={HistoryScreen} options={{ title: 'Histórico' }} />
+      <Tab.Screen name="SupportTab" component={SupportStack} options={{ title: 'Suporte' }} />
+      <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Perfil' }} />
+    </Tab.Navigator>
+  );
+}

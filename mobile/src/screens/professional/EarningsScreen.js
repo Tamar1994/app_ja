@@ -1,0 +1,361 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, SafeAreaView, StatusBar,
+  ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { walletAPI } from '../../services/api';
+import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+
+const PERIODS = [
+  { key: 'day', label: 'Hoje' },
+  { key: 'week', label: 'Semana' },
+  { key: 'month', label: 'Mês' },
+  { key: 'year', label: 'Ano' },
+];
+
+const WEEK_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+
+export default function EarningsScreen() {
+  const [period, setPeriod] = useState('week');
+  const [summary, setSummary] = useState(null);
+  const [earnings, setEarnings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [s, e] = await Promise.all([
+        walletAPI.summary(),
+        walletAPI.earnings(period),
+      ]);
+      setSummary(s.data);
+      setEarnings(e.data);
+    } catch {
+      // silencioso
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [period]);
+
+  useEffect(() => {
+    setLoading(true);
+    load();
+  }, [period]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    load();
+  };
+
+  const getBarData = () => {
+    if (!earnings?.grouped?.length) return [];
+    const max = Math.max(...earnings.grouped.map((g) => g.total), 1);
+
+    if (period === 'week') {
+      const days = WEEK_LABELS.map((label, i) => {
+        const key = String(i + 1).padStart(2, '0');
+        const found = earnings.grouped.find((g) => g._id === String(i + 1) || g._id === key);
+        return { label, value: found?.value || 0, total: found?.total || 0 };
+      });
+      const maxVal = Math.max(...days.map((d) => d.total), 1);
+      return days.map((d) => ({ ...d, pct: d.total / maxVal }));
+    }
+
+    if (period === 'month') {
+      const today = new Date().getDate();
+      const bars = [];
+      for (let d = 1; d <= today; d++) {
+        const key = String(d).padStart(2, '0');
+        const found = earnings.grouped.find((g) => g._id === key);
+        bars.push({ label: String(d), total: found?.total || 0 });
+      }
+      const maxVal = Math.max(...bars.map((b) => b.total), 1);
+      return bars.map((b) => ({ ...b, pct: b.total / maxVal }));
+    }
+
+    if (period === 'year') {
+      return MONTH_LABELS.map((label, i) => {
+        const key = String(i + 1).padStart(2, '0');
+        const found = earnings.grouped.find((g) => g._id === key);
+        const total = found?.total || 0;
+        return { label, total, pct: total / Math.max(...earnings.grouped.map((g) => g.total), 1) };
+      });
+    }
+
+    // day — por hora
+    const hours = [];
+    for (let h = 0; h < 24; h++) {
+      const key = String(h).padStart(2, '0');
+      const found = earnings.grouped.find((g) => g._id === key);
+      const total = found?.total || 0;
+      hours.push({ label: `${h}h`, total, pct: total / max });
+    }
+    return hours.filter((h, i) => i % 2 === 0); // a cada 2h para caber
+  };
+
+  const bars = getBarData();
+  const hasData = bars.some((b) => b.total > 0);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
+        {/* Header */}
+        <LinearGradient colors={['#FF8C38', '#FF6B00']} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+          <Text style={styles.headerTitle}>Carteira</Text>
+          {summary ? (
+            <>
+              <Text style={styles.balanceLabel}>Saldo disponível</Text>
+              <Text style={styles.balanceValue}>{fmt(summary.balance)}</Text>
+              <View style={styles.headerStats}>
+                <View style={styles.headerStat}>
+                  <Ionicons name="trending-up-outline" size={16} color="rgba(255,255,255,0.8)" />
+                  <Text style={styles.headerStatValue}>{fmt(summary.totalEarned)}</Text>
+                  <Text style={styles.headerStatLabel}>Total ganho</Text>
+                </View>
+                <View style={styles.headerStatDivider} />
+                <View style={styles.headerStat}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color="rgba(255,255,255,0.8)" />
+                  <Text style={styles.headerStatValue}>{summary.totalServices}</Text>
+                  <Text style={styles.headerStatLabel}>Serviços</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <ActivityIndicator color="#fff" style={{ marginVertical: 24 }} />
+          )}
+        </LinearGradient>
+
+        {/* Filtro de período */}
+        <View style={styles.periodBar}>
+          {PERIODS.map((p) => (
+            <TouchableOpacity
+              key={p.key}
+              style={[styles.periodBtn, period === p.key && styles.periodBtnActive]}
+              onPress={() => setPeriod(p.key)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.periodBtnText, period === p.key && styles.periodBtnTextActive]}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+        ) : (
+          <>
+            {/* Cards do período */}
+            {earnings && (
+              <View style={styles.statsRow}>
+                <View style={styles.statCard}>
+                  <Text style={styles.statCardValue}>{fmt(earnings.total)}</Text>
+                  <Text style={styles.statCardLabel}>Ganhos</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statCardValue}>{earnings.count}</Text>
+                  <Text style={styles.statCardLabel}>Serviços</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statCardValue}>{fmt(earnings.avg)}</Text>
+                  <Text style={styles.statCardLabel}>Média</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Gráfico de barras */}
+            <View style={styles.chartCard}>
+              <Text style={styles.chartTitle}>
+                {period === 'day' ? 'Por hora' : period === 'week' ? 'Por dia' : period === 'month' ? 'Por dia do mês' : 'Por mês'}
+              </Text>
+              {!hasData ? (
+                <View style={styles.emptyChart}>
+                  <Ionicons name="bar-chart-outline" size={40} color={colors.border} />
+                  <Text style={styles.emptyChartText}>Nenhum ganho nesse período</Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barsContainer}>
+                  {bars.map((bar, i) => (
+                    <View key={i} style={styles.barWrapper}>
+                      <View style={styles.barTrack}>
+                        <LinearGradient
+                          colors={bar.pct > 0 ? ['#FF8C38', '#FF6B00'] : ['#EDF0F5', '#EDF0F5']}
+                          style={[styles.barFill, { height: Math.max(bar.pct * 120, bar.pct > 0 ? 4 : 0) }]}
+                          start={{ x: 0, y: 1 }}
+                          end={{ x: 0, y: 0 }}
+                        />
+                      </View>
+                      <Text style={styles.barLabel} numberOfLines={1}>{bar.label}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+
+            {/* Histórico de transações */}
+            {summary?.transactions?.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Últimas transações</Text>
+                {summary.transactions.map((t) => (
+                  <View key={t._id} style={styles.transactionRow}>
+                    <View style={[styles.transactionIcon, { backgroundColor: '#E8F5E9' }]}>
+                      <Ionicons name="arrow-down-circle" size={20} color={colors.success} />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionDesc}>{t.description || 'Serviço concluído'}</Text>
+                      <Text style={styles.transactionDate}>
+                        {new Date(t.createdAt).toLocaleDateString('pt-BR', {
+                          day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                        })}
+                      </Text>
+                    </View>
+                    <Text style={styles.transactionAmount}>+{fmt(t.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {!summary?.transactions?.length && !loading && (
+              <View style={styles.emptySection}>
+                <Ionicons name="wallet-outline" size={48} color={colors.border} />
+                <Text style={styles.emptyText}>Nenhuma transação ainda</Text>
+                <Text style={styles.emptySubtext}>Conclua serviços para ver seus ganhos aqui</Text>
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  header: {
+    paddingTop: 56,
+    paddingBottom: 32,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 16,
+  },
+  balanceLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginBottom: 4 },
+  balanceValue: { color: '#fff', fontSize: 38, fontWeight: '800', letterSpacing: -1 },
+  headerStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: borderRadius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    gap: 24,
+  },
+  headerStat: { alignItems: 'center', gap: 2 },
+  headerStatValue: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  headerStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+  headerStatDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.3)' },
+  periodBar: {
+    flexDirection: 'row',
+    margin: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: 4,
+    ...shadows.sm,
+  },
+  periodBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: borderRadius.md,
+  },
+  periodBtnActive: { backgroundColor: colors.primary },
+  periodBtnText: { fontSize: 13, fontWeight: '600', color: colors.textLight },
+  periodBtnTextActive: { color: '#fff' },
+  statsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    ...shadows.sm,
+  },
+  statCardValue: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  statCardLabel: { fontSize: 11, color: colors.textLight, marginTop: 2 },
+  chartCard: {
+    margin: spacing.md,
+    marginTop: 0,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  chartTitle: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 16 },
+  barsContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, paddingBottom: 4 },
+  barWrapper: { alignItems: 'center', width: 32 },
+  barTrack: {
+    width: 20,
+    height: 120,
+    justifyContent: 'flex-end',
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: colors.background,
+  },
+  barFill: { width: '100%', borderRadius: 4 },
+  barLabel: { fontSize: 9, color: colors.textLight, marginTop: 4, textAlign: 'center' },
+  emptyChart: { alignItems: 'center', paddingVertical: 32, gap: 8 },
+  emptyChartText: { color: colors.textLight, fontSize: 13 },
+  section: { margin: spacing.md, marginTop: 0 },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  transactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    ...shadows.sm,
+  },
+  transactionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transactionInfo: { flex: 1 },
+  transactionDesc: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  transactionDate: { fontSize: 12, color: colors.textLight, marginTop: 2 },
+  transactionAmount: { fontSize: 15, fontWeight: '700', color: colors.success },
+  emptySection: { alignItems: 'center', paddingVertical: 48, gap: 8 },
+  emptyText: { fontSize: 16, fontWeight: '600', color: colors.textSecondary },
+  emptySubtext: { fontSize: 13, color: colors.textLight, textAlign: 'center', paddingHorizontal: spacing.xl },
+});
