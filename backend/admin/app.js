@@ -986,9 +986,10 @@ const renderPricing = async () => {
       const priceWith = base + s;
       const total4 = base * 4;
       document.getElementById('pr-preview').innerHTML =
-        \`Sem produtos: R$ \${base}/h → 4h = <b>R$ \${total4.toFixed(2)}</b><br>
-         Com produtos do prof.: R$ \${priceWith}/h → 4h = <b>R$ \${(priceWith*4).toFixed(2)}</b><br>
-         Taxa plataforma: \${fee}% = R$ \${(total4*fee/100).toFixed(2)} (prof. recebe R$ \${(total4*(1-fee/100)).toFixed(2)})\`;
+        'Sem produtos: R$ ' + base + '/h → 4h = <b>R$ ' + total4.toFixed(2) + '</b><br>' +
+        'Com produtos do prof.: R$ ' + priceWith + '/h → 4h = <b>R$ ' + (priceWith * 4).toFixed(2) + '</b><br>' +
+        'Taxa plataforma: ' + fee + '% = R$ ' + (total4 * fee / 100).toFixed(2) +
+        ' (prof. recebe R$ ' + (total4 * (1 - fee / 100)).toFixed(2) + ')';
     };
     ['pr-base','pr-fee','pr-surcharge'].forEach(id =>
       document.getElementById(id).addEventListener('input', updatePreview));
