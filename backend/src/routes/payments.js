@@ -102,7 +102,7 @@ router.post('/create-intent', auth, async (req, res) => {
         amount: amountCents,
         currency: 'brl',
         customer: customerId,
-        automatic_payment_methods: { enabled: true },
+        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
         payment_method_options: {
           card: { setup_future_usage: 'off_session' },
         },
