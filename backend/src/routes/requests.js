@@ -6,6 +6,7 @@ const Review = require('../models/Review');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const PricingConfig = require('../models/PricingConfig');
+const { dispatchToNextProfessional, clearRequestTimer } = require('../utils/requestQueue');
 
 const router = express.Router();
 
@@ -67,22 +68,14 @@ router.post('/', auth, [
       pricing: {
         pricePerHour,
         estimated,
-        platformFee: PLATFORM_FEE_PERCENT,
+        platformFee,
       },
     });
 
-    // Emitir evento para profissionais disponíveis com dados completos
+    // Despachar para o primeiro profissional disponível (fila inteligente)
     const io = req.app.get('io');
     if (io) {
-      const populated = await ServiceRequest.findById(request._id)
-        .populate('client', 'name avatar');
-      io.to('professionals').emit('new_request', {
-        requestId: request._id,
-        client: { name: populated.client?.name || 'Cliente' },
-        details: request.details,
-        address: request.address,
-        pricing: request.pricing,
-      });
+      dispatchToNextProfessional(request._id, io);
     }
 
     res.status(201).json({ request });
@@ -137,7 +130,7 @@ router.patch('/:id/accept', auth, async (req, res) => {
   try {
     const request = await ServiceRequest.findOneAndUpdate(
       { _id: req.params.id, status: 'searching' },
-      { status: 'accepted', professional: req.user._id, acceptedAt: new Date() },
+      { status: 'accepted', professional: req.user._id, acceptedAt: new Date(), $unset: { currentAssignedTo: '' } },
       { new: true }
     ).populate('client', 'name avatar phone');
 
@@ -145,9 +138,25 @@ router.patch('/:id/accept', auth, async (req, res) => {
       return res.status(400).json({ message: 'Solicitação não disponível' });
     }
 
+    // Limpar timer da fila
+    clearRequestTimer(req.params.id);
+
+    // Buscar dados completos do profissional para mostrar ao cliente
+    const professional = await User.findById(req.user._id).select('name avatar professional phone');
+
     const io = req.app.get('io');
     if (io) {
-      io.to(`user_${request.client._id}`).emit('request_accepted', { request });
+      io.to(`user_${request.client._id}`).emit('request_accepted', {
+        request,
+        professional: {
+          _id: professional._id,
+          name: professional.name,
+          avatar: professional.avatar,
+          phone: professional.phone,
+          rating: professional.professional?.rating || 0,
+          totalReviews: professional.professional?.totalReviews || 0,
+        },
+      });
     }
 
     res.json({ request });
@@ -165,10 +174,50 @@ router.patch('/:id/reject', auth, async (req, res) => {
   try {
     await ServiceRequest.findByIdAndUpdate(req.params.id, {
       $addToSet: { rejectedBy: req.user._id },
+      $unset: { currentAssignedTo: '' },
     });
+
+    // Passar para o próximo profissional da fila
+    const io = req.app.get('io');
+    if (io) {
+      dispatchToNextProfessional(req.params.id, io);
+    }
+
     res.json({ message: 'Solicitação recusada' });
   } catch {
     res.status(500).json({ message: 'Erro ao recusar serviço' });
+  }
+});
+
+// PATCH /api/requests/:id/client-reject — cliente recusa o profissional e busca outro
+router.patch('/:id/client-reject', auth, async (req, res) => {
+  if (req.user.userType !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem recusar' });
+  }
+
+  try {
+    const request = await ServiceRequest.findOneAndUpdate(
+      { _id: req.params.id, client: req.user._id, status: 'accepted' },
+      { status: 'searching', $unset: { professional: '', acceptedAt: '' } },
+      { new: true }
+    );
+
+    if (!request) return res.status(404).json({ message: 'Solicitação não encontrada' });
+
+    // Adicionar esse profissional à lista de recusados pelo cliente
+    await ServiceRequest.findByIdAndUpdate(req.params.id, {
+      $addToSet: { rejectedBy: request.professional || req.body.professionalId },
+    });
+
+    // Retomar despacho para próximo profissional
+    const io = req.app.get('io');
+    if (io) {
+      dispatchToNextProfessional(req.params.id, io);
+    }
+
+    res.json({ message: 'Procurando outro profissional', request });
+  } catch {
+    res.status(500).json({ message: 'Erro ao recusar profissional' });
   }
 });
 
@@ -258,6 +307,10 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     }, { new: true });
 
     if (!request) return res.status(400).json({ message: 'Não foi possível cancelar' });
+
+    // Limpar timer da fila ao cancelar
+    clearRequestTimer(req.params.id);
+
     res.json({ request });
   } catch {
     res.status(500).json({ message: 'Erro ao cancelar' });

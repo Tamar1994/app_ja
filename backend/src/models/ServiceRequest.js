@@ -62,6 +62,12 @@ const serviceRequestSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   }],
+  // Profissional atual que está sendo notificado (despacho por vez)
+  currentAssignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+  },
   acceptedAt: { type: Date, default: null },
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },

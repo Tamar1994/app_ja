@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   Vibration, Animated, Dimensions,
@@ -20,12 +20,32 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
   const pulse = useRef(new Animated.Value(1)).current;
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
+  const [countdown, setCountdown] = useState(300); // 5 min em segundos
+  const countdownRef = useRef(null);
 
   useEffect(() => {
     if (!visible) {
       Vibration.cancel();
+      if (countdownRef.current) clearInterval(countdownRef.current);
       return;
     }
+
+    // Calcular countdown baseado no timeoutAt do servidor (se disponível)
+    const totalSecs = request?.timeoutAt
+      ? Math.max(0, Math.round((request.timeoutAt - Date.now()) / 1000))
+      : 300;
+    setCountdown(totalSecs);
+
+    // Timer de countdown
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
     // Vibração repetitiva
     Vibration.vibrate(VIBRATION_PATTERN, true);
@@ -59,16 +79,19 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
       pulseAnim.stop();
       rippleLoop.stop();
       Vibration.cancel();
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, [visible]);
 
   const handleAccept = () => {
     Vibration.cancel();
+    if (countdownRef.current) clearInterval(countdownRef.current);
     onAccept(request?.requestId);
   };
 
   const handleReject = () => {
     Vibration.cancel();
+    if (countdownRef.current) clearInterval(countdownRef.current);
     onReject(request?.requestId);
   };
 
@@ -94,6 +117,14 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
           <View style={styles.topBadge}>
             <View style={styles.topBadgeDot} />
             <Text style={styles.topBadgeText}>Novo pedido de serviço</Text>
+          </View>
+
+          {/* Countdown timer */}
+          <View style={[styles.countdownBadge, countdown <= 60 && styles.countdownUrgent]}>
+            <Ionicons name="timer-outline" size={14} color={countdown <= 60 ? '#FF4444' : '#FFD700'} />
+            <Text style={[styles.countdownText, countdown <= 60 && styles.countdownTextUrgent]}>
+              {`${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')} restantes`}
+            </Text>
           </View>
 
           {/* Animação de ícone com ripple */}
@@ -296,4 +327,22 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
   },
   acceptText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  countdownBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,215,0,0.12)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.25)',
+  },
+  countdownUrgent: {
+    backgroundColor: 'rgba(255,68,68,0.15)',
+    borderColor: 'rgba(255,68,68,0.35)',
+  },
+  countdownText: { color: '#FFD700', fontSize: 13, fontWeight: '700' },
+  countdownTextUrgent: { color: '#FF4444' },
 });

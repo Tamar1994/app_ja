@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   TouchableOpacity, Animated, Alert, Dimensions,
@@ -34,10 +34,22 @@ export default function SearchingScreen({ navigation, route }) {
     const a3 = createPulse(pulse3, 800);
     a1.start(); a2.start(); a3.start();
 
-    const unsub = on('request_accepted', ({ request }) => {
+    const unsub = on('request_accepted', ({ request, professional }) => {
       if (request._id === requestId || request._id?.toString() === requestId) {
         a1.stop(); a2.stop(); a3.stop();
-        navigation.replace('Tracking', { requestId });
+        navigation.replace('ProfessionalFound', { requestId, professional });
+      }
+    });
+
+    const unsubNoPro = on('no_professionals_available', ({ requestId: rId }) => {
+      if (rId?.toString() === requestId) {
+        a1.stop(); a2.stop(); a3.stop();
+        clearInterval(pollInterval);
+        Alert.alert(
+          'Sem profissionais',
+          'Nenhum profissional disponível na sua região agora. Tente novamente em alguns minutos.',
+          [{ text: 'OK', onPress: () => navigation.replace('Home') }]
+        );
       }
     });
 
@@ -48,7 +60,22 @@ export default function SearchingScreen({ navigation, route }) {
         if (data.request?.status === 'accepted' || data.request?.status === 'in_progress') {
           a1.stop(); a2.stop(); a3.stop();
           clearInterval(pollInterval);
-          navigation.replace('Tracking', { requestId });
+          // Go to ProfessionalFound if accepted but professional info not yet confirmed
+          if (data.request?.status === 'accepted' && data.request?.professional) {
+            const pro = data.request.professional;
+            navigation.replace('ProfessionalFound', {
+              requestId,
+              professional: {
+                _id: pro._id,
+                name: pro.name,
+                avatar: pro.avatar,
+                rating: pro.professional?.rating || 0,
+                totalReviews: pro.professional?.totalReviews || 0,
+              },
+            });
+          } else {
+            navigation.replace('Tracking', { requestId });
+          }
         } else if (data.request?.status === 'cancelled') {
           clearInterval(pollInterval);
           navigation.replace('Home');
@@ -59,6 +86,7 @@ export default function SearchingScreen({ navigation, route }) {
     return () => {
       a1.stop(); a2.stop(); a3.stop();
       unsub && unsub();
+      unsubNoPro && unsubNoPro();
       clearInterval(pollInterval);
     };
   }, [requestId]);

@@ -3,7 +3,6 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
 import HomeScreen from '../screens/client/HomeScreen';
@@ -15,6 +14,7 @@ import ProfileScreen from '../screens/client/ProfileScreen';
 import ReviewScreen from '../screens/client/ReviewScreen';
 import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
+import ProfessionalFoundScreen from '../screens/client/ProfessionalFoundScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -25,6 +25,7 @@ function HomeStack() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="RequestService" component={RequestServiceScreen} />
       <Stack.Screen name="Searching" component={SearchingScreen} />
+      <Stack.Screen name="ProfessionalFound" component={ProfessionalFoundScreen} />
       <Stack.Screen name="Tracking" component={TrackingScreen} />
       <Stack.Screen name="Review" component={ReviewScreen} />
     </Stack.Navigator>
@@ -41,8 +42,7 @@ function SupportStack() {
 }
 
 export default function ClientNavigator() {
-  const insets = useSafeAreaInsets();
-  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 4) : 6;
+  const bottomPad = Platform.OS === 'android' ? 8 : 6;
 
   return (
     <Tab.Navigator

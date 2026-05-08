@@ -45,6 +45,7 @@ export const requestAPI = {
   start: (id) => api.patch(`/requests/${id}/start`),
   complete: (id, final) => api.patch(`/requests/${id}/complete`, { final }),
   cancel: (id, reason) => api.patch(`/requests/${id}/cancel`, { reason }),
+  clientReject: (id, professionalId) => api.patch(`/requests/${id}/client-reject`, { professionalId }),
   review: (id, rating, comment) =>
     api.post(`/requests/${id}/review`, { rating, comment }),
 };

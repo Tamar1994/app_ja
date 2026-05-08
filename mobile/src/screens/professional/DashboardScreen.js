@@ -42,7 +42,20 @@ export default function DashboardScreen({ navigation }) {
       setIncomingJob(data);
       loadRequests();
     });
-    return () => unsub && unsub();
+    // Quando o timer de 5 min expira no servidor: fechar modal automaticamente
+    const unsubExpired = on('request_expired', ({ requestId }) => {
+      setIncomingJob(prev => {
+        if (prev?.requestId?.toString() === requestId?.toString()) {
+          return null; // fecha o modal
+        }
+        return prev;
+      });
+      loadRequests();
+    });
+    return () => {
+      unsub && unsub();
+      unsubExpired && unsubExpired();
+    };
   }, []);
 
   const handleIncomingAccept = async (requestId) => {
