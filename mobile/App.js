@@ -4,6 +4,7 @@ import { registerRootComponent } from 'expo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
@@ -65,14 +66,16 @@ function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.ja.app" scheme="ja-app">
-        <AuthProvider>
-          <SocketProvider>
-            <RootNavigator />
-            <StatusBar style="auto" />
-          </SocketProvider>
-        </AuthProvider>
-      </StripeProvider>
+      <SafeAreaProvider>
+        <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.ja.app" scheme="ja-app">
+          <AuthProvider>
+            <SocketProvider>
+              <RootNavigator />
+              <StatusBar style="auto" />
+            </SocketProvider>
+          </AuthProvider>
+        </StripeProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
