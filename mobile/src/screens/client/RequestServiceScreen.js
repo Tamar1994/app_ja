@@ -103,7 +103,7 @@ export default function RequestServiceScreen({ navigation }) {
         ...prev,
         street: `${geo.street || ''} ${geo.streetNumber || ''}`.trim(),
         neighborhood: geo.district || geo.subregion || '',
-        city: geo.city || '',
+        city: geo.city || geo.subregion || geo.region || '',
         state: geo.region || '',
         zipCode: geo.postalCode || '',
         coordinates: [loc.coords.longitude, loc.coords.latitude],
