@@ -12,6 +12,7 @@ const serviceTypesRoutes = require('./routes/serviceTypes');
 const helpTopicsRoutes = require('./routes/helpTopics');
 const supportRoutes = require('./routes/support');
 const paymentRoutes = require('./routes/payments');
+const TermsOfUse = require('./models/TermsOfUse');
 
 const app = express();
 
@@ -38,6 +39,16 @@ app.use('/api/service-types', serviceTypesRoutes);
 app.use('/api/help', helpTopicsRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/payments', paymentRoutes);
+
+// Termos de uso — público
+app.get('/api/terms', async (req, res) => {
+  try {
+    const terms = await TermsOfUse.getSingleton();
+    res.json({ content: terms.content, updatedAt: terms.updatedAt });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar termos de uso' });
+  }
+});
 
 // Health check
 app.get('/health', (req, res) => {

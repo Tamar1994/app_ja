@@ -2,6 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
 import DashboardScreen from '../screens/professional/DashboardScreen';
@@ -10,6 +11,9 @@ import HistoryScreen from '../screens/professional/HistoryScreen';
 import EarningsScreen from '../screens/professional/EarningsScreen';
 import ProfileScreen from '../screens/professional/ProfileScreen';
 import SecurityScreen from '../screens/shared/SecurityScreen';
+import TermsScreen from '../screens/shared/TermsScreen';
+import HelpCenterScreen from '../screens/client/HelpCenterScreen';
+import SupportChatScreen from '../screens/client/SupportChatScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -28,11 +32,17 @@ function ProfileStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Security" component={SecurityScreen} />
+      <Stack.Screen name="Terms" component={TermsScreen} />
+      <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
+      <Stack.Screen name="SupportChat" component={SupportChatScreen} />
     </Stack.Navigator>
   );
 }
 
 export default function ProfessionalNavigator() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 6);
+  const tabBarHeight = 58 + bottomPad;
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -42,9 +52,9 @@ export default function ProfessionalNavigator() {
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.border,
-          paddingBottom: 6,
+          paddingBottom: bottomPad,
           paddingTop: 4,
-          height: 62,
+          height: tabBarHeight,
         },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;

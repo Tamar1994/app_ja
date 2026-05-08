@@ -150,6 +150,9 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='ajuda'?'active':''}" onclick="navTo('ajuda')">
             <span class="icon">📚</span> Central de Ajuda
           </div>
+          <div class="nav-item ${currentPage==='termos'?'active':''}" onclick="navTo('termos')">
+            <span class="icon">📄</span> Termos de Uso
+          </div>
           <div class="nav-item ${currentPage==='precos'?'active':''}" onclick="navTo('precos')">
             <span class="icon">💰</span> Configurar Preços
           </div>
@@ -210,7 +213,7 @@ const navTo = (page) => {
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const items = document.querySelectorAll('.nav-item');
-  const idx = ['dashboard','approvals','users','suporte','ajuda','precos','service-types','admins'].indexOf(page);
+  const idx = ['dashboard','approvals','users','suporte','ajuda','termos','precos','pagamentos','service-types','admins'].indexOf(page);
   if (items[idx]) items[idx].classList.add('active');
   document.getElementById('page-title').textContent = {
     dashboard: 'Dashboard',
@@ -218,6 +221,7 @@ const navTo = (page) => {
     users: 'Usuários',
     suporte: 'Suporte ao Vivo',
     ajuda: 'Central de Ajuda',
+    termos: 'Termos de Uso',
     precos: 'Configuração de Preços',
     pagamentos: 'Pagamentos & Stripe',
     'service-types': 'Profissões e Serviços',
@@ -227,7 +231,7 @@ const navTo = (page) => {
 };
 
 const renderPage = () => {
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, precos: renderPricing, pagamentos: renderPayments, 'service-types': renderServiceTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, pagamentos: renderPayments, 'service-types': renderServiceTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -717,6 +721,47 @@ const closeSupportChat = async (id) => {
     await loadSupportQueue();
     await loadOperatorStatus();
   } catch (err) { showAlert(err.message); }
+};
+
+// ── TERMOS DE USO ─────────────────────────────────────────────────
+const renderTerms = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', '/terms');
+    c.innerHTML = `
+      <div class="section-card">
+        <div class="section-header">
+          <h2>📄 Termos de Uso</h2>
+          <span style="font-size:12px;color:#5C6B7A;">Última atualização: ${data.updatedAt ? fmtDatetime(data.updatedAt) : '—'}</span>
+        </div>
+        <div style="margin-bottom:12px;font-size:13px;color:#5C6B7A;">
+          Escreva o texto completo dos termos de uso. O conteúdo será exibido no aplicativo quando o usuário tocar em "Termos de uso".
+        </div>
+        <div class="form-group">
+          <label class="form-label">Conteúdo dos Termos</label>
+          <textarea id="terms-content" class="form-textarea" style="min-height:400px;font-family:monospace;font-size:13px;" placeholder="Digite aqui o texto dos termos de uso...">${escHtml(data.content || '')}</textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:16px;gap:12px;">
+          <button class="btn btn-ghost" onclick="renderTerms()">↺ Descartar alterações</button>
+          <button class="btn btn-primary" onclick="saveTerms()">💾 Salvar Termos</button>
+        </div>
+      </div>`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+const saveTerms = async () => {
+  const content = document.getElementById('terms-content')?.value;
+  if (content === undefined) return;
+  try {
+    await req('PATCH', '/terms', { content });
+    showAlert('Termos de uso salvos com sucesso!', 'success');
+    renderTerms();
+  } catch (err) {
+    showAlert(err.message);
+  }
 };
 
 // ── CENTRAL DE AJUDA ───────────────────────────────────────────────

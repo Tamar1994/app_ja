@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceTypeAPI } from '../../services/api';
@@ -39,6 +40,8 @@ const STATUS_ICONS = {
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const { on } = useSocket();
+  const insets = useSafeAreaInsets();
+  const fabBottom = insets.bottom + 68; // 68 = approx tab bar height
   const [activeRequest, setActiveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -270,7 +273,7 @@ export default function HomeScreen({ navigation }) {
       {/* FAB */}
       {!activeRequest && !loading && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, { bottom: fabBottom }]}
           onPress={() => navigation.navigate('RequestService')}
           activeOpacity={0.85}
         >
@@ -426,7 +429,6 @@ const styles = StyleSheet.create({
   // FAB
   fab: {
     position: 'absolute',
-    bottom: 80,
     right: spacing.lg,
     borderRadius: 28,
     overflow: 'hidden',

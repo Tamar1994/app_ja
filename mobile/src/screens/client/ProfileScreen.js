@@ -20,8 +20,8 @@ export default function ProfileScreen({ navigation }) {
 
   const menuItems = [
     { icon: 'shield-checkmark-outline', label: 'Segurança e privacidade', color: '#E8F0FE', onPress: () => navigation.navigate('Security') },
-    { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: null },
-    { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: null },
+    { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: () => navigation.navigate('HelpCenter') },
+    { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: () => navigation.navigate('Terms') },
     { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: null },
   ];
 

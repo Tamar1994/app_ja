@@ -8,6 +8,7 @@ const ServiceType = require('../models/ServiceType');
 const HelpTopic = require('../models/HelpTopic');
 const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
+const TermsOfUse = require('../models/TermsOfUse');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
@@ -625,6 +626,32 @@ router.patch('/stripe-config', adminAuth, requireRole('super_admin'), async (req
     res.json({ message: `Modo alterado para ${mode}`, mode });
   } catch {
     res.status(500).json({ message: 'Erro ao atualizar modo Stripe' });
+  }
+});
+
+// ── TERMOS DE USO ─────────────────────────────────────────────────
+// GET /api/admin/terms
+router.get('/terms', adminAuth, async (req, res) => {
+  try {
+    const terms = await TermsOfUse.getSingleton();
+    res.json({ content: terms.content, updatedAt: terms.updatedAt, updatedBy: terms.updatedBy });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar termos' });
+  }
+});
+
+// PATCH /api/admin/terms
+router.patch('/terms', adminAuth, async (req, res) => {
+  const { content } = req.body;
+  if (content === undefined) return res.status(400).json({ message: 'Conteúdo é obrigatório' });
+  try {
+    const terms = await TermsOfUse.getSingleton();
+    terms.content = content;
+    terms.updatedBy = req.admin.name;
+    await terms.save();
+    res.json({ message: 'Termos atualizados!', updatedAt: terms.updatedAt });
+  } catch {
+    res.status(500).json({ message: 'Erro ao salvar termos' });
   }
 });
 

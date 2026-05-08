@@ -16,7 +16,7 @@ const generateCode = () =>
 // POST /api/auth/register
 router.post('/register', [
   body('name').trim().notEmpty().withMessage('Nome é obrigatório'),
-  body('email').isEmail().withMessage('E-mail inválido').normalizeEmail(),
+  body('email').isEmail().withMessage('E-mail inválido').normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false }),
   body('phone').trim().notEmpty().withMessage('Telefone é obrigatório'),
   body('password').isLength({ min: 6 }).withMessage('Senha deve ter pelo menos 6 caracteres'),
   body('userType').isIn(['client', 'professional']).withMessage('Tipo de usuário inválido'),
@@ -80,7 +80,7 @@ router.post('/register', [
 
 // POST /api/auth/verify-email
 router.post('/verify-email', [
-  body('email').isEmail().normalizeEmail(),
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false }),
   body('code').isLength({ min: 6, max: 6 }).withMessage('Código inválido'),
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -133,7 +133,7 @@ router.post('/verify-email', [
 
 // POST /api/auth/resend-verification
 router.post('/resend-verification', [
-  body('email').isEmail().normalizeEmail(),
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false }),
 ], async (req, res) => {
   const { email } = req.body;
   try {
@@ -159,7 +159,7 @@ router.post('/resend-verification', [
 
 // POST /api/auth/login
 router.post('/login', [
-  body('email').isEmail().normalizeEmail(),
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false }),
   body('password').notEmpty(),
 ], async (req, res) => {
   const errors = validationResult(req);

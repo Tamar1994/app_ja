@@ -95,4 +95,15 @@ export const serviceTypeAPI = {
   list: () => api.get('/service-types'),
 };
 
+export const termsAPI = {
+  get: () => api.get('/terms'),
+};
+
+export const uploadAPI = {
+  avatar: (formData) =>
+    api.post('/upload/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+};
+
 export default api;

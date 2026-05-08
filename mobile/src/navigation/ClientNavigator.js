@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
 import HomeScreen from '../screens/client/HomeScreen';
@@ -18,6 +19,7 @@ import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ProfessionalFoundScreen from '../screens/client/ProfessionalFoundScreen';
 import WalletScreen from '../screens/client/WalletScreen';
 import SecurityScreen from '../screens/shared/SecurityScreen';
+import TermsScreen from '../screens/shared/TermsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -48,13 +50,17 @@ function SupportStack() {
 }
 
 export default function ClientNavigator() {
-  const bottomPad = Platform.OS === 'android' ? 8 : 6;
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 8) : 6;
+  const tabBarHeight = 58 + bottomPad;
 
   function ProfileStack() {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="Security" component={SecurityScreen} />
+        <Stack.Screen name="Terms" component={TermsScreen} />
+        <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       </Stack.Navigator>
     );
   }
@@ -70,7 +76,7 @@ export default function ClientNavigator() {
           borderTopColor: colors.border,
           paddingBottom: bottomPad,
           paddingTop: 4,
-          height: 58 + bottomPad,
+          height: tabBarHeight,
         },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;

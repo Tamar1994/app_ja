@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const upload = require('../config/multer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
@@ -53,6 +54,39 @@ router.post('/documents', auth, upload.fields([
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Erro ao enviar documentos.' });
+  }
+});
+
+// POST /api/upload/avatar — envia/atualiza foto de perfil
+const avatarsDir = path.join(__dirname, '../../uploads/avatars');
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
+const avatarUpload = require('multer')({
+  storage: require('multer').diskStorage({
+    destination: (req, file, cb) => cb(null, avatarsDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const crypto = require('crypto');
+      cb(null, `${crypto.randomBytes(16).toString('hex')}${ext}`);
+    },
+  }),
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (allowed.includes(path.extname(file.originalname).toLowerCase())) cb(null, true);
+    else cb(new Error('Apenas imagens são permitidas'));
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
+
+router.post('/avatar', auth, avatarUpload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Nenhuma imagem enviada.' });
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    await User.findByIdAndUpdate(req.user._id, { avatar: avatarUrl });
+    res.json({ message: 'Foto de perfil atualizada!', avatarUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao enviar foto de perfil.' });
   }
 });
 
