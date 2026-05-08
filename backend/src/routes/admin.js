@@ -6,6 +6,7 @@ const SupportChat = require('../models/SupportChat');
 const ServiceRequest = require('../models/ServiceRequest');
 const ServiceType = require('../models/ServiceType');
 const HelpTopic = require('../models/HelpTopic');
+const PricingConfig = require('../models/PricingConfig');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
@@ -130,6 +131,8 @@ router.patch('/approvals/:id/approve', adminAuth, async (req, res) => {
     if (user.selfieUrl) user.avatar = user.selfieUrl;
     await user.save();
     await sendApprovalEmail(user.email, user.name);
+    const io = req.app.get('io');
+    if (io) io.to(`user_${user._id}`).emit('account_approved', { userId: user._id });
     res.json({ message: 'Usuário aprovado', user });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao aprovar usuário' });
@@ -148,6 +151,8 @@ router.patch('/approvals/:id/reject', adminAuth, async (req, res) => {
     );
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
     await sendRejectionEmail(user.email, user.name, reason);
+    const io = req.app.get('io');
+    if (io) io.to(`user_${user._id}`).emit('account_rejected', { userId: user._id, reason });
     res.json({ message: 'Usuário rejeitado', user });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao rejeitar usuário' });
@@ -547,6 +552,35 @@ router.delete('/help/:id/items/:itemId', adminAuth, async (req, res) => {
     res.json({ topic });
   } catch {
     res.status(500).json({ message: 'Erro ao remover item' });
+  }
+});
+
+// ── CONFIGURAÇÃO DE PREÇOS ──────────────────────────────────────────────────
+// GET /api/admin/pricing
+router.get('/pricing', adminAuth, async (req, res) => {
+  try {
+    const config = await PricingConfig.getSingleton();
+    res.json({ config });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar configurações de preço' });
+  }
+});
+
+// PATCH /api/admin/pricing
+router.patch('/pricing', adminAuth, async (req, res) => {
+  const { basePricePerHour, platformFeePercent, productsSurcharge, minHours, maxHours, hoursOptions } = req.body;
+  try {
+    const config = await PricingConfig.getSingleton();
+    if (basePricePerHour !== undefined) config.basePricePerHour = basePricePerHour;
+    if (platformFeePercent !== undefined) config.platformFeePercent = platformFeePercent;
+    if (productsSurcharge !== undefined) config.productsSurcharge = productsSurcharge;
+    if (minHours !== undefined) config.minHours = minHours;
+    if (maxHours !== undefined) config.maxHours = maxHours;
+    if (hoursOptions !== undefined) config.hoursOptions = hoursOptions;
+    await config.save();
+    res.json({ message: 'Configuração salva', config });
+  } catch {
+    res.status(500).json({ message: 'Erro ao salvar configurações de preço' });
   }
 });
 

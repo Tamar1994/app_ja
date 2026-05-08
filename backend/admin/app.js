@@ -150,6 +150,9 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='ajuda'?'active':''}" onclick="navTo('ajuda')">
             <span class="icon">📚</span> Central de Ajuda
           </div>
+          <div class="nav-item ${currentPage==='precos'?'active':''}" onclick="navTo('precos')">
+            <span class="icon">💰</span> Configurar Preços
+          </div>
           ${adminData?.role === 'super_admin' ? `
           <div class="nav-group-label">Configurações</div>
           <div class="nav-item ${currentPage==='service-types'?'active':''}" onclick="navTo('service-types')">
@@ -204,7 +207,7 @@ const navTo = (page) => {
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const items = document.querySelectorAll('.nav-item');
-  const idx = ['dashboard','approvals','users','suporte','ajuda','service-types','admins'].indexOf(page);
+  const idx = ['dashboard','approvals','users','suporte','ajuda','precos','service-types','admins'].indexOf(page);
   if (items[idx]) items[idx].classList.add('active');
   document.getElementById('page-title').textContent = {
     dashboard: 'Dashboard',
@@ -212,6 +215,7 @@ const navTo = (page) => {
     users: 'Usuários',
     suporte: 'Suporte ao Vivo',
     ajuda: 'Central de Ajuda',
+    precos: 'Configuração de Preços',
     'service-types': 'Profissões e Serviços',
     admins: 'Equipe Admin',
   }[page] || page;
@@ -219,7 +223,7 @@ const navTo = (page) => {
 };
 
 const renderPage = () => {
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, 'service-types': renderServiceTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, precos: renderPricing, 'service-types': renderServiceTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -925,6 +929,87 @@ const deleteHelpItem = async (topicId, itemId) => {
     await req('DELETE', `/help/${topicId}/items/${itemId}`);
     showAlert('Item removido.', 'success');
     renderHelpCenter();
+  } catch (err) { showAlert(err.message); }
+};
+
+// ── CONFIGURAÇÃO DE PREÇOS ────────────────────────────────────────
+const renderPricing = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const { config } = await req('GET', '/pricing');
+    c.innerHTML = `
+      <div class="section-header">
+        <h2>💰 Configuração de Preços</h2>
+      </div>
+      <div class="card" style="max-width:520px">
+        <div class="card-body" style="display:flex;flex-direction:column;gap:18px">
+          <div>
+            <label style="font-weight:600;font-size:13px;color:#666;display:block;margin-bottom:6px">Preço base por hora (R$)</label>
+            <input id="pr-base" type="number" class="input" value="${config.basePricePerHour}" min="10" max="500" step="1" />
+          </div>
+          <div>
+            <label style="font-weight:600;font-size:13px;color:#666;display:block;margin-bottom:6px">Taxa da plataforma (%)</label>
+            <input id="pr-fee" type="number" class="input" value="${config.platformFeePercent}" min="0" max="50" step="0.5" />
+          </div>
+          <div>
+            <label style="font-weight:600;font-size:13px;color:#666;display:block;margin-bottom:6px">Adicional quando profissional traz produtos (R$/h)</label>
+            <input id="pr-surcharge" type="number" class="input" value="${config.productsSurcharge}" min="0" max="50" step="1" />
+          </div>
+          <div style="display:flex;gap:12px">
+            <div style="flex:1">
+              <label style="font-weight:600;font-size:13px;color:#666;display:block;margin-bottom:6px">Mín. horas</label>
+              <input id="pr-min" type="number" class="input" value="${config.minHours}" min="1" max="6" />
+            </div>
+            <div style="flex:1">
+              <label style="font-weight:600;font-size:13px;color:#666;display:block;margin-bottom:6px">Máx. horas</label>
+              <input id="pr-max" type="number" class="input" value="${config.maxHours}" min="4" max="24" />
+            </div>
+          </div>
+          <div>
+            <label style="font-weight:600;font-size:13px;color:#666;display:block;margin-bottom:6px">Opções de horas (separado por vírgula)</label>
+            <input id="pr-options" type="text" class="input" value="${config.hoursOptions.join(', ')}" placeholder="2, 3, 4, 5, 6, 8" />
+          </div>
+          <div style="background:#fff8f5;border:1.5px solid #FF6B0030;border-radius:12px;padding:16px">
+            <div style="font-weight:700;color:#FF6B00;margin-bottom:4px">📊 Exemplo</div>
+            <div id="pr-preview" style="font-size:14px;color:#444">—</div>
+          </div>
+          <button class="btn btn-primary" onclick="savePricing()" style="align-self:flex-start">Salvar configurações</button>
+        </div>
+      </div>`;
+
+    // Preview dinâmico
+    const updatePreview = () => {
+      const base = parseFloat(document.getElementById('pr-base').value) || 35;
+      const fee = parseFloat(document.getElementById('pr-fee').value) || 15;
+      const s = parseFloat(document.getElementById('pr-surcharge').value) || 5;
+      const priceWith = base + s;
+      const total4 = base * 4;
+      document.getElementById('pr-preview').innerHTML =
+        \`Sem produtos: R$ \${base}/h → 4h = <b>R$ \${total4.toFixed(2)}</b><br>
+         Com produtos do prof.: R$ \${priceWith}/h → 4h = <b>R$ \${(priceWith*4).toFixed(2)}</b><br>
+         Taxa plataforma: \${fee}% = R$ \${(total4*fee/100).toFixed(2)} (prof. recebe R$ \${(total4*(1-fee/100)).toFixed(2)})\`;
+    };
+    ['pr-base','pr-fee','pr-surcharge'].forEach(id =>
+      document.getElementById(id).addEventListener('input', updatePreview));
+    updatePreview();
+  } catch (err) { c.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`; }
+};
+
+const savePricing = async () => {
+  const base = parseFloat(document.getElementById('pr-base').value);
+  const fee = parseFloat(document.getElementById('pr-fee').value);
+  const surcharge = parseFloat(document.getElementById('pr-surcharge').value);
+  const minH = parseInt(document.getElementById('pr-min').value);
+  const maxH = parseInt(document.getElementById('pr-max').value);
+  const optStr = document.getElementById('pr-options').value;
+  const hoursOptions = optStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+  if (!base || base < 10 || !fee || minH < 1 || maxH < 2 || hoursOptions.length === 0) {
+    showAlert('Verifique os valores inseridos.'); return;
+  }
+  try {
+    await req('PATCH', '/pricing', { basePricePerHour: base, platformFeePercent: fee, productsSurcharge: surcharge, minHours: minH, maxHours: maxH, hoursOptions });
+    showAlert('Configurações salvas com sucesso!', 'success');
   } catch (err) { showAlert(err.message); }
 };
 

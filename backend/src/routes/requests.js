@@ -5,33 +5,26 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Review = require('../models/Review');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const PricingConfig = require('../models/PricingConfig');
 
 const router = express.Router();
-
-// Preço base por hora (R$) — pode vir do profissional no futuro
-const BASE_PRICE_PER_HOUR = 35;
-const PLATFORM_FEE_PERCENT = 15;
 
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
   const { hours, hasProducts } = req.body;
-  if (!hours || hours < 2 || hours > 12) {
-    return res.status(400).json({ message: 'Horas devem ser entre 2 e 12' });
+  try {
+    const cfg = await PricingConfig.getSingleton();
+    if (!hours || hours < cfg.minHours || hours > cfg.maxHours) {
+      return res.status(400).json({ message: `Horas devem ser entre ${cfg.minHours} e ${cfg.maxHours}` });
+    }
+    let pricePerHour = cfg.basePricePerHour;
+    if (!hasProducts) pricePerHour += cfg.productsSurcharge;
+    const estimated = pricePerHour * hours;
+    const platformFee = (estimated * cfg.platformFeePercent) / 100;
+    res.json({ pricePerHour, hours, estimated, platformFee, total: estimated });
+  } catch {
+    res.status(500).json({ message: 'Erro ao calcular estimativa' });
   }
-
-  let pricePerHour = BASE_PRICE_PER_HOUR;
-  if (!hasProducts) pricePerHour += 5; // profissional traz produtos
-
-  const estimated = pricePerHour * hours;
-  const platformFee = (estimated * PLATFORM_FEE_PERCENT) / 100;
-
-  res.json({
-    pricePerHour,
-    hours,
-    estimated,
-    platformFee,
-    total: estimated,
-  });
 });
 
 // POST /api/requests — criar solicitação
@@ -52,9 +45,19 @@ router.post('/', auth, [
 
   const { hours, rooms, bathrooms, hasProducts, notes, address, scheduledDate } = req.body;
 
-  let pricePerHour = BASE_PRICE_PER_HOUR;
-  if (!hasProducts) pricePerHour += 5;
-  const estimated = pricePerHour * hours;
+  let pricePerHour, estimated, platformFee;
+  try {
+    const cfg = await PricingConfig.getSingleton();
+    pricePerHour = cfg.basePricePerHour;
+    if (!hasProducts) pricePerHour += cfg.productsSurcharge;
+    estimated = pricePerHour * hours;
+    platformFee = (estimated * cfg.platformFeePercent) / 100;
+  } catch {
+    pricePerHour = 35;
+    if (!hasProducts) pricePerHour += 5;
+    estimated = pricePerHour * hours;
+    platformFee = (estimated * 15) / 100;
+  }
 
   try {
     const request = await ServiceRequest.create({

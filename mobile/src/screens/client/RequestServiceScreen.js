@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, Alert, TextInput,
+  KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +11,16 @@ import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const HOURS_OPTIONS = [2, 3, 4, 5, 6, 8];
+const TIME_OPTIONS = ['07:00', '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
+
+function getDateLabel(date) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(date); target.setHours(0,0,0,0);
+  const diff = Math.round((target - today) / 86400000);
+  if (diff === 0) return 'Hoje';
+  if (diff === 1) return 'Amanhã';
+  return target.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+}
 
 export default function RequestServiceScreen({ navigation }) {
   const [step, setStep] = useState(1); // 1: detalhes, 2: endereço, 3: confirmação
@@ -18,7 +29,10 @@ export default function RequestServiceScreen({ navigation }) {
   const [bathrooms, setBathrooms] = useState(1);
   const [hasProducts, setHasProducts] = useState(false);
   const [notes, setNotes] = useState('');
+  const [scheduleMode, setScheduleMode] = useState('now'); // 'now' | 'later'
   const [scheduledDate, setScheduledDate] = useState(getTomorrow());
+  const [selectedTime, setSelectedTime] = useState('08:00');
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [address, setAddress] = useState({
     street: '', neighborhood: '', city: '', state: '', zipCode: '', complement: '',
     coordinates: [0, 0],
@@ -34,6 +48,28 @@ export default function RequestServiceScreen({ navigation }) {
     d.setHours(8, 0, 0, 0);
     return d.toISOString();
   }
+
+  function buildScheduledDate(dateISO, timeStr) {
+    const d = new Date(dateISO);
+    const [h, m] = timeStr.split(':').map(Number);
+    d.setHours(h, m, 0, 0);
+    return d.toISOString();
+  }
+
+  function shiftDate(dateISO, days) {
+    const d = new Date(dateISO);
+    d.setDate(d.getDate() + days);
+    return d.toISOString();
+  }
+
+  const getFinalScheduledDate = () => {
+    if (scheduleMode === 'now') {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() + 5);
+      return d.toISOString();
+    }
+    return buildScheduledDate(scheduledDate, selectedTime);
+  };
 
   useEffect(() => {
     fetchEstimate();
@@ -89,7 +125,7 @@ export default function RequestServiceScreen({ navigation }) {
     try {
       const { data } = await requestAPI.create({
         hours, rooms, bathrooms, hasProducts, notes,
-        address, scheduledDate,
+        address, scheduledDate: getFinalScheduledDate(),
       });
       navigation.replace('Searching', { requestId: data.request._id });
     } catch {
@@ -100,6 +136,7 @@ export default function RequestServiceScreen({ navigation }) {
   };
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
@@ -236,6 +273,84 @@ export default function RequestServiceScreen({ navigation }) {
                   )}
               </LinearGradient>
             )}
+
+            {/* Quando / Agendamento */}
+            <Text style={styles.label}>Quando você precisa?</Text>
+            <View style={styles.scheduleToggleRow}>
+              <TouchableOpacity
+                style={[styles.scheduleToggleBtn, scheduleMode === 'now' && styles.scheduleToggleBtnActive]}
+                onPress={() => setScheduleMode('now')}
+                activeOpacity={0.8}
+              >
+                {scheduleMode === 'now'
+                  ? <LinearGradient colors={colors.gradientPrimary} style={styles.scheduleToggleGrad}>
+                      <Ionicons name="flash" size={16} color={colors.white} />
+                      <Text style={styles.scheduleToggleTextActive}>Agora</Text>
+                    </LinearGradient>
+                  : <>
+                      <Ionicons name="flash-outline" size={16} color={colors.textSecondary} />
+                      <Text style={styles.scheduleToggleText}>Agora</Text>
+                    </>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.scheduleToggleBtn, scheduleMode === 'later' && styles.scheduleToggleBtnActive]}
+                onPress={() => setScheduleMode('later')}
+                activeOpacity={0.8}
+              >
+                {scheduleMode === 'later'
+                  ? <LinearGradient colors={colors.gradientPrimary} style={styles.scheduleToggleGrad}>
+                      <Ionicons name="calendar" size={16} color={colors.white} />
+                      <Text style={styles.scheduleToggleTextActive}>Agendar</Text>
+                    </LinearGradient>
+                  : <>
+                      <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+                      <Text style={styles.scheduleToggleText}>Agendar</Text>
+                    </>}
+              </TouchableOpacity>
+            </View>
+
+            {scheduleMode === 'later' && (
+              <View style={styles.schedulePicker}>
+                {/* Seletor de dia */}
+                <View style={styles.datePicker}>
+                  <TouchableOpacity
+                    style={styles.dateArrow}
+                    onPress={() => {
+                      const prev = shiftDate(scheduledDate, -1);
+                      const today = new Date(); today.setHours(0,0,0,0);
+                      if (new Date(prev) >= today) setScheduledDate(prev);
+                    }}
+                  >
+                    <Ionicons name="chevron-back" size={20} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  <Text style={styles.dateLabel}>{getDateLabel(scheduledDate)}</Text>
+                  <TouchableOpacity
+                    style={styles.dateArrow}
+                    onPress={() => setScheduledDate(shiftDate(scheduledDate, 1))}
+                  >
+                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Seletor de horário */}
+                <View style={styles.timeGrid}>
+                  {TIME_OPTIONS.map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.timeBtn, selectedTime === t && styles.timeBtnActive]}
+                      onPress={() => setSelectedTime(t)}
+                      activeOpacity={0.8}
+                    >
+                      {selectedTime === t
+                        ? <LinearGradient colors={colors.gradientPrimary} style={styles.timeBtnGrad}>
+                            <Text style={styles.timeBtnTextActive}>{t}</Text>
+                          </LinearGradient>
+                        : <Text style={styles.timeBtnText}>{t}</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </View>
         )}
 
@@ -291,7 +406,7 @@ export default function RequestServiceScreen({ navigation }) {
                 { icon: 'time-outline', label: 'Duração', value: `${hours} horas` },
                 { icon: 'home-outline', label: 'Cômodos', value: `${rooms} cômodo(s) · ${bathrooms} banheiro(s)` },
                 { icon: 'location-outline', label: 'Endereço', value: `${address.street}, ${address.city}` },
-                { icon: 'calendar-outline', label: 'Data', value: new Date(scheduledDate).toLocaleDateString('pt-BR') },
+                { icon: 'calendar-outline', label: 'Data', value: scheduleMode === 'now' ? 'Agora (imediato)' : `${getDateLabel(scheduledDate)} às ${selectedTime}` },
                 { icon: 'cube-outline', label: 'Produtos', value: hasProducts ? 'Você fornece' : 'Profissional traz (+R$5/h)' },
                 ...(notes ? [{ icon: 'chatbubble-outline', label: 'Obs.', value: notes }] : []),
               ].map((row, i, arr) => (
@@ -355,6 +470,7 @@ export default function RequestServiceScreen({ navigation }) {
         )}
       </View>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -557,4 +673,46 @@ const styles = StyleSheet.create({
     gap: spacing.sm, paddingVertical: 17,
   },
   btnNextText: { color: colors.white, fontWeight: '700', fontSize: typography.fontSizes.lg },
+  // Schedule
+  scheduleToggleRow: { flexDirection: 'row', gap: spacing.sm },
+  scheduleToggleBtn: {
+    flex: 1, borderRadius: borderRadius.full,
+    borderWidth: 1.5, borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  scheduleToggleBtnActive: { borderColor: colors.primary },
+  scheduleToggleGrad: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 12,
+  },
+  scheduleToggleText: {
+    textAlign: 'center', paddingVertical: 12,
+    fontSize: typography.fontSizes.md, color: colors.textSecondary, fontWeight: '600',
+  },
+  scheduleToggleTextActive: { fontSize: typography.fontSizes.md, color: colors.white, fontWeight: '700' },
+  schedulePicker: {
+    backgroundColor: colors.white, borderRadius: borderRadius.xl,
+    padding: spacing.md, ...shadows.sm,
+    borderWidth: 1.5, borderColor: colors.border, marginTop: 8,
+  },
+  datePicker: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider,
+    marginBottom: spacing.sm,
+  },
+  dateArrow: { padding: 8 },
+  dateLabel: { fontSize: typography.fontSizes.lg, fontWeight: '700', color: colors.textPrimary },
+  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  timeBtn: {
+    borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border,
+    overflow: 'hidden', minWidth: 70,
+  },
+  timeBtnActive: { borderColor: colors.primary },
+  timeBtnGrad: { paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center' },
+  timeBtnText: {
+    paddingHorizontal: 12, paddingVertical: 8,
+    fontSize: typography.fontSizes.sm, color: colors.textSecondary, fontWeight: '600',
+    textAlign: 'center',
+  },
+  timeBtnTextActive: { fontSize: typography.fontSizes.sm, color: colors.white, fontWeight: '700' },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions,
@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
@@ -37,9 +38,11 @@ const STATUS_ICONS = {
 
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
+  const { on } = useSocket();
   const [activeRequest, setActiveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const pollRef = useRef(null);
 
   const loadActiveRequest = async () => {
     try {
@@ -48,15 +51,43 @@ export default function HomeScreen({ navigation }) {
         ['searching', 'accepted', 'in_progress'].includes(r.status)
       );
       setActiveRequest(active || null);
+      return active;
     } catch {
       // sem requisição ativa
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
+    return null;
   };
 
-  useEffect(() => { loadActiveRequest(); }, []);
+  useEffect(() => {
+    loadActiveRequest();
+
+    // Ouvir aceite em tempo real
+    const unsubAccepted = on('request_accepted', ({ request }) => {
+      setActiveRequest(request);
+      // Se estiver em Searching, navegar para Tracking
+      navigation.navigate('Tracking', { requestId: request._id });
+    });
+
+    // Ouvir atualizações de status
+    const unsubUpdated = on('request_status_updated', ({ request }) => {
+      setActiveRequest(prev => {
+        if (prev && prev._id === request._id) return request;
+        return prev;
+      });
+    });
+
+    // Polling a cada 30s como fallback quando socket perde conexão
+    pollRef.current = setInterval(loadActiveRequest, 30000);
+
+    return () => {
+      unsubAccepted && unsubAccepted();
+      unsubUpdated && unsubUpdated();
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
 
   const onRefresh = () => { setRefreshing(true); loadActiveRequest(); };
 

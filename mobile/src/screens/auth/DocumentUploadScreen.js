@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
-import { uploadDocuments } from '../../services/api';
+import { uploadDocuments, userAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 
 export default function DocumentUploadScreen({ navigation }) {
@@ -81,6 +81,17 @@ export default function DocumentUploadScreen({ navigation }) {
       if (setUser) setUser(prev => ({ ...prev, verificationStatus: 'pending_review' }));
       navigation.replace('PendingApproval');
     } catch (err) {
+      // No Android, o FormData multipart às vezes lança erro mesmo após upload bem-sucedido
+      if (!err.response) {
+        try {
+          const { data } = await userAPI.getMe();
+          if (data.user?.verificationStatus === 'pending_review') {
+            if (setUser) setUser(data.user);
+            navigation.replace('PendingApproval');
+            return;
+          }
+        } catch {}
+      }
       Alert.alert('Erro', err.response?.data?.message || 'Erro ao enviar documentos. Tente novamente.');
     } finally {
       setLoading(false);

@@ -1,15 +1,34 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
+import { userAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 
 export default function PendingApprovalScreen() {
   const { user, logout, setUser } = useAuth();
+  const { on } = useSocket();
   const isRejected = user?.verificationStatus === 'rejected';
+
+  useEffect(() => {
+    const unsubApproved = on('account_approved', async () => {
+      try {
+        const { data } = await userAPI.getMe();
+        if (setUser) setUser(data.user);
+      } catch {}
+    });
+    const unsubRejected = on('account_rejected', async ({ reason }) => {
+      try {
+        const { data } = await userAPI.getMe();
+        if (setUser) setUser({ ...(data.user || user), verificationStatus: 'rejected', rejectionReason: reason });
+      } catch {}
+    });
+    return () => { unsubApproved && unsubApproved(); unsubRejected && unsubRejected(); };
+  }, []);
 
   return (
     <View style={styles.container}>

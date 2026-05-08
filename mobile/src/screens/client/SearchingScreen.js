@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   TouchableOpacity, Animated, Alert, Dimensions,
@@ -41,9 +41,25 @@ export default function SearchingScreen({ navigation, route }) {
       }
     });
 
+    // Polling fallback a cada 15s (caso socket caia)
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data } = await requestAPI.getById(requestId);
+        if (data.request?.status === 'accepted' || data.request?.status === 'in_progress') {
+          a1.stop(); a2.stop(); a3.stop();
+          clearInterval(pollInterval);
+          navigation.replace('Tracking', { requestId });
+        } else if (data.request?.status === 'cancelled') {
+          clearInterval(pollInterval);
+          navigation.replace('Home');
+        }
+      } catch {}
+    }, 15000);
+
     return () => {
       a1.stop(); a2.stop(); a3.stop();
       unsub && unsub();
+      clearInterval(pollInterval);
     };
   }, [requestId]);
 

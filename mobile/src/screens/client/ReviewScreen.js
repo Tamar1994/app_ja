@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  TouchableOpacity, ActivityIndicator, Alert, Animated,
+  TouchableOpacity, ActivityIndicator, Alert, TextInput,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { requestAPI } from '../../services/api';
+import { requestAPI, supportChatAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const LABELS = ['', 'Ruim 😕', 'Regular 😐', 'Bom 😊', 'Ótimo 😁', 'Incrível! 🤩'];
@@ -13,7 +14,9 @@ const LABELS = ['', 'Ruim 😕', 'Regular 😐', 'Bom 😊', 'Ótimo 😁', 'Inc
 export default function ReviewScreen({ navigation, route }) {
   const { requestId, professionalName } = route.params;
   const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
   const handleSubmit = async () => {
     if (rating === 0) {
@@ -22,7 +25,7 @@ export default function ReviewScreen({ navigation, route }) {
     }
     setLoading(true);
     try {
-      await requestAPI.review(requestId, rating, '');
+      await requestAPI.review(requestId, rating, comment);
       navigation.replace('Home');
     } catch {
       Alert.alert('Erro', 'Não foi possível enviar a avaliação.');
@@ -31,7 +34,25 @@ export default function ReviewScreen({ navigation, route }) {
     }
   };
 
+  const handleReport = async () => {
+    setReporting(true);
+    try {
+      const { data } = await supportChatAPI.create(`Problema no serviço - Pedido #${requestId?.slice(-6)}`);
+      navigation.replace('Home');
+      // Navegar para suporte após voltar ao Home seria via tab, simplificando:
+      Alert.alert('Suporte aberto', 'Vá até a aba Suporte para continuar o atendimento.');
+    } catch {
+      Alert.alert('Erro', 'Não foi possível abrir o suporte. Tente pela aba Suporte.');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
@@ -55,6 +76,7 @@ export default function ReviewScreen({ navigation, route }) {
       </LinearGradient>
 
       <View style={styles.card}>
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={styles.askText}>
           Como foi o serviço de{'\n'}
           <Text style={styles.proName}>{professionalName || 'seu profissional'}?</Text>
@@ -84,6 +106,19 @@ export default function ReviewScreen({ navigation, route }) {
           </View>
         )}
 
+        {/* Campo de comentário */}
+        <TextInput
+          style={styles.commentInput}
+          placeholder="Deixe um comentário (opcional)..."
+          placeholderTextColor={colors.textLight}
+          multiline
+          numberOfLines={3}
+          maxLength={300}
+          value={comment}
+          onChangeText={setComment}
+          textAlignVertical="top"
+        />
+
         <TouchableOpacity
           style={styles.btnSubmit}
           onPress={handleSubmit}
@@ -105,8 +140,27 @@ export default function ReviewScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.replace('Home')} style={styles.skipBtn}>
           <Text style={styles.skipText}>Pular por agora</Text>
         </TouchableOpacity>
+
+        {/* Reportar problema */}
+        <TouchableOpacity
+          style={styles.reportBtn}
+          onPress={handleReport}
+          disabled={reporting}
+          activeOpacity={0.8}
+        >
+          {reporting
+            ? <ActivityIndicator color={colors.error || '#e53935'} size="small" />
+            : (
+              <>
+                <Ionicons name="flag-outline" size={16} color={colors.error || '#e53935'} />
+                <Text style={styles.reportText}>Reportar um problema</Text>
+              </>
+            )}
+        </TouchableOpacity>
+        </ScrollView>
       </View>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -202,6 +256,32 @@ const styles = StyleSheet.create({
   skipText: {
     color: colors.textLight,
     fontSize: typography.fontSizes.md,
+  },
+  commentInput: {
+    width: '100%',
+    minHeight: 80,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    fontSize: typography.fontSizes.md,
+    color: colors.textPrimary,
+    backgroundColor: colors.background,
+  },
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xl,
+    paddingVertical: spacing.sm,
+  },
+  reportText: {
+    color: '#e53935',
+    fontSize: typography.fontSizes.sm,
+    fontWeight: '600',
   },
 });
 

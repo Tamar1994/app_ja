@@ -1,7 +1,9 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
 import HomeScreen from '../screens/client/HomeScreen';
@@ -39,6 +41,9 @@ function SupportStack() {
 }
 
 export default function ClientNavigator() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 4) : 6;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -48,9 +53,9 @@ export default function ClientNavigator() {
         tabBarStyle: {
           backgroundColor: colors.white,
           borderTopColor: colors.border,
-          paddingBottom: 6,
+          paddingBottom: bottomPad,
           paddingTop: 4,
-          height: 62,
+          height: 58 + bottomPad,
         },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
