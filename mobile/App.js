@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { registerRootComponent } from 'expo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
@@ -10,8 +10,10 @@ import { SocketProvider } from './src/context/SocketContext';
 import RootNavigator from './src/navigation';
 import { setPendingNotification } from './src/services/pendingNotification';
 
-// Chave publicável do Stripe (segura para expor no cliente)
-const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
+
+// Chave publicável fallback (teste) — substituída dinamicamente ao conectar ao backend
+const STRIPE_KEY_FALLBACK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
   || 'pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx';
 
 // Configurar comportamento de foreground (mostrar alerta + tocar som mesmo com app aberto)
@@ -25,6 +27,17 @@ Notifications.setNotificationHandler({
 
 function App() {
   const notificationResponseSub = useRef(null);
+  const [stripeKey, setStripeKey] = useState(STRIPE_KEY_FALLBACK);
+
+  useEffect(() => {
+    // Busca a chave publicável atual do backend (pode ser test ou production)
+    fetch(`${API_URL}/payments/config`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.publishableKey) setStripeKey(data.publishableKey);
+      })
+      .catch(() => {/* usa fallback */});
+  }, []);
 
   useEffect(() => {
     // Quando usuário TOCA na notificação (app estava em background ou fechado)
@@ -52,7 +65,7 @@ function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StripeProvider publishableKey={STRIPE_KEY} merchantIdentifier="merchant.com.ja.app">
+      <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.ja.app" scheme="ja-app">
         <AuthProvider>
           <SocketProvider>
             <RootNavigator />

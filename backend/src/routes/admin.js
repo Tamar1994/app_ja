@@ -7,6 +7,7 @@ const ServiceRequest = require('../models/ServiceRequest');
 const ServiceType = require('../models/ServiceType');
 const HelpTopic = require('../models/HelpTopic');
 const PricingConfig = require('../models/PricingConfig');
+const StripeConfig = require('../models/StripeConfig');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
@@ -581,6 +582,49 @@ router.patch('/pricing', adminAuth, async (req, res) => {
     res.json({ message: 'Configuração salva', config });
   } catch {
     res.status(500).json({ message: 'Erro ao salvar configurações de preço' });
+  }
+});
+
+// ── STRIPE CONFIG ────────────────────────────────────────────────
+// GET /api/admin/stripe-config
+router.get('/stripe-config', adminAuth, async (req, res) => {
+  try {
+    const config = await StripeConfig.getSingleton();
+    const hasTestKeys = !!(process.env.STRIPE_SECRET_KEY_TEST && process.env.STRIPE_PUBLISHABLE_KEY_TEST);
+    const hasProdKeys = !!(process.env.STRIPE_SECRET_KEY_PROD && process.env.STRIPE_PUBLISHABLE_KEY_PROD);
+    res.json({
+      mode: config.mode,
+      updatedAt: config.updatedAt,
+      updatedBy: config.updatedBy,
+      hasTestKeys,
+      hasProdKeys,
+    });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar configuração Stripe' });
+  }
+});
+
+// PATCH /api/admin/stripe-config
+router.patch('/stripe-config', adminAuth, requireRole('super_admin'), async (req, res) => {
+  const { mode } = req.body;
+  if (!['test', 'production'].includes(mode)) {
+    return res.status(400).json({ message: 'Modo inválido. Use "test" ou "production"' });
+  }
+  if (mode === 'production') {
+    if (!process.env.STRIPE_SECRET_KEY_PROD || !process.env.STRIPE_PUBLISHABLE_KEY_PROD) {
+      return res.status(400).json({ message: 'Chaves de produção não configuradas no servidor' });
+    }
+  }
+  try {
+    const admin = await AdminUser.findById(req.admin.id);
+    const config = await StripeConfig.getSingleton();
+    config.mode = mode;
+    config.updatedBy = admin?.name || 'Admin';
+    await config.save();
+    console.log(`💳 Stripe modo alterado para: ${mode} por ${config.updatedBy}`);
+    res.json({ message: `Modo alterado para ${mode}`, mode });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar modo Stripe' });
   }
 });
 

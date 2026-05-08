@@ -153,6 +153,9 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='precos'?'active':''}" onclick="navTo('precos')">
             <span class="icon">💰</span> Configurar Preços
           </div>
+          <div class="nav-item ${currentPage==='pagamentos'?'active':''}" onclick="navTo('pagamentos')">
+            <span class="icon">💳</span> Pagamentos
+          </div>
           ${adminData?.role === 'super_admin' ? `
           <div class="nav-group-label">Configurações</div>
           <div class="nav-item ${currentPage==='service-types'?'active':''}" onclick="navTo('service-types')">
@@ -216,6 +219,7 @@ const navTo = (page) => {
     suporte: 'Suporte ao Vivo',
     ajuda: 'Central de Ajuda',
     precos: 'Configuração de Preços',
+    pagamentos: 'Pagamentos & Stripe',
     'service-types': 'Profissões e Serviços',
     admins: 'Equipe Admin',
   }[page] || page;
@@ -223,7 +227,7 @@ const navTo = (page) => {
 };
 
 const renderPage = () => {
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, precos: renderPricing, 'service-types': renderServiceTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, precos: renderPricing, pagamentos: renderPayments, 'service-types': renderServiceTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -1115,6 +1119,99 @@ const openImageZoom = (url) => {
   document.addEventListener('keydown', function onKey(e) {
     if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); }
   });
+};
+
+// ── PAGAMENTOS / STRIPE ────────────────────────────────────────────
+const renderPayments = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', '/stripe-config');
+    const isProd = data.mode === 'production';
+    const canSwitchToProd = data.hasProdKeys;
+    const isSuperAdmin = adminData?.role === 'super_admin';
+
+    c.innerHTML = `
+      ${isProd ? `
+      <div style="background:#b71c1c;color:#fff;border-radius:12px;padding:16px 24px;margin-bottom:24px;display:flex;align-items:center;gap:12px;font-weight:600;font-size:15px;">
+        <span style="font-size:24px;">⚠️</span>
+        MODO PRODUÇÃO ATIVO — Transações reais serão cobradas dos clientes!
+      </div>` : ''}
+
+      <div class="card" style="max-width:580px;">
+        <h3 style="margin:0 0 6px;font-size:18px;color:#1A1A2E;">Modo de Pagamento Stripe</h3>
+        <p style="color:#666;margin:0 0 24px;font-size:14px;">
+          Controla qual par de chaves é usado para processar pagamentos.
+          Somente super_admin pode alterar este modo.
+        </p>
+
+        <div style="display:flex;gap:16px;margin-bottom:24px;">
+          <div onclick="${isSuperAdmin ? "setStripeMode('test')" : ''}"
+               style="flex:1;border:2px solid ${!isProd?'#FF6B00':'#e0e0e0'};border-radius:12px;padding:20px;cursor:${isSuperAdmin?'pointer':'default'};background:${!isProd?'#fff8f4':'#fafafa'};transition:all .2s;">
+            <div style="font-size:28px;margin-bottom:8px;">🧪</div>
+            <div style="font-weight:700;font-size:16px;color:${!isProd?'#FF6B00':'#888'};">TESTE</div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">Chaves sk_test / pk_test</div>
+            <div style="font-size:12px;color:#999;">Nenhuma cobrança real</div>
+            ${!isProd ? `<div style="margin-top:10px;display:inline-block;background:#FF6B00;color:#fff;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;">● ATIVO</div>` : ''}
+            <div style="margin-top:8px;font-size:12px;color:${data.hasTestKeys?'#2e7d32':'#c62828'};">${data.hasTestKeys?'✓ Chaves configuradas':'✗ Chaves não encontradas'}</div>
+          </div>
+
+          <div onclick="${isSuperAdmin && canSwitchToProd ? "setStripeMode('production')" : ''}"
+               style="flex:1;border:2px solid ${isProd?'#b71c1c':'#e0e0e0'};border-radius:12px;padding:20px;cursor:${isSuperAdmin && canSwitchToProd?'pointer':'default'};background:${isProd?'#fff8f8':'#fafafa'};transition:all .2s;${!canSwitchToProd?'opacity:0.5;':''}" >
+            <div style="font-size:28px;margin-bottom:8px;">🚀</div>
+            <div style="font-weight:700;font-size:16px;color:${isProd?'#b71c1c':'#888'};">PRODUÇÃO</div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">Chaves sk_live / pk_live</div>
+            <div style="font-size:12px;color:#999;">Cobranças reais</div>
+            ${isProd ? `<div style="margin-top:10px;display:inline-block;background:#b71c1c;color:#fff;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;">● ATIVO</div>` : ''}
+            <div style="margin-top:8px;font-size:12px;color:${data.hasProdKeys?'#2e7d32':'#c62828'};">${data.hasProdKeys?'✓ Chaves configuradas':'✗ Chaves não encontradas no servidor'}</div>
+          </div>
+        </div>
+
+        ${!isSuperAdmin ? `<div style="background:#fff3e0;border:1px solid #FF6B00;border-radius:8px;padding:12px 16px;font-size:13px;color:#e65100;">
+          🔒 Apenas super_admin pode alterar o modo de pagamento.
+        </div>` : ''}
+
+        ${data.updatedBy ? `
+        <div style="margin-top:16px;font-size:12px;color:#999;border-top:1px solid #f0f0f0;padding-top:12px;">
+          Última alteração por <strong>${escHtml(data.updatedBy)}</strong>
+          ${data.updatedAt ? ' em ' + new Date(data.updatedAt).toLocaleString('pt-BR') : ''}
+        </div>` : ''}
+      </div>
+
+      <div class="card" style="max-width:580px;margin-top:20px;background:#f9f9fb;">
+        <h4 style="margin:0 0 10px;font-size:15px;color:#1A1A2E;">📋 Como configurar as chaves de produção</h4>
+        <ol style="margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.8;">
+          <li>Acesse o <strong>Render Dashboard</strong> → Serviço backend → <em>Environment</em></li>
+          <li>Adicione as variáveis:<br>
+            <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">STRIPE_SECRET_KEY_PROD</code> = sk_live_...<br>
+            <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">STRIPE_PUBLISHABLE_KEY_PROD</code> = pk_live_...
+          </li>
+          <li>Salve e aguarde o redeploy automático</li>
+          <li>Volte aqui e ative o modo <strong>PRODUÇÃO</strong></li>
+        </ol>
+      </div>
+    `;
+  } catch (err) {
+    c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar configuração Stripe: ${escHtml(err.message)}</p></div>`;
+  }
+};
+
+window.setStripeMode = async (mode) => {
+  const modeLabel = mode === 'production' ? 'PRODUÇÃO' : 'TESTE';
+  const isProd = mode === 'production';
+  const confirmed = confirm(
+    isProd
+      ? `⚠️ ATENÇÃO!\n\nVocê está prestes a ativar o modo PRODUÇÃO.\n\nIsso significa que os clientes serão cobrados com cartão/PIX real.\n\nTem certeza?`
+      : `Deseja voltar para o modo TESTE?\n\nPagamentos deixarão de ser reais.`
+  );
+  if (!confirmed) return;
+  try {
+    await req('PATCH', '/stripe-config', { mode });
+    alert('Modo alterado para ' + modeLabel + ' com sucesso!');
+    renderPayments();
+  } catch (err) {
+    alert('Erro ao alterar modo: ' + (err.message || 'Tente novamente'));
+  }
 };
 
 // ── SERVICE TYPES ──────────────────────────────────────────────────

@@ -3,15 +3,48 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 const PricingConfig = require('../models/PricingConfig');
+const StripeConfig = require('../models/StripeConfig');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const router = express.Router();
+
+// Retorna cliente Stripe instanciado com a chave do modo atual
+async function getStripe() {
+  const config = await StripeConfig.getSingleton();
+  const key = config.mode === 'production'
+    ? process.env.STRIPE_SECRET_KEY_PROD
+    : (process.env.STRIPE_SECRET_KEY_TEST || process.env.STRIPE_SECRET_KEY);
+  if (!key) throw new Error('Chave Stripe não configurada para o modo ' + config.mode);
+  return require('stripe')(key);
+}
+
+// Retorna a chave publicável do modo atual
+async function getPublishableKey() {
+  const config = await StripeConfig.getSingleton();
+  return config.mode === 'production'
+    ? process.env.STRIPE_PUBLISHABLE_KEY_PROD
+    : (process.env.STRIPE_PUBLISHABLE_KEY_TEST || process.env.STRIPE_SECRET_KEY?.replace('sk_', 'pk_'));
+}
+
+// ── ENDPOINT PÚBLICO — mobile busca a chave e modo atual ──────────
+// GET /api/payments/config
+router.get('/config', async (req, res) => {
+  try {
+    const [config, publishableKey] = await Promise.all([
+      StripeConfig.getSingleton(),
+      getPublishableKey(),
+    ]);
+    res.json({ mode: config.mode, publishableKey });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao buscar configuração de pagamento' });
+  }
+});
 
 // ── HELPERS ──────────────────────────────────────────────────────────
 
 async function getOrCreateCustomer(user) {
   if (user.stripeCustomerId) return user.stripeCustomerId;
+  const stripe = await getStripe();
   const customer = await stripe.customers.create({
     email: user.email,
     name: user.name,
@@ -84,6 +117,7 @@ router.post('/create-intent', auth, async (req, res) => {
   try {
     const { amountCents, estimated } = await calculatePricing(hours, !!hasProducts);
     const user = await User.findById(req.user._id);
+    const stripe = await getStripe();
     const customerId = await getOrCreateCustomer(user);
 
     // Atualizar CPF no Customer do Stripe (exigido para PIX)
@@ -144,6 +178,7 @@ router.post('/confirm', auth, async (req, res) => {
   if (!paymentIntentId) return res.status(400).json({ message: 'paymentIntentId obrigatório' });
 
   try {
+    const stripe = await getStripe();
     const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
     const user = await User.findById(req.user._id);
 
@@ -172,6 +207,7 @@ router.get('/methods', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user.stripeCustomerId) return res.json({ methods: [] });
 
+    const stripe = await getStripe();
     const [methods, customer] = await Promise.all([
       stripe.paymentMethods.list({ customer: user.stripeCustomerId, type: 'card' }),
       stripe.customers.retrieve(user.stripeCustomerId),
@@ -198,6 +234,7 @@ router.get('/methods', auth, async (req, res) => {
 router.delete('/methods/:id', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
+    const stripe = await getStripe();
     const method = await stripe.paymentMethods.retrieve(req.params.id);
     if (method.customer !== user.stripeCustomerId) {
       return res.status(403).json({ message: 'Cartão não pertence a este usuário' });
@@ -214,6 +251,7 @@ router.delete('/methods/:id', auth, async (req, res) => {
 router.patch('/methods/:id/default', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
+    const stripe = await getStripe();
     const method = await stripe.paymentMethods.retrieve(req.params.id);
     if (method.customer !== user.stripeCustomerId) {
       return res.status(403).json({ message: 'Cartão não pertence a este usuário' });
@@ -236,10 +274,10 @@ router.post('/webhook', async (req, res) => {
 
   let event;
   try {
+    const stripe = await getStripe();
     if (webhookSecret) {
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
     } else {
-      // Em desenvolvimento sem webhook secret configurado, aceita o evento direto
       event = JSON.parse(req.body.toString());
     }
   } catch (err) {
