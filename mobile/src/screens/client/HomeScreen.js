@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
-import { requestAPI } from '../../services/api';
+import { requestAPI, serviceTypeAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const { width } = Dimensions.get('window');
@@ -42,6 +42,7 @@ export default function HomeScreen({ navigation }) {
   const [activeRequest, setActiveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [serviceTypes, setServiceTypes] = useState([]);
   const pollRef = useRef(null);
 
   const loadActiveRequest = async () => {
@@ -61,8 +62,18 @@ export default function HomeScreen({ navigation }) {
     return null;
   };
 
+  const loadServiceTypes = async () => {
+    try {
+      const { data } = await serviceTypeAPI.list();
+      setServiceTypes(data.serviceTypes || []);
+    } catch {
+      // mantém lista vazia — cards não aparecem
+    }
+  };
+
   useEffect(() => {
     loadActiveRequest();
+    loadServiceTypes();
 
     // Ouvir aceite em tempo real
     const unsubAccepted = on('request_accepted', ({ request }) => {
@@ -89,7 +100,7 @@ export default function HomeScreen({ navigation }) {
     };
   }, []);
 
-  const onRefresh = () => { setRefreshing(true); loadActiveRequest(); };
+  const onRefresh = () => { setRefreshing(true); loadActiveRequest(); loadServiceTypes(); };
 
   const firstName = user.name.split(' ')[0];
 
@@ -195,48 +206,44 @@ export default function HomeScreen({ navigation }) {
         {/* Serviços */}
         <Text style={styles.sectionTitle}>Serviços</Text>
         <View style={styles.servicesGrid}>
-          <TouchableOpacity
-            style={styles.serviceCard}
-            onPress={() => navigation.navigate('RequestService')}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={['#FFF3E8', '#FFE0C3']}
-              style={styles.serviceCardGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.serviceIconBg}>
-                <Ionicons name="home" size={28} color={colors.primary} />
+          {serviceTypes.length === 0 ? (
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+          ) : serviceTypes.map((st) => {
+            const enabled = st.status === 'enabled';
+            return enabled ? (
+              <TouchableOpacity
+                key={st._id}
+                style={styles.serviceCard}
+                onPress={() => navigation.navigate('RequestService', { serviceType: st })}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#FFF3E8', '#FFE0C3']}
+                  style={styles.serviceCardGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <View style={styles.serviceIconBg}>
+                    <Ionicons name={st.icon || 'briefcase-outline'} size={28} color={colors.primary} />
+                  </View>
+                  <Text style={styles.serviceCardTitle}>{st.name}</Text>
+                  <Text style={styles.serviceCardSub}>{st.description || ''}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <View key={st._id} style={[styles.serviceCard, styles.serviceCardSoon]}>
+                <View style={styles.serviceCardGradient}>
+                  <View style={[styles.serviceIconBg, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
+                    <Ionicons name={st.icon || 'briefcase-outline'} size={28} color={colors.textLight} />
+                  </View>
+                  <Text style={[styles.serviceCardTitle, { color: colors.textLight }]}>{st.name}</Text>
+                  <View style={styles.soonBadge}>
+                    <Text style={styles.soonText}>Em breve</Text>
+                  </View>
+                </View>
               </View>
-              <Text style={styles.serviceCardTitle}>Diarista</Text>
-              <Text style={styles.serviceCardSub}>A partir de R$70</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <View style={[styles.serviceCard, styles.serviceCardSoon]}>
-            <View style={styles.serviceCardGradient}>
-              <View style={[styles.serviceIconBg, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-                <Ionicons name="construct-outline" size={28} color={colors.textLight} />
-              </View>
-              <Text style={[styles.serviceCardTitle, { color: colors.textLight }]}>Encanador</Text>
-              <View style={styles.soonBadge}>
-                <Text style={styles.soonText}>Em breve</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={[styles.serviceCard, styles.serviceCardSoon]}>
-            <View style={styles.serviceCardGradient}>
-              <View style={[styles.serviceIconBg, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-                <Ionicons name="flash-outline" size={28} color={colors.textLight} />
-              </View>
-              <Text style={[styles.serviceCardTitle, { color: colors.textLight }]}>Eletricista</Text>
-              <View style={styles.soonBadge}>
-                <Text style={styles.soonText}>Em breve</Text>
-              </View>
-            </View>
-          </View>
+            );
+          })}
         </View>
 
         {/* Como funciona */}

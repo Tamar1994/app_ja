@@ -87,4 +87,8 @@ export const paymentAPI = {
   setDefaultMethod: (id) => api.patch(`/payments/methods/${id}/default`),
 };
 
+export const serviceTypeAPI = {
+  list: () => api.get('/service-types'),
+};
+
 export default api;

@@ -22,7 +22,8 @@ function getDateLabel(date) {
   return target.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
-export default function RequestServiceScreen({ navigation }) {
+export default function RequestServiceScreen({ navigation, route }) {
+  const serviceType = route?.params?.serviceType || null;
   const [step, setStep] = useState(1); // 1: detalhes, 2: endereço, 3: confirmação
   const [hours, setHours] = useState(4);
   const [rooms, setRooms] = useState(2);
@@ -146,7 +147,7 @@ export default function RequestServiceScreen({ navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color={colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Contratar Diarista</Text>
+        <Text style={styles.headerTitle}>Contratar {serviceType?.name || 'Diarista'}</Text>
         <View style={{ width: 38 }} />
       </LinearGradient>
 
