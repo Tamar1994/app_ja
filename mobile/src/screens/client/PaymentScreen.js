@@ -49,7 +49,7 @@ export default function PaymentScreen({ navigation, route }) {
         customerId,
         customerEphemeralKeySecret: ephemeralKey,
         paymentIntentClientSecret: clientSecret,
-        allowsDelayedPaymentMethods: true,
+        allowsDelayedPaymentMethods: false,
         returnURL: 'ja-app://stripe-redirect',
         defaultBillingDetails: {},
         appearance: {
@@ -93,7 +93,7 @@ export default function PaymentScreen({ navigation, route }) {
 
       if (error) {
         if (error.code === 'Canceled') {
-          // Usuário fechou o Sheet voluntariamente — sem mensagem de erro
+          setPaying(false);
           return;
         }
         Alert.alert(
