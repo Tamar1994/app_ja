@@ -7,11 +7,17 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx"
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx"
       }
     }
   }

@@ -10,7 +10,9 @@ import { SocketProvider } from './src/context/SocketContext';
 import RootNavigator from './src/navigation';
 import { setPendingNotification } from './src/services/pendingNotification';
 
-const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+// Chave publicável do Stripe (segura para expor no cliente)
+const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  || 'pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx';
 
 // Configurar comportamento de foreground (mostrar alerta + tocar som mesmo com app aberto)
 Notifications.setNotificationHandler({
