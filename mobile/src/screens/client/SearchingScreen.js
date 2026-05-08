@@ -45,9 +45,11 @@ export default function SearchingScreen({ navigation, route }) {
       if (rId?.toString() === requestId) {
         a1.stop(); a2.stop(); a3.stop();
         clearInterval(pollInterval);
+        // Cancelar o pedido automaticamente para não ficar preso
+        requestAPI.cancel(requestId, 'Sem profissionais disponíveis').catch(() => {});
         Alert.alert(
-          'Sem profissionais',
-          'Nenhum profissional disponível na sua região agora. Tente novamente em alguns minutos.',
+          'Sem profissionais disponíveis',
+          'Não encontramos nenhum profissional disponível agora.\n\nSeu pedido foi cancelado automaticamente.',
           [{ text: 'OK', onPress: () => navigation.replace('Home') }]
         );
       }

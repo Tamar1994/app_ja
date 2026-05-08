@@ -168,7 +168,13 @@ export default function HomeScreen({ navigation }) {
               </View>
               <TouchableOpacity
                 style={styles.btnTrack}
-                onPress={() => navigation.navigate('Tracking', { requestId: activeRequest._id })}
+                onPress={() => {
+                  if (activeRequest.status === 'searching') {
+                    navigation.navigate('Searching', { requestId: activeRequest._id });
+                  } else {
+                    navigation.navigate('Tracking', { requestId: activeRequest._id });
+                  }
+                }}
               >
                 <LinearGradient
                   colors={colors.gradientPrimary}
@@ -176,7 +182,9 @@ export default function HomeScreen({ navigation }) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Text style={styles.btnTrackText}>Acompanhar</Text>
+                  <Text style={styles.btnTrackText}>
+                    {activeRequest.status === 'searching' ? 'Ver busca' : 'Acompanhar'}
+                  </Text>
                   <Ionicons name="arrow-forward" size={16} color={colors.white} />
                 </LinearGradient>
               </TouchableOpacity>

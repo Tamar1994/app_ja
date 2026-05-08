@@ -136,7 +136,11 @@ export default function RequestServiceScreen({ navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 0 : 0}
+    >
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
@@ -287,10 +291,10 @@ export default function RequestServiceScreen({ navigation }) {
                       <Ionicons name="flash" size={16} color={colors.white} />
                       <Text style={styles.scheduleToggleTextActive}>Agora</Text>
                     </LinearGradient>
-                  : <>
+                  : <View style={styles.scheduleToggleGrad}>
                       <Ionicons name="flash-outline" size={16} color={colors.textSecondary} />
                       <Text style={styles.scheduleToggleText}>Agora</Text>
-                    </>}
+                    </View>}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.scheduleToggleBtn, scheduleMode === 'later' && styles.scheduleToggleBtnActive]}
@@ -302,10 +306,10 @@ export default function RequestServiceScreen({ navigation }) {
                       <Ionicons name="calendar" size={16} color={colors.white} />
                       <Text style={styles.scheduleToggleTextActive}>Agendar</Text>
                     </LinearGradient>
-                  : <>
+                  : <View style={styles.scheduleToggleGrad}>
                       <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
                       <Text style={styles.scheduleToggleText}>Agendar</Text>
-                    </>}
+                    </View>}
               </TouchableOpacity>
             </View>
 
@@ -686,7 +690,6 @@ const styles = StyleSheet.create({
     gap: 6, paddingVertical: 12,
   },
   scheduleToggleText: {
-    textAlign: 'center', paddingVertical: 12,
     fontSize: typography.fontSizes.md, color: colors.textSecondary, fontWeight: '600',
   },
   scheduleToggleTextActive: { fontSize: typography.fontSizes.md, color: colors.white, fontWeight: '700' },

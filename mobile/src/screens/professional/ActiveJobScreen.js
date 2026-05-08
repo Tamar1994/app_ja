@@ -12,14 +12,38 @@ import { colors, typography, spacing, borderRadius, shadows } from '../../theme'
 
 export default function ActiveJobScreen({ navigation, route }) {
   const { requestId } = route.params;
-  const { emit } = useSocket();
+  const { emit, on } = useSocket();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [clientConfirmed, setClientConfirmed] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     loadRequest();
     startSendingLocation();
+
+    // Cliente confirmou o profissional → liberar botão de iniciar
+    const unsubConfirmed = on('client_confirmed', ({ requestId: rId }) => {
+      if (rId?.toString() === requestId?.toString()) {
+        setClientConfirmed(true);
+      }
+    });
+
+    // Cliente rejeitou este profissional → volta para Dashboard
+    const unsubRejected = on('client_rejected_professional', ({ requestId: rId }) => {
+      if (rId?.toString() === requestId?.toString()) {
+        Alert.alert(
+          'Cliente buscou outro profissional',
+          'O cliente optou por buscar um outro profissional para esta solicitação.',
+          [{ text: 'OK', onPress: () => navigation.replace('Dashboard') }]
+        );
+      }
+    });
+
+    return () => {
+      unsubConfirmed && unsubConfirmed();
+      unsubRejected && unsubRejected();
+    };
   }, []);
 
   const loadRequest = async () => {
@@ -99,7 +123,13 @@ export default function ActiveJobScreen({ navigation, route }) {
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       <LinearGradient
-        colors={request?.status === 'in_progress' ? [colors.warning, '#E65100'] : colors.gradientSecondary}
+        colors={
+          request?.status === 'in_progress'
+            ? [colors.warning, '#E65100']
+            : clientConfirmed || request?.status !== 'accepted'
+            ? colors.gradientSecondary
+            : ['#5C6BC0', '#3949AB']  // roxo para estado de espera
+        }
         style={styles.header}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -110,18 +140,30 @@ export default function ActiveJobScreen({ navigation, route }) {
         <View style={styles.headerContent}>
           <View style={styles.headerIconWrap}>
             <Ionicons
-              name={request?.status === 'accepted' ? 'walk' : 'home'}
+              name={
+                request?.status === 'in_progress'
+                  ? 'home'
+                  : clientConfirmed
+                  ? 'walk'
+                  : 'time'
+              }
               size={30}
               color={colors.white}
             />
           </View>
           <Text style={styles.headerTitle}>
-            {request?.status === 'accepted' ? 'A caminho do cliente' : 'Serviço em andamento'}
+            {request?.status === 'in_progress'
+              ? 'Serviço em andamento'
+              : clientConfirmed
+              ? 'A caminho do cliente'
+              : 'Aguardando confirmação'}
           </Text>
-          <View style={styles.locBadge}>
-            <Ionicons name="location" size={12} color={colors.white} />
-            <Text style={styles.locBadgeText}>Localização sendo enviada</Text>
-          </View>
+          {(clientConfirmed || request?.status === 'in_progress') && (
+            <View style={styles.locBadge}>
+              <Ionicons name="location" size={12} color={colors.white} />
+              <Text style={styles.locBadgeText}>Localização sendo enviada</Text>
+            </View>
+          )}
         </View>
       </LinearGradient>
 
@@ -175,7 +217,13 @@ export default function ActiveJobScreen({ navigation, route }) {
 
       {/* Botão de ação */}
       <View style={styles.footer}>
-        {request?.status === 'accepted' && (
+        {request?.status === 'accepted' && !clientConfirmed && (
+          <View style={styles.waitingBanner}>
+            <Ionicons name="hourglass-outline" size={20} color="#5C6BC0" />
+            <Text style={styles.waitingText}>Aguardando confirmação do cliente...</Text>
+          </View>
+        )}
+        {request?.status === 'accepted' && clientConfirmed && (
           <TouchableOpacity
             style={styles.btnWrap}
             onPress={handleStart}
@@ -339,4 +387,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   btnText: { color: colors.white, fontWeight: '700', fontSize: typography.fontSizes.lg },
+  waitingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#EDE7F6',
+    borderRadius: 14,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: '#C5CAE9',
+  },
+  waitingText: {
+    color: '#3949AB',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });

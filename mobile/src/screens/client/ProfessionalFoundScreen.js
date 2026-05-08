@@ -12,7 +12,13 @@ export default function ProfessionalFoundScreen({ route, navigation }) {
   const { requestId, professional } = route.params;
   const [loading, setLoading] = useState(false);
 
-  const handleAccept = () => {
+  const handleAccept = async () => {
+    setLoading(true);
+    try {
+      await requestAPI.clientConfirm(requestId);
+    } catch { /* ignora — mesmo sem confirmação o profissional pode iniciar */ } finally {
+      setLoading(false);
+    }
     navigation.replace('Tracking', { requestId });
   };
 

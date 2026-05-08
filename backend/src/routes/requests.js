@@ -196,28 +196,65 @@ router.patch('/:id/client-reject', auth, async (req, res) => {
   }
 
   try {
-    const request = await ServiceRequest.findOneAndUpdate(
-      { _id: req.params.id, client: req.user._id, status: 'accepted' },
-      { status: 'searching', $unset: { professional: '', acceptedAt: '' } },
-      { new: true }
-    );
+    // Pegar ANTES de atualizar para ter o ID do profissional que foi rejeitado
+    const existing = await ServiceRequest.findOne({
+      _id: req.params.id,
+      client: req.user._id,
+      status: 'accepted',
+    });
+    if (!existing) return res.status(404).json({ message: 'Solicitação não encontrada' });
 
-    if (!request) return res.status(404).json({ message: 'Solicitação não encontrada' });
+    const rejectedProfessionalId = existing.professional;
 
-    // Adicionar esse profissional à lista de recusados pelo cliente
     await ServiceRequest.findByIdAndUpdate(req.params.id, {
-      $addToSet: { rejectedBy: request.professional || req.body.professionalId },
+      status: 'searching',
+      $addToSet: { rejectedBy: rejectedProfessionalId },
+      $unset: { professional: '', acceptedAt: '' },
     });
 
-    // Retomar despacho para próximo profissional
     const io = req.app.get('io');
     if (io) {
+      // Notificar o profissional que foi rejeitado pelo cliente
+      if (rejectedProfessionalId) {
+        io.to(`user_${rejectedProfessionalId}`).emit('client_rejected_professional', {
+          requestId: req.params.id,
+          message: 'O cliente optou por buscar outro profissional.',
+        });
+      }
+      // Despachar para próximo profissional
       dispatchToNextProfessional(req.params.id, io);
     }
 
-    res.json({ message: 'Procurando outro profissional', request });
+    res.json({ message: 'Procurando outro profissional' });
   } catch {
     res.status(500).json({ message: 'Erro ao recusar profissional' });
+  }
+});
+
+// PATCH /api/requests/:id/client-confirm — cliente confirma o profissional aceito
+router.patch('/:id/client-confirm', auth, async (req, res) => {
+  if (req.user.userType !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem confirmar' });
+  }
+
+  try {
+    const request = await ServiceRequest.findOne({
+      _id: req.params.id,
+      client: req.user._id,
+      status: 'accepted',
+    });
+    if (!request) return res.status(404).json({ message: 'Solicitação não encontrada' });
+
+    const io = req.app.get('io');
+    if (io && request.professional) {
+      io.to(`user_${request.professional}`).emit('client_confirmed', {
+        requestId: request._id,
+      });
+    }
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ message: 'Erro ao confirmar profissional' });
   }
 });
 
