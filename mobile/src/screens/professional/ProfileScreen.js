@@ -13,7 +13,7 @@ import { colors, typography, spacing, borderRadius, shadows } from '../../theme'
 const BASE = 'http://192.168.15.17:3000';
 const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 
-export default function ProfessionalProfileScreen() {
+export default function ProfessionalProfileScreen({ navigation }) {
   const { user, logout, updateUser } = useAuth();
   const { emit } = useSocket();
   const [available, setAvailable] = useState(user?.professional?.isAvailable || false);
@@ -37,10 +37,10 @@ export default function ProfessionalProfileScreen() {
   };
 
   const menuItems = [
-    { icon: 'shield-checkmark-outline', label: 'Segurança e privacidade', color: '#E8F0FE' },
-    { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD' },
-    { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9' },
-    { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1' },
+    { icon: 'shield-checkmark-outline', label: 'Segurança e privacidade', color: '#E8F0FE', onPress: () => navigation.navigate('Security') },
+    { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: null },
+    { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: null },
+    { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: null },
   ];
 
   return (
@@ -175,6 +175,7 @@ export default function ProfessionalProfileScreen() {
                 key={i}
                 style={[styles.menuRow, i < menuItems.length - 1 && styles.menuRowBorder]}
                 activeOpacity={0.7}
+                onPress={item.onPress || undefined}
               >
                 <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
                   <Ionicons name={item.icon} size={18} color={colors.textSecondary} />

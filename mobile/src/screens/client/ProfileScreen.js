@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { user, logout } = useAuth();
 
   const handleLogout = () => {
@@ -19,10 +19,10 @@ export default function ProfileScreen() {
   };
 
   const menuItems = [
-    { icon: 'shield-checkmark-outline', label: 'Segurança e privacidade', color: '#E8F0FE' },
-    { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD' },
-    { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9' },
-    { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1' },
+    { icon: 'shield-checkmark-outline', label: 'Segurança e privacidade', color: '#E8F0FE', onPress: () => navigation.navigate('Security') },
+    { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: null },
+    { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: null },
+    { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: null },
   ];
 
   return (
@@ -81,6 +81,7 @@ export default function ProfileScreen() {
                 key={i}
                 style={[styles.menuRow, i < menuItems.length - 1 && styles.menuRowBorder]}
                 activeOpacity={0.7}
+                onPress={item.onPress || undefined}
               >
                 <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
                   <Ionicons name={item.icon} size={18} color={colors.textSecondary} />

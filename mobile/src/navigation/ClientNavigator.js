@@ -17,6 +17,7 @@ import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ProfessionalFoundScreen from '../screens/client/ProfessionalFoundScreen';
 import WalletScreen from '../screens/client/WalletScreen';
+import SecurityScreen from '../screens/shared/SecurityScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -32,6 +33,7 @@ function HomeStack() {
       <Stack.Screen name="Tracking" component={TrackingScreen} />
       <Stack.Screen name="Review" component={ReviewScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="Security" component={SecurityScreen} />
     </Stack.Navigator>
   );
 }
@@ -47,6 +49,15 @@ function SupportStack() {
 
 export default function ClientNavigator() {
   const bottomPad = Platform.OS === 'android' ? 8 : 6;
+
+  function ProfileStack() {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="Security" component={SecurityScreen} />
+      </Stack.Navigator>
+    );
+  }
 
   return (
     <Tab.Navigator
@@ -74,7 +85,7 @@ export default function ClientNavigator() {
       <Tab.Screen name="HomeTab" component={HomeStack} options={{ title: 'Início' }} />
       <Tab.Screen name="HistoryTab" component={HistoryScreen} options={{ title: 'Histórico' }} />
       <Tab.Screen name="SupportTab" component={SupportStack} options={{ title: 'Suporte' }} />
-      <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Perfil' }} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Perfil' }} />
     </Tab.Navigator>
   );
 }

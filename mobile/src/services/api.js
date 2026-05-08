@@ -32,6 +32,10 @@ export const userAPI = {
     api.patch('/users/me/availability', { isAvailable }),
   savePushToken: (token) => api.patch('/users/push-token', { token }),
   getReviews: (userId) => api.get(`/users/${userId}/reviews`),
+  changePassword: (currentPassword, newPassword) =>
+    api.patch('/users/me/password', { currentPassword, newPassword }),
+  deleteAccount: (password) =>
+    api.delete('/users/me', { data: { password } }),
 };
 
 // Solicitações de serviço

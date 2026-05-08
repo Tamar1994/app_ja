@@ -79,6 +79,44 @@ router.patch('/me/availability', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/users/me/password — alterar senha
+router.patch('/me/password', auth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Senha atual e nova senha são obrigatórias' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ message: 'A nova senha deve ter pelo menos 6 caracteres' });
+  }
+  try {
+    const user = await User.findById(req.user._id).select('+password');
+    const valid = await user.comparePassword(currentPassword);
+    if (!valid) return res.status(401).json({ message: 'Senha atual incorreta' });
+
+    user.password = newPassword; // o pre-save hook do modelo fará o hash
+    await user.save();
+    res.json({ message: 'Senha alterada com sucesso' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao alterar senha' });
+  }
+});
+
+// DELETE /api/users/me — excluir conta (requer senha para confirmar)
+router.delete('/me', auth, async (req, res) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ message: 'Senha obrigatória para excluir conta' });
+  try {
+    const user = await User.findById(req.user._id).select('+password');
+    const valid = await user.comparePassword(password);
+    if (!valid) return res.status(401).json({ message: 'Senha incorreta' });
+
+    await User.findByIdAndDelete(req.user._id);
+    res.json({ message: 'Conta excluída com sucesso' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao excluir conta' });
+  }
+});
+
 // GET /api/users/:id/reviews — avaliações de um profissional
 router.get('/:id/reviews', auth, async (req, res) => {
   try {

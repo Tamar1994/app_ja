@@ -9,6 +9,7 @@ import ActiveJobScreen from '../screens/professional/ActiveJobScreen';
 import HistoryScreen from '../screens/professional/HistoryScreen';
 import EarningsScreen from '../screens/professional/EarningsScreen';
 import ProfileScreen from '../screens/professional/ProfileScreen';
+import SecurityScreen from '../screens/shared/SecurityScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -18,6 +19,15 @@ function DashboardStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Security" component={SecurityScreen} />
     </Stack.Navigator>
   );
 }
@@ -49,7 +59,7 @@ export default function ProfessionalNavigator() {
       <Tab.Screen name="DashboardTab" component={DashboardStack} options={{ title: 'Serviços' }} />
       <Tab.Screen name="EarningsTab" component={EarningsScreen} options={{ title: 'Carteira' }} />
       <Tab.Screen name="HistoryTab" component={HistoryScreen} options={{ title: 'Histórico' }} />
-      <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Perfil' }} />
+      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Perfil' }} />
     </Tab.Navigator>
   );
 }
