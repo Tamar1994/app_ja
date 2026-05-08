@@ -270,11 +270,15 @@ router.patch('/methods/:id/default', auth, async (req, res) => {
 // ATENÇÃO: express.raw() é aplicado em app.js ANTES do express.json() para esta rota
 router.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   let event;
   try {
     const stripe = await getStripe();
+    const config = await StripeConfig.getSingleton();
+    const webhookSecret = config.mode === 'production'
+      ? (process.env.STRIPE_WEBHOOK_SECRET_PROD || process.env.STRIPE_WEBHOOK_SECRET)
+      : (process.env.STRIPE_WEBHOOK_SECRET_TEST || process.env.STRIPE_WEBHOOK_SECRET);
+
     if (webhookSecret) {
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
     } else {
