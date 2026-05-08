@@ -49,7 +49,7 @@ export default function PaymentScreen({ navigation, route }) {
         customerId,
         customerEphemeralKeySecret: ephemeralKey,
         paymentIntentClientSecret: clientSecret,
-        allowsDelayedPaymentMethods: true, // necessário para PIX
+        allowsDelayedPaymentMethods: true,
         returnURL: 'ja-app://stripe-redirect',
         defaultBillingDetails: {},
         appearance: {
