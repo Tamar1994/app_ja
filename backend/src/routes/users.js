@@ -33,6 +33,18 @@ router.patch('/me', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/users/push-token — salvar token de push notification
+router.patch('/push-token', auth, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ message: 'Token obrigatório' });
+  try {
+    await User.findByIdAndUpdate(req.user._id, { pushToken: token });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ message: 'Erro ao salvar token' });
+  }
+});
+
 // PATCH /api/users/me/location — atualizar localização (profissional)
 router.patch('/me/location', auth, async (req, res) => {
   const { longitude, latitude } = req.body;

@@ -4,17 +4,68 @@
  * Se expirar ou recusar → próximo profissional disponível.
  */
 
+const https = require('https');
+
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
 
 // Mapa de timers ativos: requestId → timeoutHandle
 const activeTimers = new Map();
 
 /**
+ * Envia push notification via Expo Push API (funciona com app em background/fechado)
+ */
+function sendExpoPush(pushToken, title, body, data = {}) {
+  if (!pushToken || !pushToken.startsWith('ExponentPushToken')) return;
+
+  const payload = JSON.stringify({
+    to: pushToken,
+    title,
+    body,
+    data,
+    channelId: 'job-alerts',   // canal de alta prioridade configurado no app
+    priority: 'high',
+    sound: 'default',
+    ttl: 300,                  // expira em 5 min (mesmo que o timeout)
+    android: {
+      channelId: 'job-alerts',
+      priority: 'max',
+      sticky: false,
+    },
+  });
+
+  const options = {
+    hostname: 'exp.host',
+    path: '/--/api/v2/push/send',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
+    },
+  };
+
+  const req = https.request(options, (res) => {
+    let data = '';
+    res.on('data', chunk => { data += chunk; });
+    res.on('end', () => {
+      console.log(`📲 Push enviado → ${pushToken.slice(-10)} | status ${res.statusCode}`);
+    });
+  });
+
+  req.on('error', (err) => {
+    console.error('Erro ao enviar push:', err.message);
+  });
+
+  req.write(payload);
+  req.end();
+}
+
+/**
  * Encontra o próximo profissional disponível (conectado no socket e não recusou)
  */
 async function findNextProfessional(request, io) {
   const User = require('../models/User');
-
   // Busca sockets conectados na sala 'professionals'
   let connectedIds = new Set();
   try {
@@ -86,6 +137,26 @@ async function dispatchToNextProfessional(requestId, io) {
   });
 
   console.log(`📢 Pedido ${requestId} → ${professional.name} (${professional._id}) | timeout: 5min`);
+
+  // Enviar push notification (funciona mesmo com app fechado/tela desligada)
+  if (professional.pushToken) {
+    const city = request.address?.city || 'sua região';
+    const earnings = ((request.pricing?.estimated || 0) * 0.85).toFixed(2).replace('.', ',');
+    sendExpoPush(
+      professional.pushToken,
+      '🧹 Nova solicitação de serviço!',
+      `Cliente em ${city} • R$ ${earnings} • Responda em 5 min`,
+      {
+        type: 'new_request',
+        requestId: request._id.toString(),
+        client: { name: request.client?.name || 'Cliente' },
+        details: request.details,
+        address: request.address,
+        pricing: request.pricing,
+        timeoutAt,
+      }
+    );
+  }
 
   // Timer de 5 min — se expirar, passa para o próximo
   const timer = setTimeout(async () => {

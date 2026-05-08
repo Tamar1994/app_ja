@@ -30,6 +30,7 @@ export const userAPI = {
     api.patch('/users/me/location', { longitude, latitude }),
   setAvailability: (isAvailable) =>
     api.patch('/users/me/availability', { isAvailable }),
+  savePushToken: (token) => api.patch('/users/push-token', { token }),
   getReviews: (userId) => api.get(`/users/${userId}/reviews`),
 };
 

@@ -107,6 +107,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     select: false,
   },
+  // Token de push notification (Expo)
+  pushToken: {
+    type: String,
+    default: null,
+  },
 }, { timestamps: true });
 
 // Índice geoespacial para busca por proximidade

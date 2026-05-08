@@ -6,11 +6,14 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, userAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import IncomingJobModal from '../../components/IncomingJobModal';
+import { registerForPushNotifications } from '../../services/notifications';
+import { getPendingNotification, clearPendingNotification } from '../../services/pendingNotification';
 
 export default function DashboardScreen({ navigation }) {
   const { user, updateUser } = useAuth();
@@ -37,6 +40,14 @@ export default function DashboardScreen({ navigation }) {
 
   useEffect(() => {
     loadRequests();
+
+    // Registrar token de push notification (1x ao montar)
+    registerForPushNotifications()
+      .then(token => {
+        if (token) userAPI.savePushToken(token).catch(() => {});
+      })
+      .catch(() => {});
+
     // Quando chega novo pedido: mostrar modal tipo ligação
     const unsub = on('new_request', (data) => {
       setIncomingJob(data);
@@ -57,6 +68,18 @@ export default function DashboardScreen({ navigation }) {
       unsubExpired && unsubExpired();
     };
   }, []);
+
+  // Verificar notificação pendente (app foi aberto pelo tap na notificação)
+  useFocusEffect(
+    useCallback(() => {
+      const pending = getPendingNotification();
+      if (pending) {
+        clearPendingNotification();
+        // Pequeno delay para garantir que o modal abre após a tela montar
+        setTimeout(() => setIncomingJob(pending), 300);
+      }
+    }, [])
+  );
 
   const handleIncomingAccept = async (requestId) => {
     if (!requestId) return;
