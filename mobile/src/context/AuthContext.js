@@ -8,12 +8,14 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [networkError, setNetworkError] = useState(false);
 
   useEffect(() => {
     loadStoredAuth();
   }, []);
 
   const loadStoredAuth = async () => {
+    setNetworkError(false);
     try {
       const storedToken = await SecureStore.getItemAsync('token');
       if (storedToken) {
@@ -21,8 +23,21 @@ export const AuthProvider = ({ children }) => {
         const { data } = await userAPI.getMe();
         setUser(data.user);
       }
-    } catch {
-      await SecureStore.deleteItemAsync('token');
+    } catch (err) {
+      // Só apaga o token em erros de autenticação (401/403).
+      // Erros de rede (servidor reiniciando, sem conexão) não devem deslogar o usuário.
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        await SecureStore.deleteItemAsync('token');
+        setToken(null);
+        setUser(null);
+      } else if (!err?.response) {
+        // Sem resposta HTTP = erro de rede (timeout, servidor offline, etc.)
+        // Verifica se havia token antes de mostrar tela de retry
+        const storedToken = await SecureStore.getItemAsync('token');
+        if (storedToken) setNetworkError(true);
+      }
+      // Outros erros HTTP (5xx etc.) — mantém o token sem exibir tela de retry
     } finally {
       setLoading(false);
     }
@@ -65,7 +80,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, token, loading, login, register, logout, updateUser, verifyEmail, resendVerification }}>
+    <AuthContext.Provider value={{ user, setUser, token, loading, networkError, retryAuth: loadStoredAuth, login, register, logout, updateUser, verifyEmail, resendVerification }}>
       {children}
     </AuthContext.Provider>
   );
