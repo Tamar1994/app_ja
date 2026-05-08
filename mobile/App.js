@@ -4,10 +4,13 @@ import { registerRootComponent } from 'expo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
 import RootNavigator from './src/navigation';
 import { setPendingNotification } from './src/services/pendingNotification';
+
+const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
 // Configurar comportamento de foreground (mostrar alerta + tocar som mesmo com app aberto)
 Notifications.setNotificationHandler({
@@ -47,12 +50,14 @@ function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <SocketProvider>
-          <RootNavigator />
-          <StatusBar style="auto" />
-        </SocketProvider>
-      </AuthProvider>
+      <StripeProvider publishableKey={STRIPE_KEY} merchantIdentifier="merchant.com.ja.app">
+        <AuthProvider>
+          <SocketProvider>
+            <RootNavigator />
+            <StatusBar style="auto" />
+          </SocketProvider>
+        </AuthProvider>
+      </StripeProvider>
     </GestureHandlerRootView>
   );
 }

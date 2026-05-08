@@ -11,10 +11,14 @@ const walletRoutes = require('./routes/wallet');
 const serviceTypesRoutes = require('./routes/serviceTypes');
 const helpTopicsRoutes = require('./routes/helpTopics');
 const supportRoutes = require('./routes/support');
+const paymentRoutes = require('./routes/payments');
 
 const app = express();
 
 app.use(cors());
+
+// Webhook Stripe precisa de raw body ANTES do express.json()
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 // Servir arquivos de upload
@@ -33,6 +37,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/service-types', serviceTypesRoutes);
 app.use('/api/help', helpTopicsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

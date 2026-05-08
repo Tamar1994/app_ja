@@ -39,7 +39,6 @@ export default function RequestServiceScreen({ navigation }) {
   });
   const [estimate, setEstimate] = useState(null);
   const [loadingEstimate, setLoadingEstimate] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
 
   function getTomorrow() {
@@ -116,23 +115,16 @@ export default function RequestServiceScreen({ navigation }) {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!address.street || !address.city) {
       Alert.alert('Atenção', 'Preencha o endereço do serviço.');
       return;
     }
-    setSubmitting(true);
-    try {
-      const { data } = await requestAPI.create({
-        hours, rooms, bathrooms, hasProducts, notes,
-        address, scheduledDate: getFinalScheduledDate(),
-      });
-      navigation.replace('Searching', { requestId: data.request._id });
-    } catch {
-      Alert.alert('Erro', 'Não foi possível enviar a solicitação. Tente novamente.');
-    } finally {
-      setSubmitting(false);
-    }
+    const requestData = {
+      hours, rooms, bathrooms, hasProducts, notes,
+      address, scheduledDate: getFinalScheduledDate(),
+    };
+    navigation.navigate('Payment', { requestData, estimate });
   };
 
   return (
@@ -462,13 +454,11 @@ export default function RequestServiceScreen({ navigation }) {
           <TouchableOpacity
             style={styles.btnNextWrap}
             onPress={handleSubmit}
-            disabled={submitting}
             activeOpacity={0.85}
           >
             <LinearGradient colors={colors.gradientPrimary} style={styles.btnNext}>
-              {submitting
-                ? <ActivityIndicator color={colors.white} />
-                : <Text style={styles.btnNextText}>Buscar profissional</Text>}
+              <Ionicons name="lock-closed" size={18} color={colors.white} />
+              <Text style={styles.btnNextText}>Ir para Pagamento</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}

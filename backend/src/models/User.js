@@ -112,6 +112,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Stripe Customer ID (para carteira de pagamentos)
+  stripeCustomerId: {
+    type: String,
+    default: null,
+  },
 }, { timestamps: true });
 
 // Índice geoespacial para busca por proximidade

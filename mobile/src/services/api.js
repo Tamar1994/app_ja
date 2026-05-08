@@ -78,4 +78,13 @@ export const supportChatAPI = {
   sendMessage: (id, text) => api.post(`/support/chats/${id}/message`, { text }),
 };
 
+// Pagamentos
+export const paymentAPI = {
+  createIntent: (requestData) => api.post('/payments/create-intent', requestData),
+  confirm: (paymentIntentId) => api.post('/payments/confirm', { paymentIntentId }),
+  getMethods: () => api.get('/payments/methods'),
+  deleteMethod: (id) => api.delete(`/payments/methods/${id}`),
+  setDefaultMethod: (id) => api.patch(`/payments/methods/${id}/default`),
+};
+
 export default api;

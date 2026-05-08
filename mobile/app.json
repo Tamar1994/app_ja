@@ -36,7 +36,15 @@
         "android.permission.ACCESS_NOTIFICATION_POLICY"
       ]
     },
+    "scheme": "ja-app",
     "plugins": [
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.ja.app",
+          "enableGooglePay": false
+        }
+      ],
       [
         "expo-notifications",
         {

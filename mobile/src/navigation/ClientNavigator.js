@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme';
 import HomeScreen from '../screens/client/HomeScreen';
 import RequestServiceScreen from '../screens/client/RequestServiceScreen';
+import PaymentScreen from '../screens/client/PaymentScreen';
 import SearchingScreen from '../screens/client/SearchingScreen';
 import TrackingScreen from '../screens/client/TrackingScreen';
 import HistoryScreen from '../screens/client/HistoryScreen';
@@ -15,6 +16,7 @@ import ReviewScreen from '../screens/client/ReviewScreen';
 import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ProfessionalFoundScreen from '../screens/client/ProfessionalFoundScreen';
+import WalletScreen from '../screens/client/WalletScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -24,10 +26,12 @@ function HomeStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="RequestService" component={RequestServiceScreen} />
+      <Stack.Screen name="Payment" component={PaymentScreen} />
       <Stack.Screen name="Searching" component={SearchingScreen} />
       <Stack.Screen name="ProfessionalFound" component={ProfessionalFoundScreen} />
       <Stack.Screen name="Tracking" component={TrackingScreen} />
       <Stack.Screen name="Review" component={ReviewScreen} />
+      <Stack.Screen name="Wallet" component={WalletScreen} />
     </Stack.Navigator>
   );
 }
