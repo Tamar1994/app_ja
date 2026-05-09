@@ -16,6 +16,10 @@ const serviceRequestSchema = new mongoose.Schema({
     enum: ['diarista'],
     default: 'diarista',
   },
+  serviceTypeSlug: {
+    type: String,
+    default: null,
+  },
   status: {
     type: String,
     enum: ['searching', 'accepted', 'in_progress', 'completed', 'cancelled'],

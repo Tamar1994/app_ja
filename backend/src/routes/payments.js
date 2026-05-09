@@ -56,9 +56,16 @@ async function getOrCreateCustomer(user) {
   return customer.id;
 }
 
-async function calculatePricing(hours, hasProducts) {
+async function calculatePricing(hours, hasProducts, serviceTypeSlug = null) {
   const cfg = await PricingConfig.getSingleton();
-  let pricePerHour = cfg.basePricePerHour;
+  const serviceBasePrices = cfg.serviceBasePrices instanceof Map
+    ? Object.fromEntries(cfg.serviceBasePrices)
+    : (cfg.serviceBasePrices || {});
+  const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
+    ? Number(serviceBasePrices[serviceTypeSlug])
+    : null;
+
+  let pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
   if (!hasProducts) pricePerHour += cfg.productsSurcharge;
   const estimated = pricePerHour * hours;
   const platformFee = (estimated * cfg.platformFeePercent) / 100;
@@ -74,10 +81,12 @@ async function createRequestFromIntent(intent, io) {
   const m = intent.metadata;
   const address = JSON.parse(m.address);
   const hasProducts = m.hasProducts === 'true';
-  const { pricePerHour, estimated, platformFee } = await calculatePricing(parseInt(m.hours), hasProducts);
+  const serviceTypeSlug = m.serviceTypeSlug || null;
+  const { pricePerHour, estimated, platformFee } = await calculatePricing(parseInt(m.hours), hasProducts, serviceTypeSlug);
 
   const request = await ServiceRequest.create({
     client: m.clientId,
+    serviceTypeSlug,
     details: {
       hours: parseInt(m.hours),
       rooms: parseInt(m.rooms),
@@ -109,13 +118,13 @@ router.post('/create-intent', auth, async (req, res) => {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
 
-  const { hours, hasProducts, rooms, bathrooms, notes, address, scheduledDate } = req.body;
+  const { hours, hasProducts, rooms, bathrooms, notes, address, scheduledDate, serviceTypeSlug } = req.body;
   if (!hours || !address?.street || !address?.city || !scheduledDate) {
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
   try {
-    const { amountCents, estimated } = await calculatePricing(hours, !!hasProducts);
+    const { amountCents, estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
     const user = await User.findById(req.user._id);
     const stripe = await getStripe();
     const customerId = await getOrCreateCustomer(user);
@@ -148,6 +157,7 @@ router.post('/create-intent', auth, async (req, res) => {
           bathrooms: String(bathrooms || 1),
           notes: notes || '',
           scheduledDate,
+          serviceTypeSlug: serviceTypeSlug || '',
           address: JSON.stringify(address),
         },
       }),

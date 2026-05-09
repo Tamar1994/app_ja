@@ -40,8 +40,8 @@ export const userAPI = {
 
 // Solicitações de serviço
 export const requestAPI = {
-  estimate: (hours, hasProducts) =>
-    api.post('/requests/estimate', { hours, hasProducts }),
+  estimate: (hours, hasProducts, serviceTypeSlug = null) =>
+    api.post('/requests/estimate', { hours, hasProducts, serviceTypeSlug }),
   create: (data) => api.post('/requests', data),
   list: () => api.get('/requests'),
   getById: (id) => api.get(`/requests/${id}`),

@@ -570,10 +570,26 @@ router.get('/pricing', adminAuth, async (req, res) => {
 
 // PATCH /api/admin/pricing
 router.patch('/pricing', adminAuth, async (req, res) => {
-  const { basePricePerHour, platformFeePercent, productsSurcharge, minHours, maxHours, hoursOptions } = req.body;
+  const {
+    basePricePerHour,
+    serviceBasePrices,
+    platformFeePercent,
+    productsSurcharge,
+    minHours,
+    maxHours,
+    hoursOptions,
+  } = req.body;
   try {
     const config = await PricingConfig.getSingleton();
     if (basePricePerHour !== undefined) config.basePricePerHour = basePricePerHour;
+    if (serviceBasePrices !== undefined && typeof serviceBasePrices === 'object' && serviceBasePrices !== null) {
+      const cleanMap = {};
+      Object.entries(serviceBasePrices).forEach(([slug, value]) => {
+        const n = Number(value);
+        if (!Number.isNaN(n) && n > 0) cleanMap[slug] = n;
+      });
+      config.serviceBasePrices = cleanMap;
+    }
     if (platformFeePercent !== undefined) config.platformFeePercent = platformFeePercent;
     if (productsSurcharge !== undefined) config.productsSurcharge = productsSurcharge;
     if (minHours !== undefined) config.minHours = minHours;

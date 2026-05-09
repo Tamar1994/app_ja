@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 // Documento singleton — sempre um único registro
 const pricingConfigSchema = new mongoose.Schema({
   basePricePerHour: { type: Number, required: true, default: 35 },
+  serviceBasePrices: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
   platformFeePercent: { type: Number, required: true, default: 15 },
   productsSurcharge: { type: Number, required: true, default: 5 }, // R$/h quando profissional traz produtos
   minHours: { type: Number, required: true, default: 2 },

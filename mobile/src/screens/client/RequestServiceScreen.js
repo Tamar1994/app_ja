@@ -78,7 +78,7 @@ export default function RequestServiceScreen({ navigation, route }) {
   const fetchEstimate = async () => {
     setLoadingEstimate(true);
     try {
-      const { data } = await requestAPI.estimate(hours, hasProducts);
+      const { data } = await requestAPI.estimate(hours, hasProducts, serviceType?.slug || null);
       setEstimate(data);
     } catch {
       // ignora erro de estimativa
@@ -124,6 +124,7 @@ export default function RequestServiceScreen({ navigation, route }) {
     const requestData = {
       hours, rooms, bathrooms, hasProducts, notes,
       address, scheduledDate: getFinalScheduledDate(),
+      serviceTypeSlug: serviceType?.slug || null,
     };
     navigation.navigate('Payment', { requestData, estimate });
   };

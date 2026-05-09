@@ -12,17 +12,32 @@ const router = express.Router();
 
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
-  const { hours, hasProducts } = req.body;
+  const { hours, hasProducts, serviceTypeSlug } = req.body;
   try {
     const cfg = await PricingConfig.getSingleton();
     if (!hours || hours < cfg.minHours || hours > cfg.maxHours) {
       return res.status(400).json({ message: `Horas devem ser entre ${cfg.minHours} e ${cfg.maxHours}` });
     }
-    let pricePerHour = cfg.basePricePerHour;
+    const serviceBasePrices = cfg.serviceBasePrices instanceof Map
+      ? Object.fromEntries(cfg.serviceBasePrices)
+      : (cfg.serviceBasePrices || {});
+    const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
+      ? Number(serviceBasePrices[serviceTypeSlug])
+      : null;
+
+    let pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
     if (!hasProducts) pricePerHour += cfg.productsSurcharge;
     const estimated = pricePerHour * hours;
     const platformFee = (estimated * cfg.platformFeePercent) / 100;
-    res.json({ pricePerHour, hours, estimated, platformFee, total: estimated });
+    res.json({
+      pricePerHour,
+      hours,
+      estimated,
+      platformFee,
+      total: estimated,
+      serviceTypeSlug: serviceTypeSlug || null,
+      usedServiceBasePrice: Number.isFinite(serviceBase),
+    });
   } catch {
     res.status(500).json({ message: 'Erro ao calcular estimativa' });
   }
@@ -44,12 +59,18 @@ router.post('/', auth, [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { hours, rooms, bathrooms, hasProducts, notes, address, scheduledDate } = req.body;
+  const { hours, rooms, bathrooms, hasProducts, notes, address, scheduledDate, serviceTypeSlug } = req.body;
 
   let pricePerHour, estimated, platformFee;
   try {
     const cfg = await PricingConfig.getSingleton();
-    pricePerHour = cfg.basePricePerHour;
+    const serviceBasePrices = cfg.serviceBasePrices instanceof Map
+      ? Object.fromEntries(cfg.serviceBasePrices)
+      : (cfg.serviceBasePrices || {});
+    const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
+      ? Number(serviceBasePrices[serviceTypeSlug])
+      : null;
+    pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
     if (!hasProducts) pricePerHour += cfg.productsSurcharge;
     estimated = pricePerHour * hours;
     platformFee = (estimated * cfg.platformFeePercent) / 100;
@@ -63,6 +84,7 @@ router.post('/', auth, [
   try {
     const request = await ServiceRequest.create({
       client: req.user._id,
+      serviceTypeSlug: serviceTypeSlug || null,
       details: { hours, rooms, bathrooms, hasProducts, notes, scheduledDate },
       address,
       pricing: {
