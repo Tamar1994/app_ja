@@ -84,11 +84,18 @@ export const supportChatAPI = {
 
 // Pagamentos
 export const paymentAPI = {
+  preview: (requestData, couponCodes = []) =>
+    api.post('/payments/preview', { ...requestData, couponCodes }),
   createIntent: (requestData) => api.post('/payments/create-intent', requestData),
   confirm: (paymentIntentId) => api.post('/payments/confirm', { paymentIntentId }),
   getMethods: () => api.get('/payments/methods'),
   deleteMethod: (id) => api.delete(`/payments/methods/${id}`),
   setDefaultMethod: (id) => api.patch(`/payments/methods/${id}/default`),
+};
+
+export const couponAPI = {
+  myWallet: () => api.get('/coupons/my'),
+  redeem: (code) => api.post('/coupons/redeem', { code }),
 };
 
 export const serviceTypeAPI = {

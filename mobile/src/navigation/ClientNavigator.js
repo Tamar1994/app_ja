@@ -20,6 +20,7 @@ import ProfessionalFoundScreen from '../screens/client/ProfessionalFoundScreen';
 import WalletScreen from '../screens/client/WalletScreen';
 import SecurityScreen from '../screens/shared/SecurityScreen';
 import TermsScreen from '../screens/shared/TermsScreen';
+import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -35,6 +36,7 @@ function HomeStack() {
       <Stack.Screen name="Tracking" component={TrackingScreen} />
       <Stack.Screen name="Review" component={ReviewScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
       <Stack.Screen name="Security" component={SecurityScreen} />
     </Stack.Navigator>
   );
@@ -60,6 +62,7 @@ export default function ClientNavigator() {
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="Security" component={SecurityScreen} />
         <Stack.Screen name="Terms" component={TermsScreen} />
+        <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
         <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       </Stack.Navigator>
     );

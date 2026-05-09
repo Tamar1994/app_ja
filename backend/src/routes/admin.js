@@ -9,9 +9,13 @@ const HelpTopic = require('../models/HelpTopic');
 const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
 const TermsOfUse = require('../models/TermsOfUse');
+const Coupon = require('../models/Coupon');
+const CouponClaim = require('../models/CouponClaim');
+const CouponRedemption = require('../models/CouponRedemption');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
+const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
 
 const router = express.Router();
 
@@ -668,6 +672,184 @@ router.patch('/terms', adminAuth, async (req, res) => {
     res.json({ message: 'Termos atualizados!', updatedAt: terms.updatedAt });
   } catch {
     res.status(500).json({ message: 'Erro ao salvar termos' });
+  }
+});
+
+// ── CUPONS DE DESCONTO ────────────────────────────────────────────
+// GET /api/admin/coupons
+router.get('/coupons', adminAuth, async (req, res) => {
+  try {
+    const coupons = await Coupon.find()
+      .sort({ createdAt: -1 })
+      .populate('specificUsers', 'name email userType');
+
+    const couponIds = coupons.map((c) => c._id);
+    const [redemptions, claims] = await Promise.all([
+      CouponRedemption.aggregate([
+        { $match: { coupon: { $in: couponIds } } },
+        { $group: { _id: '$coupon', totalUsed: { $sum: 1 }, totalDiscount: { $sum: '$discountAmount' } } },
+      ]),
+      CouponClaim.aggregate([
+        { $match: { coupon: { $in: couponIds } } },
+        { $group: { _id: '$coupon', totalClaimed: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const usageByCoupon = new Map(redemptions.map((r) => [r._id.toString(), r]));
+    const claimsByCoupon = new Map(claims.map((r) => [r._id.toString(), r]));
+
+    res.json({
+      coupons: coupons.map((coupon) => {
+        const usage = usageByCoupon.get(coupon._id.toString()) || { totalUsed: 0, totalDiscount: 0 };
+        const claim = claimsByCoupon.get(coupon._id.toString()) || { totalClaimed: 0 };
+        return {
+          ...coupon.toObject(),
+          metrics: {
+            totalUsed: usage.totalUsed,
+            totalDiscount: usage.totalDiscount,
+            totalClaimed: claim.totalClaimed,
+          },
+        };
+      }),
+    });
+  } catch {
+    res.status(500).json({ message: 'Erro ao listar cupons' });
+  }
+});
+
+// POST /api/admin/coupons
+router.post('/coupons', adminAuth, async (req, res) => {
+  const {
+    title,
+    description,
+    code,
+    autoCode,
+    discountType,
+    discountValue,
+    maxDiscount,
+    minOrderValue,
+    maxTotalUses,
+    maxUsesPerUser,
+    stackable,
+    startsAt,
+    endsAt,
+    distributionType,
+    specificUsers,
+    isActive,
+  } = req.body;
+
+  if (!title || !discountType || !Number.isFinite(Number(discountValue))) {
+    return res.status(400).json({ message: 'Campos obrigatórios: título, tipo de desconto e valor' });
+  }
+
+  try {
+    const normalizedCode = autoCode || !code
+      ? generateCouponCode('JA')
+      : normalizeCouponCode(code);
+
+    if (!normalizedCode) {
+      return res.status(400).json({ message: 'Código inválido' });
+    }
+
+    const exists = await Coupon.findOne({ code: normalizedCode });
+    if (exists) return res.status(400).json({ message: 'Já existe um cupom com esse código' });
+
+    const coupon = await Coupon.create({
+      title,
+      description,
+      code: normalizedCode,
+      discountType,
+      discountValue: Number(discountValue),
+      maxDiscount: maxDiscount === null || maxDiscount === undefined || maxDiscount === '' ? null : Number(maxDiscount),
+      minOrderValue: minOrderValue === null || minOrderValue === undefined || minOrderValue === '' ? 0 : Number(minOrderValue),
+      maxTotalUses: maxTotalUses === null || maxTotalUses === undefined || maxTotalUses === '' ? null : Number(maxTotalUses),
+      maxUsesPerUser: maxUsesPerUser === null || maxUsesPerUser === undefined || maxUsesPerUser === '' ? 1 : Number(maxUsesPerUser),
+      stackable: !!stackable,
+      startsAt: startsAt || null,
+      endsAt: endsAt || null,
+      distributionType: distributionType || 'none',
+      specificUsers: Array.isArray(specificUsers) ? specificUsers : [],
+      isActive: isActive !== false,
+      createdBy: req.admin?.name || 'Admin',
+    });
+
+    res.status(201).json({ message: 'Cupom criado com sucesso', coupon });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ message: 'Código de cupom já existe' });
+    }
+    res.status(500).json({ message: 'Erro ao criar cupom' });
+  }
+});
+
+// PATCH /api/admin/coupons/:id
+router.patch('/coupons/:id', adminAuth, async (req, res) => {
+  try {
+    const updates = { ...req.body };
+    if (updates.code) updates.code = normalizeCouponCode(updates.code);
+    if (updates.discountValue !== undefined) updates.discountValue = Number(updates.discountValue);
+    if (updates.maxDiscount !== undefined && updates.maxDiscount !== null && updates.maxDiscount !== '') updates.maxDiscount = Number(updates.maxDiscount);
+    if (updates.minOrderValue !== undefined) updates.minOrderValue = Number(updates.minOrderValue || 0);
+    if (updates.maxTotalUses !== undefined && updates.maxTotalUses !== null && updates.maxTotalUses !== '') updates.maxTotalUses = Number(updates.maxTotalUses);
+    if (updates.maxUsesPerUser !== undefined && updates.maxUsesPerUser !== null && updates.maxUsesPerUser !== '') updates.maxUsesPerUser = Number(updates.maxUsesPerUser);
+
+    const coupon = await Coupon.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    if (!coupon) return res.status(404).json({ message: 'Cupom não encontrado' });
+
+    res.json({ message: 'Cupom atualizado', coupon });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ message: 'Código de cupom já existe' });
+    }
+    res.status(500).json({ message: 'Erro ao atualizar cupom' });
+  }
+});
+
+// PATCH /api/admin/coupons/:id/distribute
+router.patch('/coupons/:id/distribute', adminAuth, async (req, res) => {
+  const { distributionType, userIds } = req.body;
+  if (!distributionType || !['none', 'all', 'clients', 'professionals', 'specific'].includes(distributionType)) {
+    return res.status(400).json({ message: 'distributionType inválido' });
+  }
+  if (distributionType === 'specific' && (!Array.isArray(userIds) || userIds.length === 0)) {
+    return res.status(400).json({ message: 'Informe os usuários para distribuição específica' });
+  }
+
+  try {
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) return res.status(404).json({ message: 'Cupom não encontrado' });
+
+    coupon.distributionType = distributionType;
+    coupon.specificUsers = distributionType === 'specific' ? userIds : [];
+    await coupon.save();
+
+    if (distributionType === 'specific') {
+      const ops = userIds.map((uid) => ({
+        updateOne: {
+          filter: { coupon: coupon._id, user: uid },
+          update: { $setOnInsert: { claimedVia: 'distribution' } },
+          upsert: true,
+        },
+      }));
+      if (ops.length) await CouponClaim.bulkWrite(ops, { ordered: false });
+    }
+
+    res.json({ message: 'Distribuição de cupom atualizada', coupon });
+  } catch {
+    res.status(500).json({ message: 'Erro ao distribuir cupom' });
+  }
+});
+
+// PATCH /api/admin/coupons/:id/toggle
+router.patch('/coupons/:id/toggle', adminAuth, async (req, res) => {
+  try {
+    const coupon = await Coupon.findById(req.params.id);
+    if (!coupon) return res.status(404).json({ message: 'Cupom não encontrado' });
+    coupon.isActive = !coupon.isActive;
+    await coupon.save();
+    res.json({ message: coupon.isActive ? 'Cupom ativado' : 'Cupom desativado', coupon });
+  } catch {
+    res.status(500).json({ message: 'Erro ao alterar status do cupom' });
   }
 });
 

@@ -12,6 +12,7 @@ const serviceTypesRoutes = require('./routes/serviceTypes');
 const helpTopicsRoutes = require('./routes/helpTopics');
 const supportRoutes = require('./routes/support');
 const paymentRoutes = require('./routes/payments');
+const couponRoutes = require('./routes/coupons');
 const TermsOfUse = require('./models/TermsOfUse');
 
 const app = express();
@@ -39,6 +40,7 @@ app.use('/api/service-types', serviceTypesRoutes);
 app.use('/api/help', helpTopicsRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/coupons', couponRoutes);
 
 // Termos de uso — público
 app.get('/api/terms', async (req, res) => {

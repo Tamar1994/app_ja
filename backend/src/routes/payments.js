@@ -2,9 +2,12 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
+const Coupon = require('../models/Coupon');
+const CouponRedemption = require('../models/CouponRedemption');
 const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
+const { resolveCouponsForCheckout } = require('../services/couponService');
 
 const router = express.Router();
 
@@ -72,6 +75,21 @@ async function calculatePricing(hours, hasProducts, serviceTypeSlug = null) {
   return { pricePerHour, estimated, platformFee, amountCents: Math.round(estimated * 100) };
 }
 
+function parseCouponMeta(rawCodes, rawDiscounts) {
+  const codes = String(rawCodes || '')
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const discounts = String(rawDiscounts || '')
+    .split(',')
+    .map((d) => Number(d));
+
+  return codes.map((code, idx) => ({
+    code,
+    discountAmount: Number.isFinite(discounts[idx]) ? discounts[idx] : 0,
+  }));
+}
+
 // Cria o ServiceRequest a partir dos metadados do PaymentIntent (idempotente)
 async function createRequestFromIntent(intent, io) {
   const existing = await ServiceRequest.findOne({ 'payment.transactionId': intent.id });
@@ -83,6 +101,11 @@ async function createRequestFromIntent(intent, io) {
   const hasProducts = m.hasProducts === 'true';
   const serviceTypeSlug = m.serviceTypeSlug || null;
   const { pricePerHour, estimated, platformFee } = await calculatePricing(parseInt(m.hours), hasProducts, serviceTypeSlug);
+  const couponsMeta = parseCouponMeta(m.couponCodes, m.couponDiscounts);
+  const discountTotal = couponsMeta.reduce((sum, c) => sum + Number(c.discountAmount || 0), 0);
+  const finalEstimated = Math.max(0, estimated - discountTotal);
+  const couponDocs = await Coupon.find({ code: { $in: couponsMeta.map((c) => c.code) } }).select('_id code');
+  const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
 
   const request = await ServiceRequest.create({
     client: m.clientId,
@@ -96,7 +119,13 @@ async function createRequestFromIntent(intent, io) {
       scheduledDate: m.scheduledDate,
     },
     address,
-    pricing: { pricePerHour, estimated, platformFee },
+    pricing: {
+      pricePerHour,
+      estimated: finalEstimated,
+      discountTotal,
+      appliedCoupons: couponsMeta.map((c) => c.code),
+      platformFee,
+    },
     payment: {
       status: 'paid',
       method: intent.payment_method_types?.[0] || 'card',
@@ -104,6 +133,30 @@ async function createRequestFromIntent(intent, io) {
       paidAt: new Date(),
     },
   });
+
+  if (couponsMeta.length) {
+    const redemptions = couponsMeta
+      .filter((coupon) => couponByCode.has(coupon.code))
+      .map((coupon) => ({
+      updateOne: {
+        filter: { paymentIntentId: intent.id, coupon: couponByCode.get(coupon.code)._id },
+        update: {
+          $setOnInsert: {
+            coupon: couponByCode.get(coupon.code)._id,
+            user: m.clientId,
+            serviceRequest: request._id,
+            paymentIntentId: intent.id,
+            couponCodeSnapshot: coupon.code,
+            discountAmount: coupon.discountAmount,
+          },
+        },
+        upsert: true,
+      },
+    }));
+    if (redemptions.length) {
+      await CouponRedemption.bulkWrite(redemptions, { ordered: false });
+    }
+  }
 
   if (io) dispatchToNextProfessional(request._id, io);
   return request;
@@ -118,13 +171,30 @@ router.post('/create-intent', auth, async (req, res) => {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
 
-  const { hours, hasProducts, rooms, bathrooms, notes, address, scheduledDate, serviceTypeSlug } = req.body;
+  const {
+    hours,
+    hasProducts,
+    rooms,
+    bathrooms,
+    notes,
+    address,
+    scheduledDate,
+    serviceTypeSlug,
+    couponCodes,
+  } = req.body;
   if (!hours || !address?.street || !address?.city || !scheduledDate) {
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
   try {
     const { amountCents, estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
+    const checkout = await resolveCouponsForCheckout({
+      couponCodes,
+      user: req.user,
+      orderSubtotal: estimated,
+    });
+    const finalAmount = checkout.pricing.finalTotal;
+    const finalAmountCents = Math.round(finalAmount * 100);
     const user = await User.findById(req.user._id);
     const stripe = await getStripe();
     const customerId = await getOrCreateCustomer(user);
@@ -142,7 +212,7 @@ router.post('/create-intent', auth, async (req, res) => {
 
     const [intent, ephemeralKey] = await Promise.all([
       stripe.paymentIntents.create({
-        amount: amountCents,
+        amount: finalAmountCents,
         currency: 'brl',
         customer: customerId,
         automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
@@ -158,6 +228,8 @@ router.post('/create-intent', auth, async (req, res) => {
           notes: notes || '',
           scheduledDate,
           serviceTypeSlug: serviceTypeSlug || '',
+          couponCodes: checkout.pricing.appliedCoupons.map((c) => c.code).join(','),
+          couponDiscounts: checkout.pricing.appliedCoupons.map((c) => String(c.discountAmount)).join(','),
           address: JSON.stringify(address),
         },
       }),
@@ -172,11 +244,45 @@ router.post('/create-intent', auth, async (req, res) => {
       paymentIntentId: intent.id,
       ephemeralKey: ephemeralKey.secret,
       customerId,
-      amount: estimated,
+      amount: finalAmount,
+      subtotal: estimated,
+      discountTotal: checkout.pricing.totalDiscount,
+      appliedCoupons: checkout.pricing.appliedCoupons,
+      rejectedCoupons: checkout.rejectedCoupons,
     });
   } catch (err) {
     console.error('Stripe create-intent error:', err);
     res.status(500).json({ message: 'Erro ao iniciar pagamento: ' + err.message });
+  }
+});
+
+// POST /api/payments/preview
+// Pré-visualiza o total com cupons antes de abrir o Payment Sheet
+router.post('/preview', auth, async (req, res) => {
+  if (req.user.userType !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem simular pagamento' });
+  }
+
+  const { hours, hasProducts, serviceTypeSlug, couponCodes } = req.body;
+  if (!hours) return res.status(400).json({ message: 'hours é obrigatório' });
+
+  try {
+    const { estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
+    const checkout = await resolveCouponsForCheckout({
+      couponCodes,
+      user: req.user,
+      orderSubtotal: estimated,
+    });
+
+    res.json({
+      subtotal: estimated,
+      discountTotal: checkout.pricing.totalDiscount,
+      total: checkout.pricing.finalTotal,
+      appliedCoupons: checkout.pricing.appliedCoupons,
+      rejectedCoupons: checkout.rejectedCoupons,
+    });
+  } catch {
+    res.status(500).json({ message: 'Erro ao simular pagamento com cupons' });
   }
 });
 

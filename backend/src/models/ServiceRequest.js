@@ -48,6 +48,8 @@ const serviceRequestSchema = new mongoose.Schema({
   pricing: {
     pricePerHour: { type: Number, required: true },
     estimated: { type: Number, required: true },
+    discountTotal: { type: Number, default: 0 },
+    appliedCoupons: [{ type: String }],
     final: { type: Number, default: null },
     platformFee: { type: Number, default: 0 }, // taxa da plataforma (%)
   },

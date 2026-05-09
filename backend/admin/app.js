@@ -156,6 +156,9 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='precos'?'active':''}" onclick="navTo('precos')">
             <span class="icon">💰</span> Configurar Preços
           </div>
+          <div class="nav-item ${currentPage==='cupons'?'active':''}" onclick="navTo('cupons')">
+            <span class="icon">🎟️</span> Cupons
+          </div>
           <div class="nav-item ${currentPage==='pagamentos'?'active':''}" onclick="navTo('pagamentos')">
             <span class="icon">💳</span> Pagamentos
           </div>
@@ -213,7 +216,7 @@ const navTo = (page) => {
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const items = document.querySelectorAll('.nav-item');
-  const idx = ['dashboard','approvals','users','suporte','ajuda','termos','precos','pagamentos','service-types','admins'].indexOf(page);
+  const idx = ['dashboard','approvals','users','suporte','ajuda','termos','precos','cupons','pagamentos','service-types','admins'].indexOf(page);
   if (items[idx]) items[idx].classList.add('active');
   document.getElementById('page-title').textContent = {
     dashboard: 'Dashboard',
@@ -223,6 +226,7 @@ const navTo = (page) => {
     ajuda: 'Central de Ajuda',
     termos: 'Termos de Uso',
     precos: 'Configuração de Preços',
+    cupons: 'Cupons de Desconto',
     pagamentos: 'Pagamentos & Stripe',
     'service-types': 'Profissões e Serviços',
     admins: 'Equipe Admin',
@@ -231,7 +235,7 @@ const navTo = (page) => {
 };
 
 const renderPage = () => {
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, pagamentos: renderPayments, 'service-types': renderServiceTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, 'service-types': renderServiceTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -1158,6 +1162,300 @@ const savePricing = async () => {
     });
     showAlert('Configurações salvas com sucesso!', 'success');
   } catch (err) { showAlert(err.message); }
+};
+
+// ── CUPONS ─────────────────────────────────────────────────────────
+const fmtMoney = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+
+const couponDiscountLabel = (c) => {
+  if (c.discountType === 'percent') {
+    const cap = c.maxDiscount ? ` (máx. ${fmtMoney(c.maxDiscount)})` : '';
+    return `${c.discountValue}%${cap}`;
+  }
+  return fmtMoney(c.discountValue);
+};
+
+const distributionLabel = (c) => {
+  const map = {
+    none: 'Somente por código',
+    all: 'Todos os usuários',
+    clients: 'Apenas clientes',
+    professionals: 'Apenas profissionais',
+    specific: `Usuários específicos (${(c.specificUsers || []).length})`,
+  };
+  return map[c.distributionType] || c.distributionType;
+};
+
+const renderCoupons = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const [{ coupons }, usersData] = await Promise.all([
+      req('GET', '/coupons'),
+      req('GET', '/users?limit=200'),
+    ]);
+    window.__couponUsers = usersData.users || [];
+
+    c.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px;flex-wrap:wrap;">
+        <p style="color:#7A84A0;font-size:13px;max-width:760px;">Crie cupons com limite total/por usuário, escolha distribuição (todos, clientes, profissionais ou específicos) e configure se o cupom pode ser combinado com outros.</p>
+        <button class="btn btn-primary" onclick="openNewCouponModal()">+ Novo Cupom</button>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header"><h2>Cupons cadastrados (${coupons.length})</h2></div>
+        <div class="table-wrap"><table>
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Desconto</th>
+              <th>Regra</th>
+              <th>Distribuição</th>
+              <th>Uso</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${coupons.length ? coupons.map(cp => `
+              <tr>
+                <td>
+                  <strong>${escHtml(cp.code)}</strong>
+                  <div style="font-size:12px;color:#7A84A0;margin-top:3px">${escHtml(cp.title)}</div>
+                </td>
+                <td>${escHtml(couponDiscountLabel(cp))}</td>
+                <td style="font-size:12px;color:#7A84A0">
+                  <div>Min: ${fmtMoney(cp.minOrderValue || 0)}</div>
+                  <div>${cp.stackable ? 'Combinável' : 'Não combinável'}</div>
+                </td>
+                <td>${escHtml(distributionLabel(cp))}</td>
+                <td style="font-size:12px;color:#7A84A0">
+                  <div>${cp.metrics?.totalUsed || 0} usos</div>
+                  <div>${cp.metrics?.totalClaimed || 0} na carteira</div>
+                </td>
+                <td>
+                  <span class="badge ${cp.isActive ? 'badge-approved' : 'badge-rejected'}">${cp.isActive ? 'Ativo' : 'Inativo'}</span>
+                </td>
+                <td class="td-actions">
+                  <button class="btn btn-ghost btn-sm" onclick='openEditCouponModal(${JSON.stringify(cp).replace(/'/g, '&#39;')})'>✏️</button>
+                  <button class="btn btn-primary btn-sm" onclick='openDistributeCouponModal(${JSON.stringify(cp).replace(/'/g, '&#39;')})'>🎯</button>
+                  <button class="btn btn-danger btn-sm" onclick="toggleCoupon('${cp._id}')">${cp.isActive ? 'Desativar' : 'Ativar'}</button>
+                </td>
+              </tr>
+            `).join('') : `<tr><td colspan="7" style="text-align:center;color:#7A84A0">Nenhum cupom criado ainda.</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>
+    `;
+  } catch (err) {
+    c.innerHTML = `<div class="empty-state"><p>${escHtml(err.message)}</p></div>`;
+  }
+};
+
+const openNewCouponModal = () => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-header"><h3>🎟️ Novo Cupom</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group" style="grid-column:1 / -1;"><label class="form-label">Título</label><input id="cp-title" class="form-input" placeholder="Ex: 20% OFF Primeira Limpeza" /></div>
+        <div class="form-group" style="grid-column:1 / -1;"><label class="form-label">Descrição</label><input id="cp-description" class="form-input" placeholder="Texto exibido na carteira" /></div>
+        <div class="form-group"><label class="form-label">Tipo de desconto</label>
+          <select id="cp-discount-type" class="form-select">
+            <option value="percent">Percentual (%)</option>
+            <option value="fixed">Valor fixo (R$)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Valor do desconto</label><input id="cp-discount-value" type="number" class="form-input" value="10" min="0" step="0.5" /></div>
+        <div class="form-group"><label class="form-label">Desconto máximo (R$)</label><input id="cp-max-discount" type="number" class="form-input" placeholder="Opcional" min="0" step="0.5" /></div>
+        <div class="form-group"><label class="form-label">Pedido mínimo (R$)</label><input id="cp-min-order" type="number" class="form-input" value="0" min="0" step="0.5" /></div>
+        <div class="form-group"><label class="form-label">Limite total de uso</label><input id="cp-max-total" type="number" class="form-input" placeholder="Opcional" min="1" step="1" /></div>
+        <div class="form-group"><label class="form-label">Limite por usuário</label><input id="cp-max-user" type="number" class="form-input" value="1" min="1" step="1" /></div>
+        <div class="form-group"><label class="form-label">Início (opcional)</label><input id="cp-start" type="datetime-local" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">Fim (opcional)</label><input id="cp-end" type="datetime-local" class="form-input" /></div>
+        <div class="form-group"><label class="form-label">Distribuição inicial</label>
+          <select id="cp-distribution" class="form-select">
+            <option value="none">Somente por código</option>
+            <option value="all">Todos os usuários</option>
+            <option value="clients">Clientes</option>
+            <option value="professionals">Profissionais</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:14px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cp-stackable" /> Pode combinar com outro cupom</label>
+        </div>
+        <div class="form-group"><label class="form-label">Código personalizado</label><input id="cp-code" class="form-input" placeholder="Ex: BEMVINDO20" /></div>
+        <div class="form-group" style="display:flex;align-items:flex-end;"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cp-auto-code" checked /> Gerar código automático</label></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="createCoupon()">Criar cupom</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+const createCoupon = async () => {
+  const payload = {
+    title: document.getElementById('cp-title').value.trim(),
+    description: document.getElementById('cp-description').value.trim(),
+    discountType: document.getElementById('cp-discount-type').value,
+    discountValue: parseFloat(document.getElementById('cp-discount-value').value),
+    maxDiscount: document.getElementById('cp-max-discount').value || null,
+    minOrderValue: parseFloat(document.getElementById('cp-min-order').value || '0'),
+    maxTotalUses: document.getElementById('cp-max-total').value || null,
+    maxUsesPerUser: parseInt(document.getElementById('cp-max-user').value || '1'),
+    startsAt: document.getElementById('cp-start').value || null,
+    endsAt: document.getElementById('cp-end').value || null,
+    distributionType: document.getElementById('cp-distribution').value,
+    stackable: document.getElementById('cp-stackable').checked,
+    autoCode: document.getElementById('cp-auto-code').checked,
+    code: document.getElementById('cp-code').value.trim(),
+  };
+
+  if (!payload.title || !Number.isFinite(payload.discountValue)) {
+    showAlert('Preencha título e valor de desconto.');
+    return;
+  }
+
+  try {
+    await req('POST', '/coupons', payload);
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Cupom criado com sucesso!', 'success');
+    renderCoupons();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const openEditCouponModal = (coupon) => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:680px;">
+      <div class="modal-header"><h3>✏️ Editar Cupom</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group" style="grid-column:1 / -1;"><label class="form-label">Título</label><input id="cpe-title" class="form-input" value="${escHtml(coupon.title)}" /></div>
+        <div class="form-group" style="grid-column:1 / -1;"><label class="form-label">Descrição</label><input id="cpe-description" class="form-input" value="${escHtml(coupon.description || '')}" /></div>
+        <div class="form-group"><label class="form-label">Código</label><input id="cpe-code" class="form-input" value="${escHtml(coupon.code)}" /></div>
+        <div class="form-group"><label class="form-label">Tipo</label>
+          <select id="cpe-discount-type" class="form-select">
+            <option value="percent" ${coupon.discountType === 'percent' ? 'selected' : ''}>Percentual</option>
+            <option value="fixed" ${coupon.discountType === 'fixed' ? 'selected' : ''}>Valor fixo</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Valor desconto</label><input id="cpe-discount-value" type="number" class="form-input" value="${coupon.discountValue}" /></div>
+        <div class="form-group"><label class="form-label">Máx. desconto</label><input id="cpe-max-discount" type="number" class="form-input" value="${coupon.maxDiscount || ''}" /></div>
+        <div class="form-group"><label class="form-label">Pedido mínimo</label><input id="cpe-min-order" type="number" class="form-input" value="${coupon.minOrderValue || 0}" /></div>
+        <div class="form-group"><label class="form-label">Limite total</label><input id="cpe-max-total" type="number" class="form-input" value="${coupon.maxTotalUses || ''}" /></div>
+        <div class="form-group"><label class="form-label">Limite por usuário</label><input id="cpe-max-user" type="number" class="form-input" value="${coupon.maxUsesPerUser || 1}" /></div>
+        <div class="form-group"><label class="form-label">Início</label><input id="cpe-start" type="datetime-local" class="form-input" value="${coupon.startsAt ? new Date(coupon.startsAt).toISOString().slice(0,16) : ''}" /></div>
+        <div class="form-group"><label class="form-label">Fim</label><input id="cpe-end" type="datetime-local" class="form-input" value="${coupon.endsAt ? new Date(coupon.endsAt).toISOString().slice(0,16) : ''}" /></div>
+        <div class="form-group" style="display:flex;align-items:flex-end;"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cpe-stackable" ${coupon.stackable ? 'checked' : ''} /> Pode combinar com outro cupom</label></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="updateCoupon('${coupon._id}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+const updateCoupon = async (id) => {
+  const payload = {
+    title: document.getElementById('cpe-title').value.trim(),
+    description: document.getElementById('cpe-description').value.trim(),
+    code: document.getElementById('cpe-code').value.trim(),
+    discountType: document.getElementById('cpe-discount-type').value,
+    discountValue: parseFloat(document.getElementById('cpe-discount-value').value),
+    maxDiscount: document.getElementById('cpe-max-discount').value || null,
+    minOrderValue: parseFloat(document.getElementById('cpe-min-order').value || '0'),
+    maxTotalUses: document.getElementById('cpe-max-total').value || null,
+    maxUsesPerUser: parseInt(document.getElementById('cpe-max-user').value || '1'),
+    startsAt: document.getElementById('cpe-start').value || null,
+    endsAt: document.getElementById('cpe-end').value || null,
+    stackable: document.getElementById('cpe-stackable').checked,
+  };
+  try {
+    await req('PATCH', `/coupons/${id}`, payload);
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Cupom atualizado!', 'success');
+    renderCoupons();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const openDistributeCouponModal = (coupon) => {
+  const users = window.__couponUsers || [];
+  const selectedSet = new Set((coupon.specificUsers || []).map((u) => (u._id || u).toString()));
+  const userRows = users.map((u) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:#B0B8D0;">
+      <input type="checkbox" class="cpd-user" value="${u._id}" ${selectedSet.has(u._id) ? 'checked' : ''} />
+      <span>${escHtml(u.name)} · ${escHtml(u.email)} (${u.userType})</span>
+    </label>
+  `).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:760px;">
+      <div class="modal-header"><h3>🎯 Distribuir Cupom ${escHtml(coupon.code)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label">Distribuição</label>
+          <select id="cpd-distribution" class="form-select" onchange="toggleSpecificUsersBlock(this.value)">
+            <option value="none" ${coupon.distributionType === 'none' ? 'selected' : ''}>Somente por código</option>
+            <option value="all" ${coupon.distributionType === 'all' ? 'selected' : ''}>Todos os usuários</option>
+            <option value="clients" ${coupon.distributionType === 'clients' ? 'selected' : ''}>Somente clientes</option>
+            <option value="professionals" ${coupon.distributionType === 'professionals' ? 'selected' : ''}>Somente profissionais</option>
+            <option value="specific" ${coupon.distributionType === 'specific' ? 'selected' : ''}>Usuários específicos</option>
+          </select>
+        </div>
+        <div id="cpd-specific-wrap" style="max-height:260px;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px;display:${coupon.distributionType === 'specific' ? 'block' : 'none'};">
+          ${userRows || '<p style="color:#7A84A0;">Nenhum usuário disponível.</p>'}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveCouponDistribution('${coupon._id}')">Salvar distribuição</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+const toggleSpecificUsersBlock = (distributionType) => {
+  const block = document.getElementById('cpd-specific-wrap');
+  if (!block) return;
+  block.style.display = distributionType === 'specific' ? 'block' : 'none';
+};
+
+const saveCouponDistribution = async (couponId) => {
+  const distributionType = document.getElementById('cpd-distribution').value;
+  const selectedUsers = Array.from(document.querySelectorAll('.cpd-user:checked')).map((el) => el.value);
+  if (distributionType === 'specific' && selectedUsers.length === 0) {
+    showAlert('Selecione pelo menos um usuário para distribuição específica.');
+    return;
+  }
+  try {
+    await req('PATCH', `/coupons/${couponId}/distribute`, { distributionType, userIds: selectedUsers });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Distribuição atualizada!', 'success');
+    renderCoupons();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const toggleCoupon = async (id) => {
+  try {
+    await req('PATCH', `/coupons/${id}/toggle`);
+    showAlert('Status do cupom atualizado.', 'success');
+    renderCoupons();
+  } catch (err) {
+    showAlert(err.message);
+  }
 };
 
 // ── ADMINS ─────────────────────────────────────────────────────────

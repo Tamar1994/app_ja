@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, StatusBar, ActivityIndicator, Alert,
+  SafeAreaView, StatusBar, ActivityIndicator, Alert, TextInput, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
-import { paymentAPI } from '../../services/api';
+import { couponAPI, paymentAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const BRAND_ICONS = {
@@ -29,22 +29,122 @@ export default function PaymentScreen({ navigation, route }) {
 
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
-  const [paymentIntentId, setPaymentIntentId] = useState(null);
   const [savedMethods, setSavedMethods] = useState([]);
+  const [walletCoupons, setWalletCoupons] = useState([]);
+  const [selectedCouponCodes, setSelectedCouponCodes] = useState([]);
+  const [couponInput, setCouponInput] = useState('');
+  const [redeemingCoupon, setRedeemingCoupon] = useState(false);
+  const [pricingPreview, setPricingPreview] = useState({
+    subtotal: estimate?.estimated || 0,
+    discountTotal: 0,
+    total: estimate?.estimated || 0,
+    appliedCoupons: [],
+    rejectedCoupons: [],
+  });
 
   const initializePayment = useCallback(async () => {
     try {
-      // Buscar savedMethods e criar intent em paralelo
-      const [intentRes, methodsRes] = await Promise.all([
-        paymentAPI.createIntent(requestData),
+      const [walletRes, methodsRes] = await Promise.all([
+        couponAPI.myWallet().catch(() => ({ data: { coupons: [] } })),
         paymentAPI.getMethods().catch(() => ({ data: { methods: [] } })),
       ]);
-
-      const { clientSecret, paymentIntentId: piId, ephemeralKey, customerId } = intentRes.data;
+      setWalletCoupons((walletRes.data.coupons || []).filter((c) => c.canUseNow));
       setSavedMethods(methodsRes.data.methods || []);
-      setPaymentIntentId(piId);
+    } catch (err) {
+      console.error('initializePayment error:', err);
+      Alert.alert('Erro', 'Não foi possível carregar o pagamento. Tente novamente.');
+      navigation.goBack();
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      const { error } = await initPaymentSheet({
+  useEffect(() => {
+    initializePayment();
+  }, []);
+
+  const refreshPreview = useCallback(async (couponCodes) => {
+    try {
+      const { data } = await paymentAPI.preview(requestData, couponCodes);
+      setPricingPreview({
+        subtotal: data.subtotal || 0,
+        discountTotal: data.discountTotal || 0,
+        total: data.total || 0,
+        appliedCoupons: data.appliedCoupons || [],
+        rejectedCoupons: data.rejectedCoupons || [],
+      });
+      return data;
+    } catch {
+      return null;
+    }
+  }, [requestData]);
+
+  useEffect(() => {
+    if (!loading) refreshPreview(selectedCouponCodes);
+  }, [selectedCouponCodes, loading, refreshPreview]);
+
+  const toggleCoupon = async (code) => {
+    const next = selectedCouponCodes.includes(code)
+      ? selectedCouponCodes.filter((c) => c !== code)
+      : [...selectedCouponCodes, code];
+    const data = await refreshPreview(next);
+    if (data?.rejectedCoupons?.some((r) => r.code === code)) {
+      const rejected = data.rejectedCoupons.find((r) => r.code === code);
+      Alert.alert('Cupom não aplicado', rejected?.reason || 'Este cupom não pode ser usado agora.');
+      return;
+    }
+    setSelectedCouponCodes(next);
+  };
+
+  const redeemCouponInPayment = async () => {
+    if (!couponInput.trim()) {
+      Alert.alert('Atenção', 'Digite um código de cupom.');
+      return;
+    }
+    setRedeemingCoupon(true);
+    try {
+      await couponAPI.redeem(couponInput.trim());
+      const wallet = await couponAPI.myWallet();
+      const nextWallet = (wallet.data.coupons || []).filter((c) => c.canUseNow);
+      setWalletCoupons(nextWallet);
+
+      const normalized = couponInput.trim().toUpperCase();
+      setCouponInput('');
+      if (nextWallet.some((c) => c.code === normalized)) {
+        const next = Array.from(new Set([...selectedCouponCodes, normalized]));
+        const data = await refreshPreview(next);
+        if (data?.rejectedCoupons?.some((r) => r.code === normalized)) {
+          const rejected = data.rejectedCoupons.find((r) => r.code === normalized);
+          Alert.alert('Cupom resgatado', `Cupom salvo, mas não aplicado agora: ${rejected?.reason || 'Regra do cupom'}`);
+        } else {
+          setSelectedCouponCodes(next);
+          Alert.alert('Cupom aplicado', 'Cupom resgatado e aplicado ao pagamento.');
+        }
+      } else {
+        Alert.alert('Cupom resgatado', 'Cupom salvo na carteira.');
+      }
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível resgatar esse cupom.');
+    } finally {
+      setRedeemingCoupon(false);
+    }
+  };
+
+  const handlePay = async () => {
+    setPaying(true);
+    try {
+      const { data: intentData } = await paymentAPI.createIntent({
+        ...requestData,
+        couponCodes: selectedCouponCodes,
+      });
+
+      if (intentData?.rejectedCoupons?.length) {
+        const lines = intentData.rejectedCoupons.map((r) => `${r.code}: ${r.reason}`).join('\n');
+        Alert.alert('Alguns cupons não foram aplicados', lines);
+      }
+
+      const { clientSecret, paymentIntentId, ephemeralKey, customerId } = intentData;
+      const { error: initError } = await initPaymentSheet({
         merchantDisplayName: 'Já!',
         customerId,
         customerEphemeralKeySecret: ephemeralKey,
@@ -69,26 +169,12 @@ export default function PaymentScreen({ navigation, route }) {
         },
       });
 
-      if (error) {
-        Alert.alert('Erro', 'Não foi possível inicializar o pagamento: ' + error.message);
-        navigation.goBack();
+      if (initError) {
+        Alert.alert('Erro', 'Não foi possível inicializar o pagamento: ' + initError.message);
+        setPaying(false);
+        return;
       }
-    } catch (err) {
-      console.error('initializePayment error:', err);
-      Alert.alert('Erro', 'Não foi possível carregar o pagamento. Tente novamente.');
-      navigation.goBack();
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  useEffect(() => {
-    initializePayment();
-  }, []);
-
-  const handlePay = async () => {
-    setPaying(true);
-    try {
       const { error } = await presentPaymentSheet();
 
       if (error) {
@@ -120,7 +206,9 @@ export default function PaymentScreen({ navigation, route }) {
   };
 
   const { hours, hasProducts, address } = requestData;
-  const total = estimate?.estimated || 0;
+  const subtotal = Number(pricingPreview?.subtotal || estimate?.estimated || 0);
+  const discountTotal = Number(pricingPreview?.discountTotal || 0);
+  const total = Number(pricingPreview?.total || estimate?.estimated || 0);
 
   if (loading) {
     return (
@@ -159,7 +247,7 @@ export default function PaymentScreen({ navigation, route }) {
         <View style={{ width: 38 }} />
       </LinearGradient>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 20 }}>
         {/* Resumo do pedido */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Resumo do pedido</Text>
@@ -203,6 +291,65 @@ export default function PaymentScreen({ navigation, route }) {
           </View>
         )}
 
+        {/* Cupons */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Cupons de desconto</Text>
+          <View style={styles.couponInputRow}>
+            <TextInput
+              value={couponInput}
+              onChangeText={setCouponInput}
+              autoCapitalize="characters"
+              placeholder="Digite um cupom"
+              placeholderTextColor={colors.textLight}
+              style={styles.couponInput}
+            />
+            <TouchableOpacity style={styles.couponRedeemBtn} onPress={redeemCouponInPayment} disabled={redeemingCoupon}>
+              {redeemingCoupon
+                ? <ActivityIndicator size="small" color={colors.white} />
+                : <Text style={styles.couponRedeemText}>Resgatar</Text>}
+            </TouchableOpacity>
+          </View>
+
+          {walletCoupons.length > 0 ? (
+            <View style={{ gap: 8 }}>
+              {walletCoupons.slice(0, 5).map((coupon) => {
+                const selected = selectedCouponCodes.includes(coupon.code);
+                return (
+                  <TouchableOpacity
+                    key={coupon.code}
+                    style={[styles.couponRow, selected && styles.couponRowActive]}
+                    onPress={() => toggleCoupon(coupon.code)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={selected ? 'checkbox-outline' : 'square-outline'}
+                      size={20}
+                      color={selected ? colors.primary : colors.textLight}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.couponCode}>{coupon.code}</Text>
+                      <Text style={styles.couponDesc}>{coupon.title}</Text>
+                      <Text style={[styles.couponStack, coupon.stackable ? styles.couponStackOk : styles.couponStackBlock]}>
+                        {coupon.stackable ? 'Combinável' : 'Não combinável'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={styles.noCouponText}>Sem cupons disponíveis na carteira.</Text>
+          )}
+
+          {pricingPreview.rejectedCoupons?.length > 0 && (
+            <View style={styles.rejectedWrap}>
+              {pricingPreview.rejectedCoupons.map((r) => (
+                <Text key={`${r.code}-${r.reason}`} style={styles.rejectedText}>• {r.code}: {r.reason}</Text>
+              ))}
+            </View>
+          )}
+        </View>
+
         {/* Métodos aceitos */}
         <View style={styles.methodsRow}>
           <View style={styles.methodChip}>
@@ -224,10 +371,22 @@ export default function PaymentScreen({ navigation, route }) {
           <Ionicons name="lock-closed" size={14} color={colors.success} />
           <Text style={styles.secureText}>Pagamento seguro via Stripe · Dados criptografados</Text>
         </View>
-      </View>
+      </ScrollView>
 
       {/* Footer com total + botão pagar */}
       <View style={styles.footer}>
+        {discountTotal > 0 && (
+          <View style={styles.totalRow}>
+            <Text style={styles.subtotalLabel}>Subtotal</Text>
+            <Text style={styles.subtotalValue}>R$ {subtotal.toFixed(2)}</Text>
+          </View>
+        )}
+        {discountTotal > 0 && (
+          <View style={styles.totalRow}>
+            <Text style={styles.discountLabel}>Desconto em cupons</Text>
+            <Text style={styles.discountValue}>- R$ {discountTotal.toFixed(2)}</Text>
+          </View>
+        )}
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total</Text>
           <Text style={styles.totalValue}>R$ {total.toFixed(2)}</Text>
@@ -297,6 +456,63 @@ const styles = StyleSheet.create({
   },
   defaultBadgeText: { fontSize: 11, fontWeight: '700', color: '#2E7D32' },
   savedCardsHint: { fontSize: 12, color: colors.textLight, marginTop: 4 },
+  couponInputRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
+  couponInput: {
+    flex: 1,
+    backgroundColor: '#F7F8FC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    color: colors.textPrimary,
+  },
+  couponRedeemBtn: {
+    minWidth: 94,
+    borderRadius: 10,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  couponRedeemText: { color: colors.white, fontWeight: '700', fontSize: 12 },
+  couponRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    padding: 10,
+  },
+  couponRowActive: {
+    borderColor: colors.primary,
+    backgroundColor: '#FFF6F0',
+  },
+  couponCode: { fontSize: 12, color: colors.textLight, fontWeight: '700' },
+  couponDesc: { fontSize: 13, color: colors.textPrimary, fontWeight: '600', marginTop: 1 },
+  couponStack: {
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: '700',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  couponStackOk: { color: '#1565C0', backgroundColor: '#E3F2FD' },
+  couponStackBlock: { color: '#C62828', backgroundColor: '#FFEBEE' },
+  noCouponText: { fontSize: 12, color: colors.textLight },
+  rejectedWrap: {
+    marginTop: 8,
+    borderRadius: 10,
+    backgroundColor: '#FFF3E0',
+    borderWidth: 1,
+    borderColor: '#FFE0B2',
+    padding: 8,
+    gap: 4,
+  },
+  rejectedText: { fontSize: 12, color: '#E65100' },
   methodsRow: { flexDirection: 'row', gap: 10 },
   methodChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -320,6 +536,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  subtotalLabel: { fontSize: 13, color: colors.textSecondary },
+  subtotalValue: { fontSize: 13, color: colors.textSecondary, textDecorationLine: 'line-through' },
+  discountLabel: { fontSize: 13, color: '#2E7D32', fontWeight: '600' },
+  discountValue: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
   totalLabel: { fontSize: 16, fontWeight: '600', color: colors.textSecondary },
   totalValue: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
   payBtnWrap: { borderRadius: borderRadius.lg, overflow: 'hidden' },

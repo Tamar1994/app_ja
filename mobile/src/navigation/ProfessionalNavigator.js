@@ -12,6 +12,7 @@ import EarningsScreen from '../screens/professional/EarningsScreen';
 import ProfileScreen from '../screens/professional/ProfileScreen';
 import SecurityScreen from '../screens/shared/SecurityScreen';
 import TermsScreen from '../screens/shared/TermsScreen';
+import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
 import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
 
@@ -33,6 +34,7 @@ function ProfileStack() {
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Security" component={SecurityScreen} />
       <Stack.Screen name="Terms" component={TermsScreen} />
+      <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
       <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       <Stack.Screen name="SupportChat" component={SupportChatScreen} />
     </Stack.Navigator>
