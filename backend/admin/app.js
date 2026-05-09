@@ -1186,6 +1186,85 @@ const distributionLabel = (c) => {
   return map[c.distributionType] || c.distributionType;
 };
 
+const renderCouponTableRows = (coupons) => {
+  if (!coupons.length) {
+    return `<tr><td colspan="7" style="text-align:center;color:#7A84A0">Nenhum cupom encontrado com os filtros atuais.</td></tr>`;
+  }
+
+  return coupons.map(cp => `
+    <tr>
+      <td>
+        <strong>${escHtml(cp.code)}</strong>
+        <div style="font-size:12px;color:#7A84A0;margin-top:3px">${escHtml(cp.title)}</div>
+      </td>
+      <td>${escHtml(couponDiscountLabel(cp))}</td>
+      <td style="font-size:12px;color:#7A84A0">
+        <div>Min: ${fmtMoney(cp.minOrderValue || 0)}</div>
+        <div>${cp.stackable ? 'Combinável' : 'Não combinável'}</div>
+      </td>
+      <td>${escHtml(distributionLabel(cp))}</td>
+      <td style="font-size:12px;color:#7A84A0">
+        <div>${cp.metrics?.totalUsed || 0} usos</div>
+        <div>${cp.metrics?.totalClaimed || 0} na carteira</div>
+      </td>
+      <td>
+        <span class="badge ${cp.isActive ? 'badge-approved' : 'badge-rejected'}">${cp.isActive ? 'Ativo' : 'Inativo'}</span>
+      </td>
+      <td class="td-actions">
+        <button class="btn btn-ghost btn-sm" onclick='openEditCouponModal(${JSON.stringify(cp).replace(/'/g, '&#39;')})'>✏️</button>
+        <button class="btn btn-primary btn-sm" onclick='openDistributeCouponModal(${JSON.stringify(cp).replace(/'/g, '&#39;')})'>🎯</button>
+        <button class="btn btn-danger btn-sm" onclick="toggleCoupon('${cp._id}')">${cp.isActive ? 'Desativar' : 'Ativar'}</button>
+      </td>
+    </tr>
+  `).join('');
+};
+
+const applyCouponFilters = () => {
+  const coupons = window.__couponList || [];
+  const search = (document.getElementById('coupon-search')?.value || '').trim().toLowerCase();
+  const status = document.getElementById('coupon-status-filter')?.value || 'all';
+  const distribution = document.getElementById('coupon-distribution-filter')?.value || '';
+  const discountType = document.getElementById('coupon-discount-filter')?.value || 'all';
+  const stacking = document.getElementById('coupon-stacking-filter')?.value || 'all';
+
+  const filtered = coupons.filter((coupon) => {
+    const matchesSearch = !search
+      || coupon.code?.toLowerCase().includes(search)
+      || coupon.title?.toLowerCase().includes(search)
+      || coupon.description?.toLowerCase().includes(search);
+    const matchesStatus = status === 'all'
+      || (status === 'active' && coupon.isActive)
+      || (status === 'inactive' && !coupon.isActive);
+    const matchesDistribution = !distribution || coupon.distributionType === distribution;
+    const matchesDiscountType = discountType === 'all' || coupon.discountType === discountType;
+    const matchesStacking = stacking === 'all'
+      || (stacking === 'stackable' && coupon.stackable)
+      || (stacking === 'single' && !coupon.stackable);
+
+    return matchesSearch && matchesStatus && matchesDistribution && matchesDiscountType && matchesStacking;
+  });
+
+  const tbody = document.getElementById('coupons-tbody');
+  const count = document.getElementById('coupon-filter-count');
+  if (tbody) tbody.innerHTML = renderCouponTableRows(filtered);
+  if (count) count.textContent = `${filtered.length} de ${coupons.length}`;
+};
+
+const resetCouponFilters = () => {
+  const defaults = {
+    'coupon-search': '',
+    'coupon-status-filter': 'all',
+    'coupon-distribution-filter': '',
+    'coupon-discount-filter': 'all',
+    'coupon-stacking-filter': 'all',
+  };
+  Object.entries(defaults).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  });
+  applyCouponFilters();
+};
+
 const renderCoupons = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
@@ -1195,6 +1274,7 @@ const renderCoupons = async () => {
       req('GET', '/users?limit=200'),
     ]);
     window.__couponUsers = usersData.users || [];
+    window.__couponList = coupons || [];
 
     c.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px;flex-wrap:wrap;">
@@ -1203,7 +1283,44 @@ const renderCoupons = async () => {
       </div>
 
       <div class="section-card">
-        <div class="section-header"><h2>Cupons cadastrados (${coupons.length})</h2></div>
+        <div class="section-header">
+          <h2>Filtros</h2>
+          <button class="btn btn-ghost btn-sm" onclick="resetCouponFilters()">Limpar</button>
+        </div>
+        <div style="padding:18px 22px;">
+          <div class="search-row" style="margin-bottom:0;">
+            <input id="coupon-search" class="form-input" placeholder="Buscar por código, título ou descrição" />
+            <select id="coupon-status-filter" class="form-select">
+              <option value="all">Todos status</option>
+              <option value="active">Ativos</option>
+              <option value="inactive">Inativos</option>
+            </select>
+            <select id="coupon-distribution-filter" class="form-select">
+              <option value="">Toda distribuição</option>
+              <option value="none">Somente código</option>
+              <option value="all">Todos os usuários</option>
+              <option value="clients">Clientes</option>
+              <option value="professionals">Profissionais</option>
+              <option value="specific">Específicos</option>
+            </select>
+            <select id="coupon-discount-filter" class="form-select">
+              <option value="all">Todo desconto</option>
+              <option value="percent">Percentual</option>
+              <option value="fixed">Valor fixo</option>
+            </select>
+            <select id="coupon-stacking-filter" class="form-select">
+              <option value="all">Toda regra</option>
+              <option value="stackable">Combinável</option>
+              <option value="single">Não combinável</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <h2>Cupons cadastrados (<span id="coupon-filter-count">${coupons.length} de ${coupons.length}</span>)</h2>
+        </div>
         <div class="table-wrap"><table>
           <thead>
             <tr>
@@ -1216,37 +1333,17 @@ const renderCoupons = async () => {
               <th>Ações</th>
             </tr>
           </thead>
-          <tbody>
-            ${coupons.length ? coupons.map(cp => `
-              <tr>
-                <td>
-                  <strong>${escHtml(cp.code)}</strong>
-                  <div style="font-size:12px;color:#7A84A0;margin-top:3px">${escHtml(cp.title)}</div>
-                </td>
-                <td>${escHtml(couponDiscountLabel(cp))}</td>
-                <td style="font-size:12px;color:#7A84A0">
-                  <div>Min: ${fmtMoney(cp.minOrderValue || 0)}</div>
-                  <div>${cp.stackable ? 'Combinável' : 'Não combinável'}</div>
-                </td>
-                <td>${escHtml(distributionLabel(cp))}</td>
-                <td style="font-size:12px;color:#7A84A0">
-                  <div>${cp.metrics?.totalUsed || 0} usos</div>
-                  <div>${cp.metrics?.totalClaimed || 0} na carteira</div>
-                </td>
-                <td>
-                  <span class="badge ${cp.isActive ? 'badge-approved' : 'badge-rejected'}">${cp.isActive ? 'Ativo' : 'Inativo'}</span>
-                </td>
-                <td class="td-actions">
-                  <button class="btn btn-ghost btn-sm" onclick='openEditCouponModal(${JSON.stringify(cp).replace(/'/g, '&#39;')})'>✏️</button>
-                  <button class="btn btn-primary btn-sm" onclick='openDistributeCouponModal(${JSON.stringify(cp).replace(/'/g, '&#39;')})'>🎯</button>
-                  <button class="btn btn-danger btn-sm" onclick="toggleCoupon('${cp._id}')">${cp.isActive ? 'Desativar' : 'Ativar'}</button>
-                </td>
-              </tr>
-            `).join('') : `<tr><td colspan="7" style="text-align:center;color:#7A84A0">Nenhum cupom criado ainda.</td></tr>`}
-          </tbody>
+          <tbody id="coupons-tbody">${renderCouponTableRows(coupons)}</tbody>
         </table></div>
       </div>
     `;
+
+    ['coupon-search', 'coupon-status-filter', 'coupon-distribution-filter', 'coupon-discount-filter', 'coupon-stacking-filter']
+      .forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener(id === 'coupon-search' ? 'input' : 'change', applyCouponFilters);
+      });
   } catch (err) {
     c.innerHTML = `<div class="empty-state"><p>${escHtml(err.message)}</p></div>`;
   }
