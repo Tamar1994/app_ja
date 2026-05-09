@@ -1166,6 +1166,7 @@ const savePricing = async () => {
 
 // ── CUPONS ─────────────────────────────────────────────────────────
 const fmtMoney = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+const COUPONS_PAGE_SIZE = 10;
 
 const couponDiscountLabel = (c) => {
   if (c.discountType === 'percent') {
@@ -1186,9 +1187,57 @@ const distributionLabel = (c) => {
   return map[c.distributionType] || c.distributionType;
 };
 
+const couponValidityLabel = (coupon) => {
+  const now = new Date();
+  const startsAt = coupon.startsAt ? new Date(coupon.startsAt) : null;
+  const endsAt = coupon.endsAt ? new Date(coupon.endsAt) : null;
+  const status = !coupon.isActive
+    ? 'Inativo'
+    : startsAt && startsAt > now
+      ? 'Agendado'
+      : endsAt && endsAt < now
+        ? 'Expirado'
+        : 'Vigente';
+
+  const range = `${startsAt ? fmtDatetime(startsAt) : 'Sem início'} → ${endsAt ? fmtDatetime(endsAt) : 'Sem fim'}`;
+  return { status, range };
+};
+
+const getCouponSortValue = (coupon, sortBy) => {
+  switch (sortBy) {
+    case 'code':
+      return coupon.code || '';
+    case 'title':
+      return coupon.title || '';
+    case 'discount':
+      return Number(coupon.discountValue || 0);
+    case 'uses':
+      return Number(coupon.metrics?.totalUsed || 0);
+    case 'claims':
+      return Number(coupon.metrics?.totalClaimed || 0);
+    case 'endsAt':
+      return coupon.endsAt ? new Date(coupon.endsAt).getTime() : Number.MAX_SAFE_INTEGER;
+    case 'createdAt':
+    default:
+      return coupon.createdAt ? new Date(coupon.createdAt).getTime() : 0;
+  }
+};
+
+const sortCoupons = (coupons, sortBy, sortDir) => {
+  const factor = sortDir === 'asc' ? 1 : -1;
+  return [...coupons].sort((left, right) => {
+    const a = getCouponSortValue(left, sortBy);
+    const b = getCouponSortValue(right, sortBy);
+    if (typeof a === 'string' || typeof b === 'string') {
+      return String(a).localeCompare(String(b), 'pt-BR') * factor;
+    }
+    return ((a > b) - (a < b)) * factor;
+  });
+};
+
 const renderCouponTableRows = (coupons) => {
   if (!coupons.length) {
-    return `<tr><td colspan="7" style="text-align:center;color:#7A84A0">Nenhum cupom encontrado com os filtros atuais.</td></tr>`;
+    return `<tr><td colspan="8" style="text-align:center;color:#7A84A0">Nenhum cupom encontrado com os filtros atuais.</td></tr>`;
   }
 
   return coupons.map(cp => `
@@ -1201,6 +1250,10 @@ const renderCouponTableRows = (coupons) => {
       <td style="font-size:12px;color:#7A84A0">
         <div>Min: ${fmtMoney(cp.minOrderValue || 0)}</div>
         <div>${cp.stackable ? 'Combinável' : 'Não combinável'}</div>
+      </td>
+      <td style="font-size:12px;color:#7A84A0">
+        <div>${escHtml(couponValidityLabel(cp).status)}</div>
+        <div>${escHtml(couponValidityLabel(cp).range)}</div>
       </td>
       <td>${escHtml(distributionLabel(cp))}</td>
       <td style="font-size:12px;color:#7A84A0">
@@ -1219,6 +1272,40 @@ const renderCouponTableRows = (coupons) => {
   `).join('');
 };
 
+const renderCouponPagination = (totalItems, currentPage, pageSize) => {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const prevDisabled = currentPage <= 1 ? 'disabled' : '';
+  const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px;border-top:1px solid rgba(255,255,255,0.06);">
+      <div style="font-size:12px;color:#7A84A0;">Página ${currentPage} de ${totalPages}</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-ghost btn-sm" onclick="changeCouponsPage(-1)" ${prevDisabled}>Anterior</button>
+        <button class="btn btn-ghost btn-sm" onclick="changeCouponsPage(1)" ${nextDisabled}>Próxima</button>
+      </div>
+    </div>
+  `;
+};
+
+const renderCouponsTableState = () => {
+  const filtered = window.__couponFilteredList || [];
+  const currentPage = window.__couponCurrentPage || 1;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / COUPONS_PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  window.__couponCurrentPage = safePage;
+
+  const start = (safePage - 1) * COUPONS_PAGE_SIZE;
+  const paged = filtered.slice(start, start + COUPONS_PAGE_SIZE);
+
+  const tbody = document.getElementById('coupons-tbody');
+  const count = document.getElementById('coupon-filter-count');
+  const pagination = document.getElementById('coupon-pagination');
+  if (tbody) tbody.innerHTML = renderCouponTableRows(paged);
+  if (count) count.textContent = `${filtered.length} de ${(window.__couponList || []).length}`;
+  if (pagination) pagination.innerHTML = renderCouponPagination(filtered.length, safePage, COUPONS_PAGE_SIZE);
+};
+
 const applyCouponFilters = () => {
   const coupons = window.__couponList || [];
   const search = (document.getElementById('coupon-search')?.value || '').trim().toLowerCase();
@@ -1226,6 +1313,10 @@ const applyCouponFilters = () => {
   const distribution = document.getElementById('coupon-distribution-filter')?.value || '';
   const discountType = document.getElementById('coupon-discount-filter')?.value || 'all';
   const stacking = document.getElementById('coupon-stacking-filter')?.value || 'all';
+  const validity = document.getElementById('coupon-validity-filter')?.value || 'all';
+  const sortBy = document.getElementById('coupon-sort-by')?.value || 'createdAt';
+  const sortDir = document.getElementById('coupon-sort-dir')?.value || 'desc';
+  const now = new Date();
 
   const filtered = coupons.filter((coupon) => {
     const matchesSearch = !search
@@ -1240,14 +1331,31 @@ const applyCouponFilters = () => {
     const matchesStacking = stacking === 'all'
       || (stacking === 'stackable' && coupon.stackable)
       || (stacking === 'single' && !coupon.stackable);
+    const startsAt = coupon.startsAt ? new Date(coupon.startsAt) : null;
+    const endsAt = coupon.endsAt ? new Date(coupon.endsAt) : null;
+    const validityState = !coupon.isActive
+      ? 'inactive'
+      : startsAt && startsAt > now
+        ? 'scheduled'
+        : endsAt && endsAt < now
+          ? 'expired'
+          : 'valid';
+    const matchesValidity = validity === 'all' || validityState === validity;
 
-    return matchesSearch && matchesStatus && matchesDistribution && matchesDiscountType && matchesStacking;
+    return matchesSearch && matchesStatus && matchesDistribution && matchesDiscountType && matchesStacking && matchesValidity;
   });
 
-  const tbody = document.getElementById('coupons-tbody');
-  const count = document.getElementById('coupon-filter-count');
-  if (tbody) tbody.innerHTML = renderCouponTableRows(filtered);
-  if (count) count.textContent = `${filtered.length} de ${coupons.length}`;
+  window.__couponFilteredList = sortCoupons(filtered, sortBy, sortDir);
+  window.__couponCurrentPage = 1;
+  renderCouponsTableState();
+};
+
+const changeCouponsPage = (direction) => {
+  const filtered = window.__couponFilteredList || [];
+  const totalPages = Math.max(1, Math.ceil(filtered.length / COUPONS_PAGE_SIZE));
+  const nextPage = Math.min(totalPages, Math.max(1, (window.__couponCurrentPage || 1) + direction));
+  window.__couponCurrentPage = nextPage;
+  renderCouponsTableState();
 };
 
 const resetCouponFilters = () => {
@@ -1257,6 +1365,9 @@ const resetCouponFilters = () => {
     'coupon-distribution-filter': '',
     'coupon-discount-filter': 'all',
     'coupon-stacking-filter': 'all',
+    'coupon-validity-filter': 'all',
+    'coupon-sort-by': 'createdAt',
+    'coupon-sort-dir': 'desc',
   };
   Object.entries(defaults).forEach(([id, value]) => {
     const el = document.getElementById(id);
@@ -1327,6 +1438,7 @@ const renderCoupons = async () => {
               <th>Código</th>
               <th>Desconto</th>
               <th>Regra</th>
+              <th>Validade</th>
               <th>Distribuição</th>
               <th>Uso</th>
               <th>Status</th>
@@ -1335,15 +1447,46 @@ const renderCoupons = async () => {
           </thead>
           <tbody id="coupons-tbody">${renderCouponTableRows(coupons)}</tbody>
         </table></div>
+        <div id="coupon-pagination">${renderCouponPagination(coupons.length, 1, COUPONS_PAGE_SIZE)}</div>
       </div>
     `;
 
-    ['coupon-search', 'coupon-status-filter', 'coupon-distribution-filter', 'coupon-discount-filter', 'coupon-stacking-filter']
+    const filterHost = document.querySelector('.search-row');
+    if (filterHost) {
+      filterHost.insertAdjacentHTML('beforeend', `
+        <select id="coupon-validity-filter" class="form-select">
+          <option value="all">Toda validade</option>
+          <option value="valid">Vigentes</option>
+          <option value="scheduled">Agendados</option>
+          <option value="expired">Expirados</option>
+          <option value="inactive">Inativos</option>
+        </select>
+        <select id="coupon-sort-by" class="form-select">
+          <option value="createdAt">Ordenar por criação</option>
+          <option value="endsAt">Ordenar por vencimento</option>
+          <option value="code">Ordenar por código</option>
+          <option value="title">Ordenar por título</option>
+          <option value="discount">Ordenar por desconto</option>
+          <option value="uses">Ordenar por usos</option>
+          <option value="claims">Ordenar por resgates</option>
+        </select>
+        <select id="coupon-sort-dir" class="form-select">
+          <option value="desc">Maior primeiro</option>
+          <option value="asc">Menor primeiro</option>
+        </select>
+      `);
+    }
+
+    ['coupon-search', 'coupon-status-filter', 'coupon-distribution-filter', 'coupon-discount-filter', 'coupon-stacking-filter', 'coupon-validity-filter', 'coupon-sort-by', 'coupon-sort-dir']
       .forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener(id === 'coupon-search' ? 'input' : 'change', applyCouponFilters);
       });
+
+    window.__couponFilteredList = sortCoupons(coupons, 'createdAt', 'desc');
+    window.__couponCurrentPage = 1;
+    renderCouponsTableState();
   } catch (err) {
     c.innerHTML = `<div class="empty-state"><p>${escHtml(err.message)}</p></div>`;
   }
