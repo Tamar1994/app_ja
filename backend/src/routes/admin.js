@@ -154,12 +154,14 @@ router.get('/withdrawals', adminAuth, async (req, res) => {
   const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
   const query = status === 'all' ? {} : { status };
 
-  const minAmountNumber = Number(minAmount);
-  const maxAmountNumber = Number(maxAmount);
-  if (Number.isFinite(minAmountNumber) || Number.isFinite(maxAmountNumber)) {
+  const hasMinAmount = String(minAmount ?? '').trim() !== '';
+  const hasMaxAmount = String(maxAmount ?? '').trim() !== '';
+  const minAmountNumber = hasMinAmount ? Number(minAmount) : null;
+  const maxAmountNumber = hasMaxAmount ? Number(maxAmount) : null;
+  if ((hasMinAmount && Number.isFinite(minAmountNumber)) || (hasMaxAmount && Number.isFinite(maxAmountNumber))) {
     query.amount = {};
-    if (Number.isFinite(minAmountNumber)) query.amount.$gte = minAmountNumber;
-    if (Number.isFinite(maxAmountNumber)) query.amount.$lte = maxAmountNumber;
+    if (hasMinAmount && Number.isFinite(minAmountNumber)) query.amount.$gte = minAmountNumber;
+    if (hasMaxAmount && Number.isFinite(maxAmountNumber)) query.amount.$lte = maxAmountNumber;
   }
 
   const fromDate = from ? new Date(from) : null;

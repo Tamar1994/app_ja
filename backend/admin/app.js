@@ -194,6 +194,9 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='pagamentos'?'active':''}" onclick="navTo('pagamentos')">
             <span class="icon">💳</span> Pagamentos
           </div>
+          <div class="nav-item ${currentPage==='saques'?'active':''}" onclick="navTo('saques')">
+            <span class="icon">🏦</span> Saques PIX
+          </div>
           ${adminData?.role === 'super_admin' ? `
           <div class="nav-group-label">Configurações</div>
           <div class="nav-item ${currentPage==='service-types'?'active':''}" onclick="navTo('service-types')">
@@ -247,9 +250,8 @@ const renderLayout = async () => {
 const navTo = (page) => {
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const items = document.querySelectorAll('.nav-item');
-  const idx = ['dashboard','approvals','users','suporte','ajuda','termos','precos','cupons','pagamentos','service-types','admins'].indexOf(page);
-  if (items[idx]) items[idx].classList.add('active');
+  const selectedItem = document.querySelector(`.nav-item[onclick="navTo('${page}')"]`);
+  if (selectedItem) selectedItem.classList.add('active');
   document.getElementById('page-title').textContent = {
     dashboard: 'Dashboard',
     approvals: 'Fila de Aprovações',
@@ -260,6 +262,7 @@ const navTo = (page) => {
     precos: 'Configuração de Preços',
     cupons: 'Cupons de Desconto',
     pagamentos: 'Pagamentos & Stripe',
+    saques: 'Fila de Saques PIX',
     'service-types': 'Profissões e Serviços',
     admins: 'Equipe Admin',
   }[page] || page;
@@ -267,7 +270,7 @@ const navTo = (page) => {
 };
 
 const renderPage = () => {
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, 'service-types': renderServiceTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -1982,59 +1985,10 @@ const renderPayments = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
   try {
-    const withdrawalParams = new URLSearchParams();
-    Object.entries(withdrawalQueueState).forEach(([key, value]) => {
-      if (value === null || value === undefined || value === '') return;
-      withdrawalParams.set(key, String(value));
-    });
-
-    const [data, withdrawalsData] = await Promise.all([
-      req('GET', '/stripe-config'),
-      req('GET', `/withdrawals?${withdrawalParams.toString()}`),
-    ]);
+    const data = await req('GET', '/stripe-config');
     const isProd = data.mode === 'production';
     const canSwitchToProd = data.hasProdKeys;
     const isSuperAdmin = adminData?.role === 'super_admin';
-    const withdrawals = withdrawalsData.withdrawals || [];
-    const counters = withdrawalsData.counters || {};
-    const totalItems = withdrawalsData.total || 0;
-    const currentPageNum = withdrawalsData.page || 1;
-    const totalPages = withdrawalsData.pages || 1;
-
-    withdrawalQueueState.page = currentPageNum;
-
-    const withdrawalRows = withdrawals.length
-      ? withdrawals.map((w) => `
-        <tr>
-          <td>
-            <strong>${escHtml(w.professional?.name || 'Profissional')}</strong>
-            <div style="font-size:12px;color:#7A84A0;margin-top:2px;">${escHtml(w.professional?.email || '')}</div>
-          </td>
-          <td>${fmtMoney(w.amount || 0)}</td>
-          <td>${fmtCPF(w.pixKeyCpfSnapshot)}</td>
-          <td>${fmtDatetime(w.requestedAt)}</td>
-          <td>${withdrawalStatusBadge(w.status)}</td>
-          <td>
-            ${w.transferProofUrl
-    ? `<a href="${escHtml(w.transferProofUrl)}" target="_blank" style="font-size:12px;color:#9DC4FF;text-decoration:none;">Ver comprovante</a>`
-    : '<span style="font-size:12px;color:#7A84A0;">Sem comprovante</span>'}
-          </td>
-          <td class="td-actions">
-            ${(w.status === 'pending' || w.status === 'processing')
-    ? `<button class="btn btn-ghost btn-sm" onclick="setWithdrawalStatus('${w._id}','processing')">Processar</button>
-               <button class="btn btn-primary btn-sm" onclick="setWithdrawalStatus('${w._id}','completed')">Concluir</button>
-               <button class="btn btn-danger btn-sm" onclick="setWithdrawalStatus('${w._id}','cancelled')">Cancelar</button>`
-    : '<span style="font-size:12px;color:#7A84A0;">Finalizado</span>'}
-            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
-              📎 Comprovante
-              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" style="display:none;" onchange="uploadWithdrawalProof('${w._id}', this)" />
-            </label>
-          </td>
-        </tr>
-      `).join('')
-      : `<tr><td colspan="7" style="text-align:center;color:#7A84A0;">Nenhuma solicitação de saque encontrada.</td></tr>`;
-
-    const queuePagination = renderPagination(currentPageNum, totalPages, 'changeWithdrawalsPage');
 
     c.innerHTML = `
       ${isProd ? `
@@ -2095,8 +2049,67 @@ const renderPayments = async () => {
           <li>Volte aqui e ative o modo <strong>PRODUÇÃO</strong></li>
         </ol>
       </div>
+    `;
+  } catch (err) {
+    c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar configuração Stripe: ${escHtml(err.message)}</p></div>`;
+  }
+};
 
-      <div class="section-card" style="margin-top:20px;">
+const renderWithdrawalsQueue = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+
+  try {
+    const withdrawalParams = new URLSearchParams();
+    Object.entries(withdrawalQueueState).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') return;
+      withdrawalParams.set(key, String(value));
+    });
+
+    const withdrawalsData = await req('GET', `/withdrawals?${withdrawalParams.toString()}`);
+    const withdrawals = withdrawalsData.withdrawals || [];
+    const counters = withdrawalsData.counters || {};
+    const totalItems = withdrawalsData.total || 0;
+    const currentPageNum = withdrawalsData.page || 1;
+    const totalPages = withdrawalsData.pages || 1;
+
+    withdrawalQueueState.page = currentPageNum;
+
+    const withdrawalRows = withdrawals.length
+      ? withdrawals.map((w) => `
+        <tr>
+          <td>
+            <strong>${escHtml(w.professional?.name || 'Profissional')}</strong>
+            <div style="font-size:12px;color:#7A84A0;margin-top:2px;">${escHtml(w.professional?.email || '')}</div>
+          </td>
+          <td>${fmtMoney(w.amount || 0)}</td>
+          <td>${fmtCPF(w.pixKeyCpfSnapshot)}</td>
+          <td>${fmtDatetime(w.requestedAt)}</td>
+          <td>${withdrawalStatusBadge(w.status)}</td>
+          <td>
+            ${w.transferProofUrl
+    ? `<a href="${escHtml(w.transferProofUrl)}" target="_blank" style="font-size:12px;color:#9DC4FF;text-decoration:none;">Ver comprovante</a>`
+    : '<span style="font-size:12px;color:#7A84A0;">Sem comprovante</span>'}
+          </td>
+          <td class="td-actions">
+            ${(w.status === 'pending' || w.status === 'processing')
+    ? `<button class="btn btn-ghost btn-sm" onclick="setWithdrawalStatus('${w._id}','processing')">Processar</button>
+               <button class="btn btn-primary btn-sm" onclick="setWithdrawalStatus('${w._id}','completed')">Concluir</button>
+               <button class="btn btn-danger btn-sm" onclick="setWithdrawalStatus('${w._id}','cancelled')">Cancelar</button>`
+    : '<span style="font-size:12px;color:#7A84A0;">Finalizado</span>'}
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+              📎 Comprovante
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" style="display:none;" onchange="uploadWithdrawalProof('${w._id}', this)" />
+            </label>
+          </td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="7" style="text-align:center;color:#7A84A0;">Nenhuma solicitação de saque encontrada.</td></tr>`;
+
+    const queuePagination = renderPagination(currentPageNum, totalPages, 'changeWithdrawalsPage');
+
+    c.innerHTML = `
+      <div class="section-card" style="margin-top:0;">
         <div class="section-header">
           <h2>🏦 Fila de Saques PIX (manual)</h2>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -2176,7 +2189,7 @@ const renderPayments = async () => {
       </div>
     `;
   } catch (err) {
-    c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar configuração Stripe: ${escHtml(err.message)}</p></div>`;
+    c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar fila de saques: ${escHtml(err.message)}</p></div>`;
   }
 };
 
@@ -2219,7 +2232,7 @@ window.applyWithdrawalFilters = () => {
     page: 1,
   };
 
-  renderPayments();
+  renderWithdrawalsQueue();
 };
 
 window.clearWithdrawalFilters = () => {
@@ -2233,7 +2246,7 @@ window.clearWithdrawalFilters = () => {
     page: 1,
     limit: 20,
   };
-  renderPayments();
+  renderWithdrawalsQueue();
 };
 
 window.changeWithdrawalsPage = (page) => {
@@ -2241,7 +2254,7 @@ window.changeWithdrawalsPage = (page) => {
     ...withdrawalQueueState,
     page: Math.max(1, parseInt(page, 10) || 1),
   };
-  renderPayments();
+  renderWithdrawalsQueue();
 };
 
 window.setWithdrawalStatus = async (id, status) => {
@@ -2256,7 +2269,7 @@ window.setWithdrawalStatus = async (id, status) => {
   try {
     await req('PATCH', `/withdrawals/${id}/status`, { status, internalNote });
     showAlert('Status do saque atualizado.', 'success');
-    renderPayments();
+    renderWithdrawalsQueue();
   } catch (err) {
     showAlert(err.message);
   }
@@ -2270,7 +2283,7 @@ window.uploadWithdrawalProof = async (id, inputEl) => {
     fd.append('proof', file);
     await multipartReq('POST', `/withdrawals/${id}/proof`, fd);
     showAlert('Comprovante anexado.', 'success');
-    renderPayments();
+    renderWithdrawalsQueue();
   } catch (err) {
     showAlert(err.message);
   }
