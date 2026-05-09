@@ -11,6 +11,11 @@ const transactionSchema = new mongoose.Schema({
     ref: 'ServiceRequest',
     default: null,
   },
+  withdrawalRequest: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WithdrawalRequest',
+    default: null,
+  },
   type: {
     type: String,
     enum: ['earning', 'withdrawal'],

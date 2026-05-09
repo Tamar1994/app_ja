@@ -1,10 +1,16 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 const AdminUser = require('../models/AdminUser');
 const User = require('../models/User');
+const Transaction = require('../models/Transaction');
 const SupportChat = require('../models/SupportChat');
 const ServiceChat = require('../models/ServiceChat');
 const ServiceRequest = require('../models/ServiceRequest');
+const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ServiceType = require('../models/ServiceType');
 const HelpTopic = require('../models/HelpTopic');
 const PricingConfig = require('../models/PricingConfig');
@@ -17,8 +23,40 @@ const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
+const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadCleanup');
 
 const router = express.Router();
+
+const uploadsRoot = path.join(__dirname, '../../uploads');
+const withdrawalProofDir = path.join(uploadsRoot, 'withdrawal-proofs');
+if (!fs.existsSync(withdrawalProofDir)) {
+  fs.mkdirSync(withdrawalProofDir, { recursive: true });
+}
+
+const withdrawalProofStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, withdrawalProofDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.png';
+    cb(null, `proof-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+  },
+});
+
+const withdrawalProofUpload = multer({
+  storage: withdrawalProofStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'application/pdf',
+    ];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Comprovante deve ser JPG, PNG, WEBP ou PDF'));
+    }
+    cb(null, true);
+  },
+});
 
 const generateAdminToken = (id) =>
   jwt.sign({ id, isAdmin: true }, process.env.JWT_SECRET, { expiresIn: '12h' });
@@ -95,6 +133,226 @@ router.get('/stats', adminAuth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
+// ── FILA DE SAQUES (PIX MANUAL) ───────────────────────────────────
+// GET /api/admin/withdrawals?status=pending&page=1&limit=20
+router.get('/withdrawals', adminAuth, async (req, res) => {
+  const {
+    status = 'pending',
+    search = '',
+    from = '',
+    to = '',
+    minAmount = '',
+    maxAmount = '',
+    page = 1,
+    limit = 20,
+  } = req.query;
+
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const query = status === 'all' ? {} : { status };
+
+  const minAmountNumber = Number(minAmount);
+  const maxAmountNumber = Number(maxAmount);
+  if (Number.isFinite(minAmountNumber) || Number.isFinite(maxAmountNumber)) {
+    query.amount = {};
+    if (Number.isFinite(minAmountNumber)) query.amount.$gte = minAmountNumber;
+    if (Number.isFinite(maxAmountNumber)) query.amount.$lte = maxAmountNumber;
+  }
+
+  const fromDate = from ? new Date(from) : null;
+  const toDate = to ? new Date(to) : null;
+  if ((fromDate && !Number.isNaN(fromDate.getTime())) || (toDate && !Number.isNaN(toDate.getTime()))) {
+    query.requestedAt = {};
+    if (fromDate && !Number.isNaN(fromDate.getTime())) query.requestedAt.$gte = fromDate;
+    if (toDate && !Number.isNaN(toDate.getTime())) {
+      toDate.setHours(23, 59, 59, 999);
+      query.requestedAt.$lte = toDate;
+    }
+  }
+
+  try {
+    const trimmedSearch = String(search || '').trim();
+    if (trimmedSearch) {
+      const searchRegex = new RegExp(trimmedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const matchedUsers = await User.find({
+        $or: [
+          { name: searchRegex },
+          { email: searchRegex },
+          { phone: searchRegex },
+          { cpf: searchRegex },
+        ],
+      }).select('_id').limit(200);
+
+      const matchedUserIds = matchedUsers.map((u) => u._id);
+      query.$or = [
+        { pixKeyCpfSnapshot: searchRegex },
+        ...(matchedUserIds.length ? [{ professional: { $in: matchedUserIds } }] : []),
+      ];
+    }
+
+    const [items, total, grouped] = await Promise.all([
+      WithdrawalRequest.find(query)
+        .populate('professional', 'name email phone cpf')
+        .populate('processedBy', 'name')
+        .populate('transferProofUploadedBy', 'name')
+        .sort({ requestedAt: 1, createdAt: 1 })
+        .skip((parsedPage - 1) * parsedLimit)
+        .limit(parsedLimit),
+      WithdrawalRequest.countDocuments(query),
+      WithdrawalRequest.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const counters = grouped.reduce((acc, item) => {
+      acc[item._id] = item.count;
+      return acc;
+    }, { pending: 0, processing: 0, completed: 0, cancelled: 0 });
+
+    res.json({
+      withdrawals: items,
+      total,
+      page: parsedPage,
+      pages: Math.ceil(total / parsedLimit),
+      filters: {
+        status,
+        search: trimmedSearch,
+        from,
+        to,
+        minAmount,
+        maxAmount,
+      },
+      counters,
+    });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar fila de saques' });
+  }
+});
+
+// GET /api/admin/withdrawals/:id
+router.get('/withdrawals/:id', adminAuth, async (req, res) => {
+  try {
+    const withdrawal = await WithdrawalRequest.findById(req.params.id)
+      .populate('professional', 'name email phone cpf wallet')
+      .populate('processedBy', 'name email')
+      .populate('transferProofUploadedBy', 'name email');
+
+    if (!withdrawal) return res.status(404).json({ message: 'Solicitação de saque não encontrada' });
+
+    res.json({ withdrawal });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar saque' });
+  }
+});
+
+// PATCH /api/admin/withdrawals/:id/status
+router.patch('/withdrawals/:id/status', adminAuth, async (req, res) => {
+  const { status, internalNote } = req.body;
+  if (!['pending', 'processing', 'completed', 'cancelled'].includes(status)) {
+    return res.status(400).json({ message: 'Status inválido' });
+  }
+
+  try {
+    const withdrawal = await WithdrawalRequest.findById(req.params.id);
+    if (!withdrawal) return res.status(404).json({ message: 'Saque não encontrado' });
+
+    if (withdrawal.status === 'completed' || withdrawal.status === 'cancelled') {
+      return res.status(400).json({ message: 'Este saque já foi finalizado' });
+    }
+
+    if (status === 'cancelled') {
+      const session = await mongoose.startSession();
+      let cancelledWithdrawal = null;
+      try {
+        await session.withTransaction(async () => {
+          cancelledWithdrawal = await WithdrawalRequest.findByIdAndUpdate(
+            withdrawal._id,
+            {
+              status: 'cancelled',
+              processedAt: new Date(),
+              processedBy: req.admin._id,
+              internalNote: internalNote || withdrawal.internalNote || '',
+            },
+            { new: true, session }
+          );
+
+          await User.findByIdAndUpdate(
+            withdrawal.professional,
+            { $inc: { 'wallet.balance': Number(withdrawal.amount || 0) } },
+            { session }
+          );
+
+          await Transaction.create([{
+            professional: withdrawal.professional,
+            withdrawalRequest: withdrawal._id,
+            type: 'earning',
+            grossAmount: Number(withdrawal.amount || 0),
+            platformFee: 0,
+            amount: Number(withdrawal.amount || 0),
+            status: 'available',
+            description: 'Estorno de saque cancelado pelo admin',
+          }], { session });
+        });
+      } finally {
+        await session.endSession();
+      }
+      res.json({ message: 'Saque cancelado e valor estornado', withdrawal: cancelledWithdrawal });
+      return;
+    }
+
+    const update = {
+      status,
+      processedBy: req.admin._id,
+      processedAt: new Date(),
+    };
+    if (status === 'completed') update.completedAt = new Date();
+    if (internalNote !== undefined) update.internalNote = internalNote;
+
+    const updated = await WithdrawalRequest.findByIdAndUpdate(
+      withdrawal._id,
+      update,
+      { new: true }
+    );
+
+    res.json({ message: 'Status do saque atualizado', withdrawal: updated });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar saque' });
+  }
+});
+
+// POST /api/admin/withdrawals/:id/proof
+router.post('/withdrawals/:id/proof', adminAuth, withdrawalProofUpload.single('proof'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: 'Arquivo de comprovante é obrigatório' });
+
+  try {
+    const withdrawal = await WithdrawalRequest.findById(req.params.id);
+    if (!withdrawal) {
+      await cleanupRequestUploads(req);
+      return res.status(404).json({ message: 'Saque não encontrado' });
+    }
+
+    const newProofUrl = `/uploads/withdrawal-proofs/${req.file.filename}`;
+    const oldProofUrl = withdrawal.transferProofUrl;
+
+    withdrawal.transferProofUrl = newProofUrl;
+    withdrawal.transferProofUploadedAt = new Date();
+    withdrawal.transferProofUploadedBy = req.admin._id;
+    await withdrawal.save();
+
+    if (oldProofUrl && oldProofUrl !== newProofUrl) {
+      await deleteUploadFile(oldProofUrl);
+    }
+
+    res.json({
+      message: 'Comprovante anexado ao saque',
+      withdrawal,
+    });
+  } catch (err) {
+    await cleanupRequestUploads(req);
+    res.status(500).json({ message: err.message || 'Erro ao anexar comprovante' });
   }
 });
 
@@ -768,6 +1026,11 @@ router.post('/coupons', adminAuth, async (req, res) => {
     distributionType,
     specificUsers,
     isActive,
+    usageScope,
+    firstOrderOnly,
+    professionalRewardType,
+    professionalRewardValue,
+    professionalFirstServiceOnly,
   } = req.body;
 
   if (!title || !discountType || !Number.isFinite(Number(discountValue))) {
@@ -802,6 +1065,11 @@ router.post('/coupons', adminAuth, async (req, res) => {
       distributionType: distributionType || 'none',
       specificUsers: Array.isArray(specificUsers) ? specificUsers : [],
       isActive: isActive !== false,
+      usageScope: usageScope || 'checkout',
+      firstOrderOnly: !!firstOrderOnly,
+      professionalRewardType: professionalRewardType || 'none',
+      professionalRewardValue: Number(professionalRewardValue || 0),
+      professionalFirstServiceOnly: !!professionalFirstServiceOnly,
       createdBy: req.admin?.name || 'Admin',
     });
 
@@ -824,6 +1092,9 @@ router.patch('/coupons/:id', adminAuth, async (req, res) => {
     if (updates.minOrderValue !== undefined) updates.minOrderValue = Number(updates.minOrderValue || 0);
     if (updates.maxTotalUses !== undefined && updates.maxTotalUses !== null && updates.maxTotalUses !== '') updates.maxTotalUses = Number(updates.maxTotalUses);
     if (updates.maxUsesPerUser !== undefined && updates.maxUsesPerUser !== null && updates.maxUsesPerUser !== '') updates.maxUsesPerUser = Number(updates.maxUsesPerUser);
+    if (updates.professionalRewardValue !== undefined) updates.professionalRewardValue = Number(updates.professionalRewardValue || 0);
+    if (updates.firstOrderOnly !== undefined) updates.firstOrderOnly = !!updates.firstOrderOnly;
+    if (updates.professionalFirstServiceOnly !== undefined) updates.professionalFirstServiceOnly = !!updates.professionalFirstServiceOnly;
 
     const coupon = await Coupon.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (!coupon) return res.status(404).json({ message: 'Cupom não encontrado' });

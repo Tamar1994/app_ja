@@ -49,6 +49,29 @@ const couponSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  usageScope: {
+    type: String,
+    enum: ['checkout', 'professional_reward'],
+    default: 'checkout',
+  },
+  firstOrderOnly: {
+    type: Boolean,
+    default: false,
+  },
+  professionalRewardType: {
+    type: String,
+    enum: ['none', 'fixed_bonus', 'platform_fee_discount'],
+    default: 'none',
+  },
+  professionalRewardValue: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  professionalFirstServiceOnly: {
+    type: Boolean,
+    default: false,
+  },
   distributionType: {
     type: String,
     enum: ['none', 'all', 'clients', 'professionals', 'specific'],

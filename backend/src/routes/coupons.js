@@ -38,7 +38,10 @@ router.get('/my', auth, async (req, res) => {
 
     const data = await Promise.all(coupons.map(async (coupon) => {
       const { totalUsed, userUsed } = await getUsageCounts(coupon._id, req.user._id);
-      const validation = await validateSingleCoupon(coupon, req.user, { ignoreMinOrder: true });
+      const validation = await validateSingleCoupon(coupon, req.user, {
+        ignoreMinOrder: true,
+        usageScope: coupon.usageScope || 'checkout',
+      });
       return {
         id: coupon._id,
         code: coupon.code,
@@ -54,6 +57,11 @@ router.get('/my', auth, async (req, res) => {
         distributionType: coupon.distributionType,
         maxTotalUses: coupon.maxTotalUses,
         maxUsesPerUser: coupon.maxUsesPerUser,
+        usageScope: coupon.usageScope,
+        firstOrderOnly: !!coupon.firstOrderOnly,
+        professionalRewardType: coupon.professionalRewardType,
+        professionalRewardValue: coupon.professionalRewardValue,
+        professionalFirstServiceOnly: !!coupon.professionalFirstServiceOnly,
         usage: { totalUsed, userUsed },
         claimed: claimedSet.has(coupon._id.toString()),
         canUseNow: validation.ok,
@@ -76,7 +84,10 @@ router.post('/redeem', auth, async (req, res) => {
     const coupon = await Coupon.findOne({ code });
     if (!coupon) return res.status(404).json({ message: 'Cupom não encontrado' });
 
-    const validation = await validateSingleCoupon(coupon, req.user, { ignoreMinOrder: true });
+    const validation = await validateSingleCoupon(coupon, req.user, {
+      ignoreMinOrder: true,
+      usageScope: coupon.usageScope || 'checkout',
+    });
     if (!validation.ok) {
       return res.status(400).json({ message: validation.reason });
     }

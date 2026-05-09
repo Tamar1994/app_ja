@@ -6,6 +6,16 @@ let adminData = JSON.parse(localStorage.getItem('adminData') || 'null');
 let currentPage = 'dashboard';
 let pendingBadge = 0;
 let activeChatId = null;
+let withdrawalQueueState = {
+  status: 'all',
+  search: '',
+  from: '',
+  to: '',
+  minAmount: '',
+  maxAmount: '',
+  page: 1,
+  limit: 20,
+};
 
 // ── UTILS ──────────────────────────────────────────────────────────
 const req = async (method, path, body) => {
@@ -73,6 +83,17 @@ const statusBadge = (s) => {
 const typeBadge = (t) => t === 'professional'
   ? `<span class="badge badge-professional">🔧 Profissional</span>`
   : `<span class="badge badge-client">👤 Cliente</span>`;
+
+const withdrawalStatusBadge = (status) => {
+  const map = {
+    pending: ['badge-pending', '⏳ Pendente'],
+    processing: ['badge-docs', '🛠️ Processando'],
+    completed: ['badge-approved', '✅ Concluído'],
+    cancelled: ['badge-rejected', '❌ Cancelado'],
+  };
+  const [cls, label] = map[status] || ['badge-ghost', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+};
 
 const showAlert = (msg, type = 'error') => {
   const existing = document.querySelector('.alert');
@@ -1249,11 +1270,38 @@ const fmtMoney = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 const COUPONS_PAGE_SIZE = 10;
 
 const couponDiscountLabel = (c) => {
+  if (c.usageScope === 'professional_reward') {
+    if (c.professionalRewardType === 'fixed_bonus') {
+      return `Bônus profissional ${fmtMoney(c.professionalRewardValue || 0)}`;
+    }
+    if (c.professionalRewardType === 'platform_fee_discount') {
+      return `- ${Number(c.professionalRewardValue || 0)} p.p. da taxa`;
+    }
+    return 'Incentivo profissional';
+  }
   if (c.discountType === 'percent') {
     const cap = c.maxDiscount ? ` (máx. ${fmtMoney(c.maxDiscount)})` : '';
     return `${c.discountValue}%${cap}`;
   }
   return fmtMoney(c.discountValue);
+};
+
+const couponScenarioLabel = (c) => {
+  if (c.usageScope === 'professional_reward') {
+    const firstService = c.professionalFirstServiceOnly ? ' (1o servico)' : '';
+    if (c.professionalRewardType === 'fixed_bonus') {
+      return `Profissional: bonus ${fmtMoney(c.professionalRewardValue || 0)}${firstService}`;
+    }
+    if (c.professionalRewardType === 'platform_fee_discount') {
+      return `Profissional: taxa -${Number(c.professionalRewardValue || 0)} p.p.${firstService}`;
+    }
+    return `Profissional: incentivo${firstService}`;
+  }
+
+  const firstOrder = c.firstOrderOnly ? '1o pedido' : 'pedido livre';
+  if (c.distributionType === 'clients') return `Cliente: ${firstOrder}`;
+  if (c.distributionType === 'professionals') return `Profissional (checkout): ${firstOrder}`;
+  return `Checkout: ${firstOrder}`;
 };
 
 const distributionLabel = (c) => {
@@ -1330,6 +1378,8 @@ const renderCouponTableRows = (coupons) => {
       <td style="font-size:12px;color:#7A84A0">
         <div>Min: ${fmtMoney(cp.minOrderValue || 0)}</div>
         <div>${cp.stackable ? 'Combinável' : 'Não combinável'}</div>
+        <div>${cp.firstOrderOnly ? 'Somente 1º pedido' : 'Pedido livre'}</div>
+        <div style="margin-top:4px;color:#9DC4FF;">${escHtml(couponScenarioLabel(cp))}</div>
       </td>
       <td style="font-size:12px;color:#7A84A0">
         <div>${escHtml(couponValidityLabel(cp).status)}</div>
@@ -1602,6 +1652,26 @@ const openNewCouponModal = () => {
             <option value="professionals">Profissionais</option>
           </select>
         </div>
+        <div class="form-group"><label class="form-label">Escopo de uso</label>
+          <select id="cp-usage-scope" class="form-select">
+            <option value="checkout">Desconto no checkout</option>
+            <option value="professional_reward">Incentivo para profissional</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:14px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cp-first-order-only" /> Somente primeiro pedido</label>
+        </div>
+        <div class="form-group"><label class="form-label">Tipo incentivo profissional</label>
+          <select id="cp-pro-reward-type" class="form-select">
+            <option value="none">Nenhum</option>
+            <option value="fixed_bonus">Bônus fixo (R$)</option>
+            <option value="platform_fee_discount">Redução da taxa (pontos percentuais)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Valor incentivo profissional</label><input id="cp-pro-reward-value" type="number" class="form-input" value="0" min="0" step="0.5" /></div>
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:14px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cp-pro-first-service" /> Somente primeiro serviço do profissional</label>
+        </div>
         <div class="form-group" style="display:flex;align-items:flex-end;gap:14px;">
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cp-stackable" /> Pode combinar com outro cupom</label>
         </div>
@@ -1629,6 +1699,11 @@ const createCoupon = async () => {
     startsAt: document.getElementById('cp-start').value || null,
     endsAt: document.getElementById('cp-end').value || null,
     distributionType: document.getElementById('cp-distribution').value,
+    usageScope: document.getElementById('cp-usage-scope').value,
+    firstOrderOnly: document.getElementById('cp-first-order-only').checked,
+    professionalRewardType: document.getElementById('cp-pro-reward-type').value,
+    professionalRewardValue: parseFloat(document.getElementById('cp-pro-reward-value').value || '0'),
+    professionalFirstServiceOnly: document.getElementById('cp-pro-first-service').checked,
     stackable: document.getElementById('cp-stackable').checked,
     autoCode: document.getElementById('cp-auto-code').checked,
     code: document.getElementById('cp-code').value.trim(),
@@ -1672,6 +1747,22 @@ const openEditCouponModal = (coupon) => {
         <div class="form-group"><label class="form-label">Limite por usuário</label><input id="cpe-max-user" type="number" class="form-input" value="${coupon.maxUsesPerUser || 1}" /></div>
         <div class="form-group"><label class="form-label">Início</label><input id="cpe-start" type="datetime-local" class="form-input" value="${coupon.startsAt ? new Date(coupon.startsAt).toISOString().slice(0,16) : ''}" /></div>
         <div class="form-group"><label class="form-label">Fim</label><input id="cpe-end" type="datetime-local" class="form-input" value="${coupon.endsAt ? new Date(coupon.endsAt).toISOString().slice(0,16) : ''}" /></div>
+        <div class="form-group"><label class="form-label">Escopo de uso</label>
+          <select id="cpe-usage-scope" class="form-select">
+            <option value="checkout" ${(coupon.usageScope || 'checkout') === 'checkout' ? 'selected' : ''}>Desconto no checkout</option>
+            <option value="professional_reward" ${(coupon.usageScope || 'checkout') === 'professional_reward' ? 'selected' : ''}>Incentivo para profissional</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cpe-first-order-only" ${coupon.firstOrderOnly ? 'checked' : ''} /> Somente primeiro pedido</label></div>
+        <div class="form-group"><label class="form-label">Tipo incentivo profissional</label>
+          <select id="cpe-pro-reward-type" class="form-select">
+            <option value="none" ${coupon.professionalRewardType === 'none' ? 'selected' : ''}>Nenhum</option>
+            <option value="fixed_bonus" ${coupon.professionalRewardType === 'fixed_bonus' ? 'selected' : ''}>Bônus fixo (R$)</option>
+            <option value="platform_fee_discount" ${coupon.professionalRewardType === 'platform_fee_discount' ? 'selected' : ''}>Redução da taxa (pontos percentuais)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Valor incentivo profissional</label><input id="cpe-pro-reward-value" type="number" class="form-input" value="${coupon.professionalRewardValue || 0}" /></div>
+        <div class="form-group" style="display:flex;align-items:flex-end;"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cpe-pro-first-service" ${coupon.professionalFirstServiceOnly ? 'checked' : ''} /> Somente primeiro serviço do profissional</label></div>
         <div class="form-group" style="display:flex;align-items:flex-end;"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#B0B8D0;"><input type="checkbox" id="cpe-stackable" ${coupon.stackable ? 'checked' : ''} /> Pode combinar com outro cupom</label></div>
       </div>
       <div class="modal-footer">
@@ -1695,6 +1786,11 @@ const updateCoupon = async (id) => {
     maxUsesPerUser: parseInt(document.getElementById('cpe-max-user').value || '1'),
     startsAt: document.getElementById('cpe-start').value || null,
     endsAt: document.getElementById('cpe-end').value || null,
+    usageScope: document.getElementById('cpe-usage-scope').value,
+    firstOrderOnly: document.getElementById('cpe-first-order-only').checked,
+    professionalRewardType: document.getElementById('cpe-pro-reward-type').value,
+    professionalRewardValue: parseFloat(document.getElementById('cpe-pro-reward-value').value || '0'),
+    professionalFirstServiceOnly: document.getElementById('cpe-pro-first-service').checked,
     stackable: document.getElementById('cpe-stackable').checked,
   };
   try {
@@ -1886,10 +1982,59 @@ const renderPayments = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
   try {
-    const data = await req('GET', '/stripe-config');
+    const withdrawalParams = new URLSearchParams();
+    Object.entries(withdrawalQueueState).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === '') return;
+      withdrawalParams.set(key, String(value));
+    });
+
+    const [data, withdrawalsData] = await Promise.all([
+      req('GET', '/stripe-config'),
+      req('GET', `/withdrawals?${withdrawalParams.toString()}`),
+    ]);
     const isProd = data.mode === 'production';
     const canSwitchToProd = data.hasProdKeys;
     const isSuperAdmin = adminData?.role === 'super_admin';
+    const withdrawals = withdrawalsData.withdrawals || [];
+    const counters = withdrawalsData.counters || {};
+    const totalItems = withdrawalsData.total || 0;
+    const currentPageNum = withdrawalsData.page || 1;
+    const totalPages = withdrawalsData.pages || 1;
+
+    withdrawalQueueState.page = currentPageNum;
+
+    const withdrawalRows = withdrawals.length
+      ? withdrawals.map((w) => `
+        <tr>
+          <td>
+            <strong>${escHtml(w.professional?.name || 'Profissional')}</strong>
+            <div style="font-size:12px;color:#7A84A0;margin-top:2px;">${escHtml(w.professional?.email || '')}</div>
+          </td>
+          <td>${fmtMoney(w.amount || 0)}</td>
+          <td>${fmtCPF(w.pixKeyCpfSnapshot)}</td>
+          <td>${fmtDatetime(w.requestedAt)}</td>
+          <td>${withdrawalStatusBadge(w.status)}</td>
+          <td>
+            ${w.transferProofUrl
+    ? `<a href="${escHtml(w.transferProofUrl)}" target="_blank" style="font-size:12px;color:#9DC4FF;text-decoration:none;">Ver comprovante</a>`
+    : '<span style="font-size:12px;color:#7A84A0;">Sem comprovante</span>'}
+          </td>
+          <td class="td-actions">
+            ${(w.status === 'pending' || w.status === 'processing')
+    ? `<button class="btn btn-ghost btn-sm" onclick="setWithdrawalStatus('${w._id}','processing')">Processar</button>
+               <button class="btn btn-primary btn-sm" onclick="setWithdrawalStatus('${w._id}','completed')">Concluir</button>
+               <button class="btn btn-danger btn-sm" onclick="setWithdrawalStatus('${w._id}','cancelled')">Cancelar</button>`
+    : '<span style="font-size:12px;color:#7A84A0;">Finalizado</span>'}
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+              📎 Comprovante
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf" style="display:none;" onchange="uploadWithdrawalProof('${w._id}', this)" />
+            </label>
+          </td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="7" style="text-align:center;color:#7A84A0;">Nenhuma solicitação de saque encontrada.</td></tr>`;
+
+    const queuePagination = renderPagination(currentPageNum, totalPages, 'changeWithdrawalsPage');
 
     c.innerHTML = `
       ${isProd ? `
@@ -1950,6 +2095,85 @@ const renderPayments = async () => {
           <li>Volte aqui e ative o modo <strong>PRODUÇÃO</strong></li>
         </ol>
       </div>
+
+      <div class="section-card" style="margin-top:20px;">
+        <div class="section-header">
+          <h2>🏦 Fila de Saques PIX (manual)</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <span class="badge badge-pending">Pendentes: ${counters.pending || 0}</span>
+            <span class="badge badge-docs">Processando: ${counters.processing || 0}</span>
+            <span class="badge badge-approved">Concluídos: ${counters.completed || 0}</span>
+            <span class="badge badge-rejected">Cancelados: ${counters.cancelled || 0}</span>
+          </div>
+        </div>
+        <div style="padding:0 22px 14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Status</label>
+            <select id="wd-filter-status" class="form-select" onchange="applyWithdrawalFilters()">
+              <option value="all" ${withdrawalQueueState.status === 'all' ? 'selected' : ''}>Todos</option>
+              <option value="pending" ${withdrawalQueueState.status === 'pending' ? 'selected' : ''}>Pendentes</option>
+              <option value="processing" ${withdrawalQueueState.status === 'processing' ? 'selected' : ''}>Processando</option>
+              <option value="completed" ${withdrawalQueueState.status === 'completed' ? 'selected' : ''}>Concluídos</option>
+              <option value="cancelled" ${withdrawalQueueState.status === 'cancelled' ? 'selected' : ''}>Cancelados</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Buscar (nome/e-mail/CPF)</label>
+            <input id="wd-filter-search" class="form-input" value="${escHtml(withdrawalQueueState.search)}" placeholder="Ex: Maria ou 123.456..." />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">De</label>
+            <input id="wd-filter-from" type="date" class="form-input" value="${escHtml(withdrawalQueueState.from)}" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Até</label>
+            <input id="wd-filter-to" type="date" class="form-input" value="${escHtml(withdrawalQueueState.to)}" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Valor mínimo (R$)</label>
+            <input id="wd-filter-min" type="number" min="0" step="0.01" class="form-input" value="${escHtml(withdrawalQueueState.minAmount)}" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Valor máximo (R$)</label>
+            <input id="wd-filter-max" type="number" min="0" step="0.01" class="form-input" value="${escHtml(withdrawalQueueState.maxAmount)}" />
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Itens por página</label>
+            <select id="wd-filter-limit" class="form-select" onchange="applyWithdrawalFilters()">
+              <option value="10" ${String(withdrawalQueueState.limit) === '10' ? 'selected' : ''}>10</option>
+              <option value="20" ${String(withdrawalQueueState.limit) === '20' ? 'selected' : ''}>20</option>
+              <option value="50" ${String(withdrawalQueueState.limit) === '50' ? 'selected' : ''}>50</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:8px;">
+            <button class="btn btn-primary" onclick="applyWithdrawalFilters()">Filtrar</button>
+            <button class="btn btn-ghost" onclick="clearWithdrawalFilters()">Limpar</button>
+          </div>
+        </div>
+        <div style="padding:0 22px 16px;color:#7A84A0;font-size:12px;">
+          Ordem fixa da fila: mais antigo para mais novo (horário da solicitação). O valor é debitado da carteira no momento da solicitação. Comprovante anexado aqui é interno e não é exibido ao profissional.
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Profissional</th>
+                <th>Valor</th>
+                <th>CPF (chave PIX)</th>
+                <th>Solicitado em</th>
+                <th>Status</th>
+                <th>Comprovante</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>${withdrawalRows}</tbody>
+          </table>
+        </div>
+        <div style="padding:12px 22px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#7A84A0;">${totalItems} item(ns) · página ${currentPageNum} de ${totalPages}</div>
+          <div class="pagination">${queuePagination}</div>
+        </div>
+      </div>
     `;
   } catch (err) {
     c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar configuração Stripe: ${escHtml(err.message)}</p></div>`;
@@ -1971,6 +2195,84 @@ window.setStripeMode = async (mode) => {
     renderPayments();
   } catch (err) {
     alert('Erro ao alterar modo: ' + (err.message || 'Tente novamente'));
+  }
+};
+
+window.applyWithdrawalFilters = () => {
+  const statusEl = document.getElementById('wd-filter-status');
+  const searchEl = document.getElementById('wd-filter-search');
+  const fromEl = document.getElementById('wd-filter-from');
+  const toEl = document.getElementById('wd-filter-to');
+  const minEl = document.getElementById('wd-filter-min');
+  const maxEl = document.getElementById('wd-filter-max');
+  const limitEl = document.getElementById('wd-filter-limit');
+
+  withdrawalQueueState = {
+    ...withdrawalQueueState,
+    status: statusEl ? statusEl.value : 'all',
+    search: searchEl ? searchEl.value.trim() : '',
+    from: fromEl ? fromEl.value : '',
+    to: toEl ? toEl.value : '',
+    minAmount: minEl ? minEl.value : '',
+    maxAmount: maxEl ? maxEl.value : '',
+    limit: limitEl ? parseInt(limitEl.value, 10) || 20 : 20,
+    page: 1,
+  };
+
+  renderPayments();
+};
+
+window.clearWithdrawalFilters = () => {
+  withdrawalQueueState = {
+    status: 'all',
+    search: '',
+    from: '',
+    to: '',
+    minAmount: '',
+    maxAmount: '',
+    page: 1,
+    limit: 20,
+  };
+  renderPayments();
+};
+
+window.changeWithdrawalsPage = (page) => {
+  withdrawalQueueState = {
+    ...withdrawalQueueState,
+    page: Math.max(1, parseInt(page, 10) || 1),
+  };
+  renderPayments();
+};
+
+window.setWithdrawalStatus = async (id, status) => {
+  const labelMap = {
+    processing: 'marcar como em processamento',
+    completed: 'marcar como concluído',
+    cancelled: 'cancelar e estornar saldo',
+  };
+  const confirmed = confirm(`Deseja ${labelMap[status] || 'atualizar este saque'}?`);
+  if (!confirmed) return;
+  const internalNote = prompt('Observação interna (opcional):', '') || '';
+  try {
+    await req('PATCH', `/withdrawals/${id}/status`, { status, internalNote });
+    showAlert('Status do saque atualizado.', 'success');
+    renderPayments();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+window.uploadWithdrawalProof = async (id, inputEl) => {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  try {
+    const fd = new FormData();
+    fd.append('proof', file);
+    await multipartReq('POST', `/withdrawals/${id}/proof`, fd);
+    showAlert('Comprovante anexado.', 'success');
+    renderPayments();
+  } catch (err) {
+    showAlert(err.message);
   }
 };
 

@@ -66,6 +66,8 @@ export const uploadDocuments = (formData) =>
 export const walletAPI = {
   summary: () => api.get('/wallet/summary'),
   earnings: (period) => api.get(`/wallet/earnings?period=${period}`),
+  requestWithdrawal: (amount) => api.post('/wallet/withdrawals/request', { amount }),
+  myWithdrawals: () => api.get('/wallet/withdrawals/my'),
 };
 
 // Central de Ajuda

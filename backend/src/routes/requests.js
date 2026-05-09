@@ -5,9 +5,11 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Review = require('../models/Review');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
+const CouponRedemption = require('../models/CouponRedemption');
 const PricingConfig = require('../models/PricingConfig');
 const { dispatchToNextProfessional, clearRequestTimer } = require('../utils/requestQueue');
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
+const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
 
 const router = express.Router();
 
@@ -349,11 +351,46 @@ router.patch('/:id/complete', auth, async (req, res) => {
     );
     if (!request) return res.status(400).json({ message: 'Serviço não encontrado' });
 
-    // Creditar carteira do profissional (85% do valor)
+    const pricingConfig = await PricingConfig.getSingleton();
+
+    // Creditar carteira do profissional com possível incentivo de cupom
     const grossAmount = request.pricing.final || request.pricing.estimated;
-    const feePercent = 15;
-    const platformFee = (grossAmount * feePercent) / 100;
-    const netAmount = grossAmount - platformFee;
+    const defaultFeePercent = Number(pricingConfig.platformFeePercent || 15);
+    const reward = await resolveProfessionalRewardForCompletion({
+      professionalUser: req.user,
+      serviceRequest: request,
+      grossAmount,
+      defaultFeePercent,
+    });
+    const platformFee = reward.platformFee;
+    const netAmount = Number((grossAmount - platformFee + reward.bonusAmount).toFixed(2));
+
+    if (reward.coupon) {
+      await CouponRedemption.updateOne(
+        {
+          paymentIntentId: `service:${request._id}`,
+          coupon: reward.coupon._id,
+        },
+        {
+          $setOnInsert: {
+            coupon: reward.coupon._id,
+            user: req.user._id,
+            serviceRequest: request._id,
+            paymentIntentId: `service:${request._id}`,
+            couponCodeSnapshot: reward.coupon.code,
+            discountAmount: reward.totalBenefit,
+          },
+        },
+        { upsert: true }
+      );
+    }
+
+    const updatedRequest = await ServiceRequest.findByIdAndUpdate(request._id, {
+      'pricing.professionalBonus': reward.bonusAmount,
+      'pricing.platformFeeDiscount': reward.feeDiscountAmount,
+      'pricing.professionalRewardCoupon': reward.coupon ? reward.coupon.code : null,
+      'pricing.platformFee': platformFee,
+    }, { new: true });
 
     await Transaction.create({
       professional: req.user._id,
@@ -362,7 +399,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
       grossAmount,
       platformFee,
       amount: netAmount,
-      description: `Serviço concluído`,
+      description: reward.coupon
+        ? `Serviço concluído + incentivo (${reward.coupon.code})`
+        : 'Serviço concluído',
     });
 
     await User.findByIdAndUpdate(req.user._id, {
@@ -380,7 +419,17 @@ router.patch('/:id/complete', auth, async (req, res) => {
       io.to(`user_${request.client}`).emit('service_completed', { requestId: request._id });
     }
 
-    res.json({ request });
+    res.json({
+      request: updatedRequest || request,
+      rewardApplied: {
+        couponCode: reward.coupon ? reward.coupon.code : null,
+        rewardType: reward.rewardType,
+        totalBenefit: reward.totalBenefit,
+        bonusAmount: reward.bonusAmount,
+        platformFeeDiscountAmount: reward.feeDiscountAmount,
+        platformFeePercentApplied: reward.feePercentApplied,
+      },
+    });
   } catch {
     res.status(500).json({ message: 'Erro ao concluir serviço' });
   }

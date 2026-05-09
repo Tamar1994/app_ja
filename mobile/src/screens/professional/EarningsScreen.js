@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
+  Alert, Modal, TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,22 +20,31 @@ const WEEK_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
 const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+const fmtDatetime = (v) => new Date(v).toLocaleDateString('pt-BR', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+});
 
 export default function EarningsScreen() {
   const [period, setPeriod] = useState('week');
   const [summary, setSummary] = useState(null);
   const [earnings, setEarnings] = useState(null);
+  const [withdrawals, setWithdrawals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('50');
+  const [requestingWithdrawal, setRequestingWithdrawal] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [s, e] = await Promise.all([
+      const [s, e, w] = await Promise.all([
         walletAPI.summary(),
         walletAPI.earnings(period),
+        walletAPI.myWithdrawals(),
       ]);
       setSummary(s.data);
       setEarnings(e.data);
+      setWithdrawals(w.data.withdrawals || []);
     } catch {
       // silencioso
     } finally {
@@ -102,6 +112,40 @@ export default function EarningsScreen() {
   const bars = getBarData();
   const hasData = bars.some((b) => b.total > 0);
 
+  const handleOpenWithdrawal = () => {
+    setWithdrawAmount(String(summary?.withdrawalRules?.minAmount || 50));
+    setWithdrawModalVisible(true);
+  };
+
+  const handleRequestWithdrawal = async () => {
+    const amount = Number(withdrawAmount.replace(',', '.'));
+    const minAmount = Number(summary?.withdrawalRules?.minAmount || 50);
+
+    if (!Number.isFinite(amount) || amount < minAmount) {
+      Alert.alert('Valor inválido', `O saque mínimo é ${fmt(minAmount)}.`);
+      return;
+    }
+
+    setRequestingWithdrawal(true);
+    try {
+      const { data } = await walletAPI.requestWithdrawal(amount);
+      Alert.alert('Saque solicitado', data?.message || 'Solicitação registrada com sucesso.');
+      setWithdrawModalVisible(false);
+      load();
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível solicitar saque agora.');
+    } finally {
+      setRequestingWithdrawal(false);
+    }
+  };
+
+  const withdrawalStatusLabel = (status) => ({
+    pending: 'Na fila',
+    processing: 'Em processamento',
+    completed: 'Concluído',
+    cancelled: 'Cancelado',
+  }[status] || status);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -129,6 +173,20 @@ export default function EarningsScreen() {
                   <Text style={styles.headerStatLabel}>Serviços</Text>
                 </View>
               </View>
+
+              <TouchableOpacity
+                style={[styles.withdrawBtn, !summary.canRequestWithdrawal && styles.withdrawBtnDisabled]}
+                onPress={handleOpenWithdrawal}
+                disabled={!summary.canRequestWithdrawal}
+              >
+                <Ionicons name="cash-outline" size={18} color="#FF6B00" />
+                <Text style={styles.withdrawBtnText}>Solicitar saque PIX</Text>
+              </TouchableOpacity>
+              {!summary.canRequestWithdrawal && summary.nextWithdrawalAt && (
+                <Text style={styles.withdrawHint}>
+                  Próxima solicitação disponível em {new Date(summary.nextWithdrawalAt).toLocaleString('pt-BR')}
+                </Text>
+              )}
             </>
           ) : (
             <ActivityIndicator color="#fff" style={{ marginVertical: 24 }} />
@@ -208,18 +266,39 @@ export default function EarningsScreen() {
                 <Text style={styles.sectionTitle}>Últimas transações</Text>
                 {summary.transactions.map((t) => (
                   <View key={t._id} style={styles.transactionRow}>
-                    <View style={[styles.transactionIcon, { backgroundColor: '#E8F5E9' }]}>
-                      <Ionicons name="arrow-down-circle" size={20} color={colors.success} />
+                    <View style={[styles.transactionIcon, { backgroundColor: t.type === 'withdrawal' ? '#FDECEC' : '#E8F5E9' }]}>
+                      <Ionicons
+                        name={t.type === 'withdrawal' ? 'arrow-up-circle' : 'arrow-down-circle'}
+                        size={20}
+                        color={t.type === 'withdrawal' ? '#E53935' : colors.success}
+                      />
                     </View>
                     <View style={styles.transactionInfo}>
-                      <Text style={styles.transactionDesc}>{t.description || 'Serviço concluído'}</Text>
+                      <Text style={styles.transactionDesc}>{t.description || (t.type === 'withdrawal' ? 'Saque solicitado' : 'Serviço concluído')}</Text>
                       <Text style={styles.transactionDate}>
                         {new Date(t.createdAt).toLocaleDateString('pt-BR', {
                           day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
                         })}
                       </Text>
                     </View>
-                    <Text style={styles.transactionAmount}>+{fmt(t.amount)}</Text>
+                    <Text style={[styles.transactionAmount, t.type === 'withdrawal' && styles.transactionAmountDebit]}>
+                      {t.type === 'withdrawal' ? '-' : '+'}{fmt(t.amount)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {withdrawals?.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Últimos saques</Text>
+                {withdrawals.slice(0, 6).map((w) => (
+                  <View key={w._id} style={styles.withdrawRow}>
+                    <View>
+                      <Text style={styles.withdrawAmount}>{fmt(w.amount)}</Text>
+                      <Text style={styles.withdrawDate}>{fmtDatetime(w.requestedAt)}</Text>
+                    </View>
+                    <Text style={styles.withdrawStatus}>{withdrawalStatusLabel(w.status)}</Text>
                   </View>
                 ))}
               </View>
@@ -235,6 +314,41 @@ export default function EarningsScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal visible={withdrawModalVisible} transparent animationType="slide" onRequestClose={() => setWithdrawModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Solicitar saque</Text>
+            <Text style={styles.modalText}>O saque será realizado via PIX na chave CPF do seu cadastro.</Text>
+            <Text style={styles.modalText}>O processamento é manual e pode levar até 24 horas.</Text>
+            <Text style={styles.modalText}>Regras: mínimo de {fmt(summary?.withdrawalRules?.minAmount || 50)} e 1 solicitação por semana.</Text>
+
+            <Text style={styles.modalLabel}>Valor do saque</Text>
+            <TextInput
+              value={withdrawAmount}
+              onChangeText={setWithdrawAmount}
+              keyboardType="decimal-pad"
+              placeholder="50,00"
+              style={styles.modalInput}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalBtnGhost} onPress={() => setWithdrawModalVisible(false)}>
+                <Text style={styles.modalBtnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtnPrimary, requestingWithdrawal && { opacity: 0.7 }]}
+                onPress={handleRequestWithdrawal}
+                disabled={requestingWithdrawal}
+              >
+                {requestingWithdrawal
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.modalBtnPrimaryText}>Confirmar saque</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -271,6 +385,19 @@ const styles = StyleSheet.create({
   headerStatValue: { color: '#fff', fontSize: 16, fontWeight: '700' },
   headerStatLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
   headerStatDivider: { width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.3)' },
+  withdrawBtn: {
+    marginTop: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  withdrawBtnDisabled: { opacity: 0.5 },
+  withdrawBtnText: { color: '#FF6B00', fontWeight: '700', fontSize: 13 },
+  withdrawHint: { marginTop: 8, color: 'rgba(255,255,255,0.8)', fontSize: 12, textAlign: 'center' },
   periodBar: {
     flexDirection: 'row',
     margin: spacing.md,
@@ -355,7 +482,63 @@ const styles = StyleSheet.create({
   transactionDesc: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   transactionDate: { fontSize: 12, color: colors.textLight, marginTop: 2 },
   transactionAmount: { fontSize: 15, fontWeight: '700', color: colors.success },
+  transactionAmountDebit: { color: '#E53935' },
+  withdrawRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
+  },
+  withdrawAmount: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  withdrawDate: { fontSize: 12, color: colors.textLight, marginTop: 2 },
+  withdrawStatus: { fontSize: 12, fontWeight: '700', color: '#5C6B7A' },
   emptySection: { alignItems: 'center', paddingVertical: 48, gap: 8 },
   emptyText: { fontSize: 16, fontWeight: '600', color: colors.textSecondary },
   emptySubtext: { fontSize: 13, color: colors.textLight, textAlign: 'center', paddingHorizontal: spacing.xl },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    padding: spacing.md,
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: spacing.lg,
+    gap: 10,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  modalText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  modalLabel: { marginTop: 6, fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 6 },
+  modalBtnGhost: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalBtnGhostText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  modalBtnPrimary: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#FF6B00',
+    minWidth: 130,
+    alignItems: 'center',
+  },
+  modalBtnPrimaryText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 });

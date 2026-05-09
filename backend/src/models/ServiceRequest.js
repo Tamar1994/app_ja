@@ -50,6 +50,9 @@ const serviceRequestSchema = new mongoose.Schema({
     estimated: { type: Number, required: true },
     discountTotal: { type: Number, default: 0 },
     appliedCoupons: [{ type: String }],
+    professionalBonus: { type: Number, default: 0 },
+    platformFeeDiscount: { type: Number, default: 0 },
+    professionalRewardCoupon: { type: String, default: null },
     final: { type: Number, default: null },
     platformFee: { type: Number, default: 0 }, // taxa da plataforma (%)
   },

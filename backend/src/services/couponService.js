@@ -1,5 +1,6 @@
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
+const ServiceRequest = require('../models/ServiceRequest');
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -43,10 +44,19 @@ async function getUsageCounts(couponId, userId) {
 }
 
 async function validateSingleCoupon(coupon, user, options = {}) {
-  const { orderSubtotal = null, ignoreMinOrder = false } = options;
+  const {
+    orderSubtotal = null,
+    ignoreMinOrder = false,
+    usageScope = 'checkout',
+    excludeRequestId = null,
+  } = options;
 
   if (!coupon || !coupon.isActive) {
     return { ok: false, reason: 'Cupom inativo.' };
+  }
+
+  if ((coupon.usageScope || 'checkout') !== usageScope) {
+    return { ok: false, reason: 'Este cupom não se aplica a este cenário.' };
   }
 
   if (!isCouponWithinDateRange(coupon)) {
@@ -72,6 +82,28 @@ async function validateSingleCoupon(coupon, user, options = {}) {
 
   if (Number.isFinite(coupon.maxUsesPerUser) && coupon.maxUsesPerUser > 0 && userUsed >= coupon.maxUsesPerUser) {
     return { ok: false, reason: 'Você já atingiu o limite de uso desse cupom.' };
+  }
+
+  if (usageScope === 'checkout' && coupon.firstOrderOnly) {
+    const paidOrdersCount = await ServiceRequest.countDocuments({
+      client: user._id,
+      'payment.status': 'paid',
+    });
+    if (paidOrdersCount > 0) {
+      return { ok: false, reason: 'Cupom válido apenas para o primeiro pedido.' };
+    }
+  }
+
+  if (usageScope === 'professional_reward' && coupon.professionalFirstServiceOnly) {
+    const filter = {
+      professional: user._id,
+      status: 'completed',
+    };
+    if (excludeRequestId) filter._id = { $ne: excludeRequestId };
+    const completedCount = await ServiceRequest.countDocuments(filter);
+    if (completedCount > 0) {
+      return { ok: false, reason: 'Cupom válido apenas para o primeiro serviço concluído.' };
+    }
   }
 
   return { ok: true };
@@ -141,7 +173,10 @@ async function resolveCouponsForCheckout({ couponCodes, user, orderSubtotal }) {
       continue;
     }
 
-    const validation = await validateSingleCoupon(coupon, user, { orderSubtotal });
+    const validation = await validateSingleCoupon(coupon, user, {
+      orderSubtotal,
+      usageScope: 'checkout',
+    });
     if (!validation.ok) {
       rejectedCoupons.push({ code, reason: validation.reason });
       continue;
@@ -175,6 +210,70 @@ async function resolveCouponsForCheckout({ couponCodes, user, orderSubtotal }) {
   };
 }
 
+function calculateProfessionalReward(coupon, grossAmount, defaultFeePercent) {
+  const rewardType = coupon.professionalRewardType || 'none';
+  const rewardValue = Number(coupon.professionalRewardValue || 0);
+  let bonusAmount = 0;
+  let feePercentDiscount = 0;
+
+  if (rewardType === 'fixed_bonus') {
+    bonusAmount = Math.max(0, rewardValue);
+  }
+
+  if (rewardType === 'platform_fee_discount') {
+    feePercentDiscount = Math.min(Math.max(0, rewardValue), defaultFeePercent);
+  }
+
+  const feePercentApplied = Math.max(0, defaultFeePercent - feePercentDiscount);
+  const platformFee = round2(grossAmount * (feePercentApplied / 100));
+  const platformFeeWithoutDiscount = round2(grossAmount * (defaultFeePercent / 100));
+  const feeDiscountAmount = round2(Math.max(0, platformFeeWithoutDiscount - platformFee));
+  const totalBenefit = round2(bonusAmount + feeDiscountAmount);
+
+  return {
+    rewardType,
+    bonusAmount: round2(bonusAmount),
+    feePercentDiscount: round2(feePercentDiscount),
+    feePercentApplied: round2(feePercentApplied),
+    platformFee,
+    feeDiscountAmount,
+    totalBenefit,
+  };
+}
+
+async function resolveProfessionalRewardForCompletion({ professionalUser, serviceRequest, grossAmount, defaultFeePercent }) {
+  const coupons = await Coupon.find({
+    isActive: true,
+    usageScope: 'professional_reward',
+    distributionType: { $in: ['all', 'professionals', 'specific'] },
+  });
+
+  let best = null;
+
+  for (const coupon of coupons) {
+    const validation = await validateSingleCoupon(coupon, professionalUser, {
+      ignoreMinOrder: true,
+      usageScope: 'professional_reward',
+      excludeRequestId: serviceRequest?._id,
+    });
+    if (!validation.ok) continue;
+
+    const reward = calculateProfessionalReward(coupon, grossAmount, defaultFeePercent);
+    if (reward.totalBenefit <= 0) continue;
+
+    if (!best || reward.totalBenefit > best.reward.totalBenefit) {
+      best = { coupon, reward };
+    }
+  }
+
+  if (!best) {
+    const fallback = calculateProfessionalReward({ professionalRewardType: 'none', professionalRewardValue: 0 }, grossAmount, defaultFeePercent);
+    return { coupon: null, ...fallback };
+  }
+
+  return { coupon: best.coupon, ...best.reward };
+}
+
 module.exports = {
   Coupon,
   normalizeCouponCode,
@@ -183,6 +282,7 @@ module.exports = {
   isCouponWithinDateRange,
   validateSingleCoupon,
   resolveCouponsForCheckout,
+  resolveProfessionalRewardForCompletion,
   applyCouponsToSubtotal,
   getUsageCounts,
 };
