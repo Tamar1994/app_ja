@@ -50,6 +50,7 @@ export default function ActiveJobScreen({ navigation, route }) {
     try {
       const { data } = await requestAPI.getById(requestId);
       setRequest(data.request);
+      setClientConfirmed(Boolean(data.request.clientConfirmedAt) || ['in_progress', 'completed'].includes(data.request.status));
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar o serviço.');
     } finally {
@@ -176,13 +177,18 @@ export default function ActiveJobScreen({ navigation, route }) {
             </LinearGradient>
             <View style={styles.clientInfo}>
               <Text style={styles.clientName}>{request.client.name}</Text>
-              <Text style={styles.clientPhone}>{request.client.phone}</Text>
+              <Text style={styles.clientPhone}>{clientConfirmed ? 'Chat liberado para este serviço' : 'Aguardando confirmação do cliente'}</Text>
             </View>
-            <TouchableOpacity style={styles.callBtn}>
-              <LinearGradient colors={colors.gradientSecondary} style={styles.callBtnGrad}>
-                <Ionicons name="call" size={18} color={colors.white} />
-              </LinearGradient>
-            </TouchableOpacity>
+            {clientConfirmed && (
+              <TouchableOpacity
+                style={styles.callBtn}
+                onPress={() => navigation.navigate('ServiceChat', { requestId, peerName: request.client.name, role: 'professional' })}
+              >
+                <LinearGradient colors={colors.gradientSecondary} style={styles.callBtnGrad}>
+                  <Ionicons name="chatbubble-ellipses" size={18} color={colors.white} />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 

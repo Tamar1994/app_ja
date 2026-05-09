@@ -124,7 +124,7 @@ export default function HistoryScreen({ navigation }) {
         end={{ x: 1, y: 1 }}
       >
         <Text style={styles.headerTitle}>Meus pedidos</Text>
-        <Text style={styles.headerSub}>{requests.length} solicitação{requests.length !== 1 ? 'ões' : ''}</Text>
+        <Text style={styles.headerSub}>{requests.length} {requests.length === 1 ? 'solicitação' : 'solicitações'}</Text>
       </LinearGradient>
       <FlatList
         data={requests}

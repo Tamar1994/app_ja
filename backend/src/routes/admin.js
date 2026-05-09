@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const AdminUser = require('../models/AdminUser');
 const User = require('../models/User');
 const SupportChat = require('../models/SupportChat');
+const ServiceChat = require('../models/ServiceChat');
 const ServiceRequest = require('../models/ServiceRequest');
 const ServiceType = require('../models/ServiceType');
 const HelpTopic = require('../models/HelpTopic');
@@ -454,6 +455,37 @@ router.get('/support/operators', adminAuth, async (req, res) => {
     res.json({ operators });
   } catch {
     res.status(500).json({ message: 'Erro' });
+  }
+});
+
+// GET /api/admin/service-chats — auditoria de chats entre cliente e profissional
+router.get('/service-chats', adminAuth, async (req, res) => {
+  try {
+    const { status = 'all' } = req.query;
+    const query = status === 'all' ? {} : { status };
+    const chats = await ServiceChat.find(query)
+      .populate('requestId', 'status createdAt completedAt cancelReason')
+      .populate('clientId', 'name email')
+      .populate('professionalId', 'name email')
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .limit(100);
+    res.json({ chats });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar chats de serviço' });
+  }
+});
+
+// GET /api/admin/service-chats/:id — detalhe de um chat de serviço
+router.get('/service-chats/:id', adminAuth, async (req, res) => {
+  try {
+    const chat = await ServiceChat.findById(req.params.id)
+      .populate('requestId', 'status createdAt completedAt cancelReason address details pricing')
+      .populate('clientId', 'name email phone')
+      .populate('professionalId', 'name email phone');
+    if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
+    res.json({ chat });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar chat de serviço' });
   }
 });
 

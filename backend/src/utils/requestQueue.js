@@ -62,36 +62,42 @@ function sendExpoPush(pushToken, title, body, data = {}) {
 }
 
 /**
- * Encontra o próximo profissional disponível (conectado no socket e não recusou)
+ * Encontra o próximo profissional disponível do mais próximo ao mais distante.
  */
-async function findNextProfessional(request, io) {
+async function findNextProfessional(request) {
   const User = require('../models/User');
-  // Busca sockets conectados na sala 'professionals'
-  let connectedIds = new Set();
-  try {
-    const sockets = await io.in('professionals').fetchSockets();
-    sockets.forEach(s => {
-      if (s.user?._id) connectedIds.add(s.user._id.toString());
-    });
-  } catch { /* servidor pode não ter sockets ainda */ }
 
-  // IDs a excluir: já recusaram ou é o atual (evita reenviar)
-  const excluded = new Set([
+  const excluded = [
     ...(request.rejectedBy || []).map(id => id.toString()),
     ...(request.currentAssignedTo ? [request.currentAssignedTo.toString()] : []),
-  ]);
+  ];
 
-  // Candidatos: profissionais disponíveis, ordenados por avaliação
-  const candidates = await User.find({
+  const [longitude, latitude] = request?.address?.coordinates || [];
+  const hasValidCoordinates = Number.isFinite(longitude)
+    && Number.isFinite(latitude)
+    && !(longitude === 0 && latitude === 0);
+
+  const baseFilter = {
     userType: 'professional',
     'professional.isAvailable': true,
-    _id: { $nin: [...excluded] },
-  }).sort({ 'professional.rating': -1, 'professional.totalReviews': -1 });
+    _id: { $nin: excluded },
+  };
 
-  // Preferir os que estão conectados agora
-  return candidates.find(p => connectedIds.has(p._id.toString()))
-    || candidates[0] // fallback: disponível mas não conectado (receberá push depois)
-    || null;
+  if (hasValidCoordinates) {
+    const nearest = await User.find({
+      ...baseFilter,
+      location: {
+        $near: {
+          $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+        },
+      },
+    });
+    if (nearest.length) return nearest[0];
+  }
+
+  const fallback = await User.find(baseFilter)
+    .sort({ 'professional.rating': -1, 'professional.totalReviews': -1 });
+  return fallback[0] || null;
 }
 
 /**
@@ -108,7 +114,7 @@ async function dispatchToNextProfessional(requestId, io) {
 
   if (!request || request.status !== 'searching') return;
 
-  const professional = await findNextProfessional(request, io);
+  const professional = await findNextProfessional(request);
 
   if (!professional) {
     // Nenhum profissional disponível no momento

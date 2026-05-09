@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions,
+  SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import { requestAPI, serviceTypeAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const { width } = Dimensions.get('window');
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
 
 const STATUS_LABELS = {
   searching: 'Buscando profissional...',
@@ -41,7 +42,7 @@ export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const { on } = useSocket();
   const insets = useSafeAreaInsets();
-  const fabBottom = insets.bottom + 68; // 68 = approx tab bar height
+  const fabBottom = Math.max(insets.bottom, 8) + 18;
   const [activeRequest, setActiveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -227,7 +228,11 @@ export default function HomeScreen({ navigation }) {
                   end={{ x: 1, y: 1 }}
                 >
                   <View style={styles.serviceIconBg}>
-                    <Ionicons name={st.icon || 'briefcase-outline'} size={28} color={colors.primary} />
+                    {st.imageUrl ? (
+                      <Image source={{ uri: `${API_BASE}${st.imageUrl}` }} style={styles.serviceIconImage} resizeMode="contain" />
+                    ) : (
+                      <Ionicons name={st.icon || 'briefcase-outline'} size={28} color={colors.primary} />
+                    )}
                   </View>
                   <Text style={styles.serviceCardTitle}>{st.name}</Text>
                   <Text style={styles.serviceCardSub}>{st.description || ''}</Text>
@@ -237,7 +242,11 @@ export default function HomeScreen({ navigation }) {
               <View key={st._id} style={[styles.serviceCard, styles.serviceCardSoon]}>
                 <View style={styles.serviceCardGradient}>
                   <View style={[styles.serviceIconBg, { backgroundColor: 'rgba(0,0,0,0.05)' }]}>
-                    <Ionicons name={st.icon || 'briefcase-outline'} size={28} color={colors.textLight} />
+                    {st.imageUrl ? (
+                      <Image source={{ uri: `${API_BASE}${st.imageUrl}` }} style={styles.serviceIconImage} resizeMode="contain" />
+                    ) : (
+                      <Ionicons name={st.icon || 'briefcase-outline'} size={28} color={colors.textLight} />
+                    )}
                   </View>
                   <Text style={[styles.serviceCardTitle, { color: colors.textLight }]}>{st.name}</Text>
                   <View style={styles.soonBadge}>
@@ -394,6 +403,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
+  },
+  serviceIconImage: {
+    width: 30,
+    height: 30,
   },
   serviceCardTitle: { fontSize: typography.fontSizes.md, fontWeight: '700', color: colors.textPrimary },
   serviceCardSub: { fontSize: typography.fontSizes.xs, color: colors.primary, fontWeight: '600', marginTop: 2 },

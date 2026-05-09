@@ -144,9 +144,12 @@ export default function TrackingScreen({ navigation, route }) {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.callBtn}>
+            <TouchableOpacity
+              style={styles.callBtn}
+              onPress={() => navigation.navigate('ServiceChat', { requestId, peerName: request.professional.name, role: 'client' })}
+            >
               <LinearGradient colors={colors.gradientSecondary} style={styles.callBtnGradient}>
-                <Ionicons name="call" size={18} color={colors.white} />
+                <Ionicons name="chatbubble-ellipses" size={18} color={colors.white} />
               </LinearGradient>
             </TouchableOpacity>
           </View>

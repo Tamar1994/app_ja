@@ -11,6 +11,7 @@ const walletRoutes = require('./routes/wallet');
 const serviceTypesRoutes = require('./routes/serviceTypes');
 const helpTopicsRoutes = require('./routes/helpTopics');
 const supportRoutes = require('./routes/support');
+const serviceChatRoutes = require('./routes/serviceChats');
 const paymentRoutes = require('./routes/payments');
 const couponRoutes = require('./routes/coupons');
 const TermsOfUse = require('./models/TermsOfUse');
@@ -39,6 +40,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/service-types', serviceTypesRoutes);
 app.use('/api/help', helpTopicsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/service-chats', serviceChatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
 

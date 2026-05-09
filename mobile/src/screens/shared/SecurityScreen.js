@@ -208,7 +208,7 @@ export default function SecurityScreen({ navigation }) {
                   <View style={styles.privacyIcon}>
                     <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.privacyContent}>
                     <Text style={styles.privacyLabel}>{item.label}</Text>
                     <Text style={styles.privacyDesc}>{item.desc}</Text>
                   </View>
@@ -353,17 +353,20 @@ const styles = StyleSheet.create({
   },
   btnText: { color: colors.white, fontWeight: '700', fontSize: typography.fontSizes.md },
 
-  privacyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  privacyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 14 },
   privacyIcon: {
     width: 36, height: 36, borderRadius: 10,
     backgroundColor: colors.background,
     alignItems: 'center', justifyContent: 'center',
   },
+  privacyContent: { flex: 1, minWidth: 0, paddingRight: 8 },
   privacyLabel: { fontSize: typography.fontSizes.md, fontWeight: '600', color: colors.textPrimary },
   privacyDesc: { fontSize: typography.fontSizes.xs, color: colors.textLight, marginTop: 2 },
   privacyBadge: {
     backgroundColor: '#E8F5E9', borderRadius: borderRadius.full,
     paddingHorizontal: 10, paddingVertical: 4,
+    marginLeft: 'auto',
+    alignSelf: 'center',
   },
   privacyBadgeText: { fontSize: 11, color: '#2E7D32', fontWeight: '600' },
 

@@ -15,12 +15,8 @@ export default function ProfessionalHistoryScreen() {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await requestAPI.list();
-      // Filtrar apenas os serviços do profissional (aceitos, em andamento, concluídos, cancelados)
-      const done = data.requests.filter((r) =>
-        ['accepted', 'in_progress', 'completed', 'cancelled'].includes(r.status)
-      );
-      setRequests(done);
+      const { data } = await requestAPI.list('my-services');
+      setRequests(data.requests || []);
     } catch {
       // ignora
     } finally {
@@ -35,20 +31,21 @@ export default function ProfessionalHistoryScreen() {
     accepted: colors.secondary,
     in_progress: colors.warning,
     completed: colors.success,
-    cancelled: colors.textLight,
   };
   const STATUS_LABELS = {
-    accepted: 'Aceito',
+    accepted: 'Aguardando cliente',
     in_progress: 'Em andamento',
-    completed: 'Concluído',
-    cancelled: 'Cancelado',
+    completed: 'Finalizado',
   };
   const STATUS_ICONS = {
-    accepted: 'walk',
+    accepted: 'hourglass-outline',
     in_progress: 'home',
     completed: 'checkmark-circle',
-    cancelled: 'close-circle',
   };
+
+  const waitingRequests = requests.filter((item) => item.status === 'accepted');
+  const activeRequests = requests.filter((item) => item.status === 'in_progress');
+  const completedRequests = requests.filter((item) => item.status === 'completed');
 
   const renderItem = ({ item }) => (
     <View style={styles.card}>
@@ -102,6 +99,12 @@ export default function ProfessionalHistoryScreen() {
     );
   }
 
+  const sections = [
+    { key: 'active', title: 'Serviço ativo', data: activeRequests },
+    { key: 'waiting', title: 'Aguardando aceite do cliente', data: waitingRequests },
+    { key: 'completed', title: 'Histórico de finalizadas', data: completedRequests },
+  ];
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -115,9 +118,8 @@ export default function ProfessionalHistoryScreen() {
         <Text style={styles.headerSub}>{requests.length} serviço{requests.length !== 1 ? 's' : ''}</Text>
       </LinearGradient>
       <FlatList
-        data={requests}
-        keyExtractor={(item) => item._id}
-        renderItem={renderItem}
+        data={sections}
+        keyExtractor={(item) => item.key}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
@@ -126,13 +128,27 @@ export default function ProfessionalHistoryScreen() {
             colors={[colors.secondary]}
           />
         }
+        renderItem={({ item: section }) => (
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            {section.data.length ? section.data.map((request) => (
+              <View key={request._id} style={styles.sectionItemWrap}>
+                {renderItem({ item: request })}
+              </View>
+            )) : (
+              <View style={styles.sectionEmpty}>
+                <Text style={styles.sectionEmptyText}>Nenhum serviço nesta etapa.</Text>
+              </View>
+            )}
+          </View>
+        )}
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
               <Ionicons name="briefcase-outline" size={36} color={colors.textLight} />
             </View>
             <Text style={styles.emptyTitle}>Nenhum serviço ainda</Text>
-            <Text style={styles.emptyText}>Seus serviços realizados aparecerão aqui</Text>
+            <Text style={styles.emptyText}>Quando você aceitar pedidos, eles aparecerão aqui</Text>
           </View>
         }
       />
@@ -149,7 +165,19 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: typography.fontSizes.xxl, fontWeight: '800', color: colors.white },
   headerSub: { fontSize: typography.fontSizes.sm, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
-  list: { padding: spacing.lg, gap: spacing.sm, paddingBottom: 90 },
+  list: { padding: spacing.lg, gap: spacing.md, paddingBottom: 90 },
+  sectionBlock: { gap: spacing.sm },
+  sectionTitle: { fontSize: typography.fontSizes.md, fontWeight: '700', color: colors.textPrimary },
+  sectionItemWrap: { marginTop: spacing.xs },
+  sectionEmpty: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sectionEmptyText: { fontSize: typography.fontSizes.sm, color: colors.textLight },
   card: {
     backgroundColor: colors.white,
     borderRadius: borderRadius.xl,

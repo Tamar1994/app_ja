@@ -21,6 +21,10 @@ const serviceTypeSchema = new mongoose.Schema({
     type: String,
     default: 'briefcase-outline',
   },
+  imageUrl: {
+    type: String,
+    default: null,
+  },
   status: {
     type: String,
     enum: ['enabled', 'disabled'],

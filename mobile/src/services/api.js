@@ -43,7 +43,7 @@ export const requestAPI = {
   estimate: (hours, hasProducts, serviceTypeSlug = null) =>
     api.post('/requests/estimate', { hours, hasProducts, serviceTypeSlug }),
   create: (data) => api.post('/requests', data),
-  list: () => api.get('/requests'),
+  list: (scope = null) => api.get(`/requests${scope ? `?scope=${scope}` : ''}`),
   getById: (id) => api.get(`/requests/${id}`),
   accept: (id) => api.patch(`/requests/${id}/accept`),
   reject: (id) => api.patch(`/requests/${id}/reject`),
@@ -80,6 +80,11 @@ export const supportChatAPI = {
   getMy: () => api.get('/support/chats/my'),
   getById: (id) => api.get(`/support/chats/${id}`),
   sendMessage: (id, text) => api.post(`/support/chats/${id}/message`, { text }),
+};
+
+export const serviceChatAPI = {
+  getByRequest: (requestId) => api.get(`/service-chats/request/${requestId}`),
+  sendMessage: (requestId, text) => api.post(`/service-chats/request/${requestId}/message`, { text }),
 };
 
 // Pagamentos

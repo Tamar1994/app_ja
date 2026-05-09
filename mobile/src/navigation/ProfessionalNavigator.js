@@ -15,6 +15,7 @@ import TermsScreen from '../screens/shared/TermsScreen';
 import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
 import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
+import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -24,6 +25,7 @@ function DashboardStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
+      <Stack.Screen name="ServiceChat" component={ServiceChatScreen} />
     </Stack.Navigator>
   );
 }

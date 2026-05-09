@@ -28,7 +28,7 @@ export default function DashboardScreen({ navigation }) {
 
   const loadRequests = useCallback(async () => {
     try {
-      const { data } = await requestAPI.list();
+      const { data } = await requestAPI.list('available');
       setRequests(data.requests);
     } catch {
       // ignora
@@ -75,10 +75,14 @@ export default function DashboardScreen({ navigation }) {
       const pending = getPendingNotification();
       if (pending) {
         clearPendingNotification();
-        // Pequeno delay para garantir que o modal abre após a tela montar
         setTimeout(() => setIncomingJob(pending), 300);
       }
-    }, [])
+      loadRequests();
+      return () => {
+        setIncomingJob(null);
+        setSelectedRequest(null);
+      };
+    }, [loadRequests])
   );
 
   const handleIncomingAccept = async (requestId) => {
@@ -86,7 +90,9 @@ export default function DashboardScreen({ navigation }) {
     setActionLoading(true);
     try {
       await requestAPI.accept(requestId);
+      clearPendingNotification();
       setIncomingJob(null);
+      setSelectedRequest(null);
       navigation.navigate('ActiveJob', { requestId });
     } catch (err) {
       Alert.alert('Erro', err.response?.data?.message || 'Não foi possível aceitar.');
@@ -131,7 +137,9 @@ export default function DashboardScreen({ navigation }) {
 
   const handleReject = async (requestId) => {
     try {
+      clearPendingNotification();
       await requestAPI.reject(requestId);
+      setIncomingJob(null);
       setSelectedRequest(null);
       setRequests((prev) => prev.filter((r) => r._id !== requestId));
     } catch {

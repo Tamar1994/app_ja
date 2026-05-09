@@ -21,6 +21,7 @@ import WalletScreen from '../screens/client/WalletScreen';
 import SecurityScreen from '../screens/shared/SecurityScreen';
 import TermsScreen from '../screens/shared/TermsScreen';
 import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
+import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -34,6 +35,7 @@ function HomeStack() {
       <Stack.Screen name="Searching" component={SearchingScreen} />
       <Stack.Screen name="ProfessionalFound" component={ProfessionalFoundScreen} />
       <Stack.Screen name="Tracking" component={TrackingScreen} />
+      <Stack.Screen name="ServiceChat" component={ServiceChatScreen} />
       <Stack.Screen name="Review" component={ReviewScreen} />
       <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />

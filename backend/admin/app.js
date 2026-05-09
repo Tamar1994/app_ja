@@ -32,6 +32,17 @@ const stReq = async (method, path, body) => {
   return data;
 };
 
+const stMultipartReq = async (method, path, formData) => {
+  const r = await fetch(API_ST + path, {
+    method,
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: formData,
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.message || 'Erro');
+  return data;
+};
+
 const multipartReq = async (method, path, formData) => {
   const r = await fetch(API + path, {
     method,
@@ -548,6 +559,11 @@ const renderSupporte = async () => {
           <button class="btn btn-ghost btn-sm" onclick="loadMyChats()">↻</button>
         </div>
         <div id="support-my-list"><div class="loading-center"><div class="spinner"></div></div></div>
+        <div class="support-panel-header" style="margin-top:8px;">
+          <span class="support-panel-title">Chats de Serviço</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadServiceChats()">↻</button>
+        </div>
+        <div id="service-chat-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
       <div id="support-chat-main" style="display:flex;align-items:center;justify-content:center;color:#3D4460;font-size:14px;">
         <div style="text-align:center;">
@@ -559,14 +575,40 @@ const renderSupporte = async () => {
   await loadOperatorStatus();
   await loadSupportQueue();
   await loadMyChats();
+  await loadServiceChats();
   // Polling a cada 8s
   if (supportPollingTimer) clearInterval(supportPollingTimer);
   supportPollingTimer = setInterval(async () => {
     if (currentPage !== 'suporte') { clearInterval(supportPollingTimer); return; }
     await loadSupportQueue();
     await loadMyChats();
+    await loadServiceChats();
     await loadOperatorStatus();
   }, 8000);
+};
+
+const loadServiceChats = async () => {
+  const el = document.getElementById('service-chat-list');
+  if (!el) return;
+  try {
+    const data = await req('GET', '/service-chats');
+    const chats = data.chats || [];
+    if (!chats.length) {
+      el.innerHTML = `<div style="padding:20px 16px;color:#3D4460;font-size:12px;text-align:center;">Nenhum chat de serviço</div>`;
+      return;
+    }
+    el.innerHTML = chats.map(ch => `
+      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''}" onclick="openServiceChatAudit('${ch._id}')">
+        <div class="queue-item-name">${escHtml(ch.clientId?.name || 'Cliente')} → ${escHtml(ch.professionalId?.name || 'Profissional')}</div>
+        <div class="queue-item-subject">Pedido ${escHtml(ch.requestId?._id || '')}</div>
+        <div class="queue-item-meta">
+          <span class="queue-badge ${ch.status === 'active' ? 'queue-badge-active' : 'badge-closed'}">${ch.status === 'active' ? '💬 Ativo' : '🔒 Encerrado'}</span>
+          <span>${fmtDatetime(ch.updatedAt || ch.createdAt)}</span>
+        </div>
+      </div>`).join('');
+  } catch {
+    el.innerHTML = `<div style="padding:20px 16px;color:#3D4460;font-size:12px;text-align:center;">Erro ao carregar</div>`;
+  }
 };
 
 const loadOperatorStatus = async () => {
@@ -723,8 +765,46 @@ const closeSupportChat = async (id) => {
     showAlert('Atendimento encerrado!', 'success');
     await loadMyChats();
     await loadSupportQueue();
+    await loadServiceChats();
     await loadOperatorStatus();
   } catch (err) { showAlert(err.message); }
+};
+
+const openServiceChatAudit = async (id) => {
+  activeSupportChatId = id;
+  document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll(`.queue-item[onclick*="${id}"]`).forEach(el => el.classList.add('active'));
+  const main = document.getElementById('support-chat-main');
+  if (!main) return;
+  main.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', `/service-chats/${id}`);
+    const chat = data.chat;
+    main.style.display = 'flex';
+    main.style.flexDirection = 'column';
+    main.innerHTML = `
+      <div class="chat-header">
+        <div>
+          <div style="font-weight:700;font-size:15px;">${escHtml(chat.clientId?.name || 'Cliente')} → ${escHtml(chat.professionalId?.name || 'Profissional')}</div>
+          <div style="font-size:12px;color:#5C6B7A;">Status do pedido: ${escHtml(chat.requestId?.status || '—')} · Chat: ${escHtml(chat.status)}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span class="badge ${chat.status === 'active' ? 'badge-approved' : 'badge-closed'}">${chat.status === 'active' ? 'Ativo' : 'Encerrado'}</span>
+        </div>
+      </div>
+      <div class="chat-messages" id="support-msgs" style="flex:1;overflow-y:auto;">
+        ${chat.messages.length === 0 ? `<div class="empty"><div class="empty-icon">💬</div><p>Nenhuma mensagem trocada.</p></div>` :
+          chat.messages.map(m => `
+          <div>
+            <div class="msg ${m.sender === 'professional' ? 'msg-support' : 'msg-user'}"><strong>${m.sender === 'professional' ? 'Profissional' : 'Cliente'}:</strong> ${escHtml(m.text)}</div>
+            <div class="msg-time" style="text-align:${m.sender==='professional'?'right':'left'};color:#5C6B7A;">${fmtDatetime(m.createdAt)}</div>
+          </div>`).join('')}
+      </div>`;
+    const msgs = document.getElementById('support-msgs');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  } catch (err) {
+    main.innerHTML = `<div class="alert alert-error" style="margin:16px;">⚠️ ${escHtml(err.message)}</div>`;
+  }
 };
 
 // ── TERMOS DE USO ─────────────────────────────────────────────────
@@ -1916,7 +1996,7 @@ const renderServiceTypes = async () => {
 
 const renderServiceTypeCard = (t) => `
   <div class="service-type-card" id="stc-${t._id}">
-    <div class="service-type-icon">${t.icon || '🔧'}</div>
+    <div class="service-type-icon">${t.imageUrl ? `<img src="${escHtml(t.imageUrl)}" alt="${escHtml(t.name)}" class="service-type-icon-img" />` : (t.icon || '🔧')}</div>
     <div class="service-type-info">
       <div class="service-type-name">${escHtml(t.name)}</div>
       <div class="service-type-desc">${escHtml(t.description || '')}</div>
@@ -1952,7 +2032,8 @@ const openNewServiceTypeModal = () => {
       <div class="form-group"><label class="form-label">Nome</label><input id="st-name" class="form-input" placeholder="ex: Diarista" /></div>
       <div class="form-group"><label class="form-label">Slug (identificador único)</label><input id="st-slug" class="form-input" placeholder="ex: diarista" /></div>
       <div class="form-group"><label class="form-label">Descrição</label><input id="st-desc" class="form-input" placeholder="Breve descrição" /></div>
-      <div class="form-group"><label class="form-label">Ícone (emoji)</label><input id="st-icon" class="form-input" placeholder="ex: 🧹" /></div>
+      <div class="form-group"><label class="form-label">Ícone fallback (Ionicon/emoji)</label><input id="st-icon" class="form-input" placeholder="ex: briefcase-outline" /></div>
+      <div class="form-group"><label class="form-label">Upload do ícone (PNG/WEBP transparente)</label><input id="st-image" class="form-input" type="file" accept=".png,.webp" /></div>
       <div class="form-group"><label class="form-label">Status</label>
         <select id="st-status" class="form-select">
           <option value="enabled">Ativo (aparece no app)</option>
@@ -1974,9 +2055,17 @@ const createServiceType = async () => {
   const description = document.getElementById('st-desc').value.trim();
   const icon = document.getElementById('st-icon').value.trim();
   const status = document.getElementById('st-status').value;
+  const imageFile = document.getElementById('st-image').files?.[0] || null;
   if (!name || !slug) { alert('Nome e slug são obrigatórios.'); return; }
   try {
-    await stReq('POST', '', { name, slug, description, icon, status });
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('slug', slug);
+    formData.append('description', description);
+    formData.append('icon', icon);
+    formData.append('status', status);
+    if (imageFile) formData.append('iconFile', imageFile);
+    await stMultipartReq('POST', '', formData);
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Profissão criada!', 'success');
     renderServiceTypes();
@@ -1991,7 +2080,9 @@ const openEditServiceTypeModal = (t) => {
     <div class="modal-body">
       <div class="form-group"><label class="form-label">Nome</label><input id="ste-name" class="form-input" value="${escHtml(t.name)}" /></div>
       <div class="form-group"><label class="form-label">Descrição</label><input id="ste-desc" class="form-input" value="${escHtml(t.description||'')}" /></div>
-      <div class="form-group"><label class="form-label">Ícone (emoji)</label><input id="ste-icon" class="form-input" value="${escHtml(t.icon||'')}" /></div>
+      <div class="form-group"><label class="form-label">Ícone fallback (Ionicon/emoji)</label><input id="ste-icon" class="form-input" value="${escHtml(t.icon||'')}" /></div>
+      <div class="form-group"><label class="form-label">Ícone atual</label><div style="font-size:12px;color:#7A84A0;">${t.imageUrl ? `Arquivo enviado: ${escHtml(t.imageUrl)}` : 'Nenhum arquivo enviado'}</div></div>
+      <div class="form-group"><label class="form-label">Trocar ícone (PNG/WEBP transparente)</label><input id="ste-image" class="form-input" type="file" accept=".png,.webp" /></div>
       <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ste-order" class="form-input" type="number" value="${t.sortOrder||0}" /></div>
       <div class="form-group"><label class="form-label">Status</label>
         <select id="ste-status" class="form-select">
@@ -2015,8 +2106,16 @@ const updateServiceType = async (id) => {
   const icon = document.getElementById('ste-icon').value.trim();
   const sortOrder = parseInt(document.getElementById('ste-order').value) || 0;
   const status = document.getElementById('ste-status').value;
+  const imageFile = document.getElementById('ste-image').files?.[0] || null;
   try {
-    await stReq('PATCH', `/${id}`, { name, description, icon, sortOrder, status });
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('description', description);
+    formData.append('icon', icon);
+    formData.append('sortOrder', sortOrder);
+    formData.append('status', status);
+    if (imageFile) formData.append('iconFile', imageFile);
+    await stMultipartReq('PATCH', `/${id}`, formData);
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Profissão atualizada!', 'success');
     renderServiceTypes();

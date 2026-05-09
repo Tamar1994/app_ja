@@ -322,6 +322,7 @@ td strong { color: #E8EAF0; font-weight: 600; }
 .service-type-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .service-type-card { background: #1C1F2E; border-radius: 14px; padding: 18px; border: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; gap: 14px; }
 .service-type-icon { font-size: 28px; width: 52px; height: 52px; border-radius: 14px; background: rgba(255,107,0,0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.service-type-icon-img { width: 34px; height: 34px; object-fit: contain; display: block; }
 .service-type-info { flex: 1; min-width: 0; }
 .service-type-name { font-weight: 700; font-size: 15px; color: #E8EAF0; }
 .service-type-desc { font-size: 12px; color: #5C6B7A; margin-top: 2px; }

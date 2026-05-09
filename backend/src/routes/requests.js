@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const PricingConfig = require('../models/PricingConfig');
 const { dispatchToNextProfessional, clearRequestTimer } = require('../utils/requestQueue');
+const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 
 const router = express.Router();
 
@@ -116,13 +117,23 @@ router.get('/', auth, async (req, res) => {
         .populate('professional', 'name avatar professional.rating')
         .sort({ createdAt: -1 });
     } else {
-      // Profissional vê solicitações em busca de profissional
-      requests = await ServiceRequest.find({
-        status: 'searching',
-        rejectedBy: { $ne: req.user._id },
-      })
-        .populate('client', 'name avatar')
-        .sort({ createdAt: -1 });
+      const { scope = 'available' } = req.query;
+      if (scope === 'my-services') {
+        requests = await ServiceRequest.find({
+          professional: req.user._id,
+          status: { $in: ['accepted', 'in_progress', 'completed'] },
+        })
+          .populate('client', 'name avatar')
+          .sort({ updatedAt: -1, createdAt: -1 });
+      } else {
+        requests = await ServiceRequest.find({
+          status: 'searching',
+          currentAssignedTo: req.user._id,
+          rejectedBy: { $ne: req.user._id },
+        })
+          .populate('client', 'name avatar')
+          .sort({ createdAt: -1 });
+      }
     }
     res.json({ requests });
   } catch {
@@ -152,7 +163,13 @@ router.patch('/:id/accept', auth, async (req, res) => {
   try {
     const request = await ServiceRequest.findOneAndUpdate(
       { _id: req.params.id, status: 'searching' },
-      { status: 'accepted', professional: req.user._id, acceptedAt: new Date(), $unset: { currentAssignedTo: '' } },
+      {
+        status: 'accepted',
+        professional: req.user._id,
+        acceptedAt: new Date(),
+        clientConfirmedAt: null,
+        $unset: { currentAssignedTo: '' },
+      },
       { new: true }
     ).populate('client', 'name avatar phone');
 
@@ -231,8 +248,10 @@ router.patch('/:id/client-reject', auth, async (req, res) => {
     await ServiceRequest.findByIdAndUpdate(req.params.id, {
       status: 'searching',
       $addToSet: { rejectedBy: rejectedProfessionalId },
-      $unset: { professional: '', acceptedAt: '' },
+      $unset: { professional: '', acceptedAt: '', clientConfirmedAt: '' },
     });
+
+    await closeServiceChatForRequest(req.params.id, 'Cliente optou por outro profissional');
 
     const io = req.app.get('io');
     if (io) {
@@ -260,12 +279,20 @@ router.patch('/:id/client-confirm', auth, async (req, res) => {
   }
 
   try {
-    const request = await ServiceRequest.findOne({
-      _id: req.params.id,
-      client: req.user._id,
-      status: 'accepted',
-    });
+    const request = await ServiceRequest.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        client: req.user._id,
+        status: 'accepted',
+      },
+      {
+        clientConfirmedAt: new Date(),
+      },
+      { new: true }
+    );
     if (!request) return res.status(404).json({ message: 'Solicitação não encontrada' });
+
+    await ensureServiceChatForRequest(request);
 
     const io = req.app.get('io');
     if (io && request.professional) {
@@ -274,7 +301,7 @@ router.patch('/:id/client-confirm', auth, async (req, res) => {
       });
     }
 
-    res.json({ ok: true });
+    res.json({ ok: true, request });
   } catch {
     res.status(500).json({ message: 'Erro ao confirmar profissional' });
   }
@@ -284,7 +311,12 @@ router.patch('/:id/client-confirm', auth, async (req, res) => {
 router.patch('/:id/start', auth, async (req, res) => {
   try {
     const request = await ServiceRequest.findOneAndUpdate(
-      { _id: req.params.id, professional: req.user._id, status: 'accepted' },
+      {
+        _id: req.params.id,
+        professional: req.user._id,
+        status: 'accepted',
+        clientConfirmedAt: { $ne: null },
+      },
       { status: 'in_progress', startedAt: new Date() },
       { new: true }
     );
@@ -341,6 +373,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
       },
     });
 
+    await closeServiceChatForRequest(request._id, 'Serviço concluído');
+
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${request.client}`).emit('service_completed', { requestId: request._id });
@@ -369,6 +403,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
 
     // Limpar timer da fila ao cancelar
     clearRequestTimer(req.params.id);
+    await closeServiceChatForRequest(req.params.id, req.body.reason || 'Serviço cancelado');
 
     res.json({ request });
   } catch {
