@@ -29,6 +29,7 @@ export default function PaymentScreen({ navigation, route }) {
 
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
+  const [selectedMethod, setSelectedMethod] = useState('card');
   const [savedMethods, setSavedMethods] = useState([]);
   const [walletCoupons, setWalletCoupons] = useState([]);
   const [selectedCouponCodes, setSelectedCouponCodes] = useState([]);
@@ -133,6 +134,22 @@ export default function PaymentScreen({ navigation, route }) {
   const handlePay = async () => {
     setPaying(true);
     try {
+      if (selectedMethod === 'pix') {
+        const { data } = await paymentAPI.createCoraPixCharge({
+          ...requestData,
+          couponCodes: selectedCouponCodes,
+        });
+
+        if (data?.charge?.rejectedCoupons?.length) {
+          const lines = data.charge.rejectedCoupons.map((r) => `${r.code}: ${r.reason}`).join('\n');
+          Alert.alert('Alguns cupons nao foram aplicados', lines);
+        }
+
+        navigation.navigate('PixCheckout', { charge: data.charge });
+        setPaying(false);
+        return;
+      }
+
       const { data: intentData } = await paymentAPI.createIntent({
         ...requestData,
         couponCodes: selectedCouponCodes,
@@ -352,24 +369,30 @@ export default function PaymentScreen({ navigation, route }) {
 
         {/* Métodos aceitos */}
         <View style={styles.methodsRow}>
-          <View style={styles.methodChip}>
+          <TouchableOpacity
+            style={[styles.methodChip, selectedMethod === 'card' && styles.methodChipActive]}
+            onPress={() => setSelectedMethod('card')}
+          >
             <Ionicons name="card-outline" size={14} color={colors.primary} />
-            <Text style={styles.methodChipText}>Crédito</Text>
-          </View>
-          <View style={styles.methodChip}>
-            <Ionicons name="card-outline" size={14} color={colors.primary} />
-            <Text style={styles.methodChipText}>Débito</Text>
-          </View>
-          <View style={styles.methodChip}>
+            <Text style={styles.methodChipText}>Cartao</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.methodChip, selectedMethod === 'pix' && styles.methodChipActive]}
+            onPress={() => setSelectedMethod('pix')}
+          >
             <Ionicons name="qr-code-outline" size={14} color={colors.primary} />
-            <Text style={styles.methodChipText}>PIX</Text>
-          </View>
+            <Text style={styles.methodChipText}>PIX Cora</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Segurança */}
         <View style={styles.secureRow}>
           <Ionicons name="lock-closed" size={14} color={colors.success} />
-          <Text style={styles.secureText}>Pagamento seguro via Stripe · Dados criptografados</Text>
+          <Text style={styles.secureText}>
+            {selectedMethod === 'pix'
+              ? 'PIX Cora com QR unico e expiracao em 15 minutos'
+              : 'Pagamento seguro via Stripe · Dados criptografados'}
+          </Text>
         </View>
       </ScrollView>
 
@@ -402,8 +425,12 @@ export default function PaymentScreen({ navigation, route }) {
               ? <ActivityIndicator color={colors.white} />
               : (
                 <>
-                  <Ionicons name="lock-closed" size={18} color={colors.white} />
-                  <Text style={styles.payBtnText}>Pagar R$ {total.toFixed(2)}</Text>
+                  <Ionicons name={selectedMethod === 'pix' ? 'qr-code' : 'lock-closed'} size={18} color={colors.white} />
+                  <Text style={styles.payBtnText}>
+                    {selectedMethod === 'pix'
+                      ? `Gerar PIX R$ ${total.toFixed(2)}`
+                      : `Pagar R$ ${total.toFixed(2)}`}
+                  </Text>
                 </>
               )}
           </LinearGradient>
@@ -520,6 +547,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8,
     borderWidth: 1.5, borderColor: colors.primary + '40',
     ...shadows.sm,
+  },
+  methodChipActive: {
+    backgroundColor: '#FFF3EA',
+    borderColor: colors.primary,
   },
   methodChipText: { fontSize: 13, fontWeight: '600', color: colors.primary },
   secureRow: {

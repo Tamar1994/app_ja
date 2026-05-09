@@ -20,3 +20,6 @@ Thumbs.db
 
 # VS Code
 .vscode/
+
+# Certificados privados locais
+backend/cert/

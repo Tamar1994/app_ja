@@ -4,10 +4,17 @@ const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
+const CoraPixCharge = require('../models/CoraPixCharge');
 const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
 const { resolveCouponsForCheckout } = require('../services/couponService');
+const {
+  hasCoraConfigured,
+  createPixInvoice,
+  getInvoice,
+  createWebhookEndpoint,
+} = require('../services/coraService');
 
 const router = express.Router();
 
@@ -90,6 +97,29 @@ function parseCouponMeta(rawCodes, rawDiscounts) {
   }));
 }
 
+function onlyDigits(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function toIsoDate(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function mapCoraInvoiceStatus(status) {
+  if (status === 'PAID') return 'paid';
+  if (status === 'CANCELLED') return 'cancelled';
+  return 'pending';
+}
+
+function getWebhookBaseUrl(req) {
+  const explicit = process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_BASE_URL;
+  if (explicit) return explicit.replace(/\/$/, '');
+
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${proto}://${host}`;
+}
+
 // Cria o ServiceRequest a partir dos metadados do PaymentIntent (idempotente)
 async function createRequestFromIntent(intent, io) {
   const existing = await ServiceRequest.findOne({ 'payment.transactionId': intent.id });
@@ -157,6 +187,97 @@ async function createRequestFromIntent(intent, io) {
       await CouponRedemption.bulkWrite(redemptions, { ordered: false });
     }
   }
+
+  if (io) dispatchToNextProfessional(request._id, io);
+  return request;
+}
+
+async function createRequestFromCoraCharge(charge, io) {
+  if (charge.serviceRequest) {
+    const existingByReference = await ServiceRequest.findById(charge.serviceRequest);
+    if (existingByReference) return existingByReference;
+  }
+
+  const txId = `cora:${charge.coraInvoiceId}`;
+  const existing = await ServiceRequest.findOne({ 'payment.transactionId': txId });
+  if (existing) {
+    if (!charge.serviceRequest) {
+      charge.serviceRequest = existing._id;
+      charge.status = 'paid';
+      if (!charge.paidAt) charge.paidAt = new Date();
+      await charge.save();
+    }
+    return existing;
+  }
+
+  const p = charge.requestPayload || {};
+  const address = p.address || {};
+  const hasProducts = Boolean(p.hasProducts);
+  const serviceTypeSlug = p.serviceTypeSlug || null;
+  const { pricePerHour, estimated, platformFee } = await calculatePricing(Number(p.hours), hasProducts, serviceTypeSlug);
+
+  const discountTotal = Number(charge.discountTotal || 0);
+  const finalEstimated = Math.max(0, estimated - discountTotal);
+  const appliedCoupons = Array.isArray(charge.appliedCoupons) ? charge.appliedCoupons : [];
+  const couponDocs = await Coupon.find({ code: { $in: appliedCoupons.map((c) => c.code) } }).select('_id code');
+  const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
+
+  const request = await ServiceRequest.create({
+    client: charge.client,
+    serviceTypeSlug,
+    details: {
+      hours: Number(p.hours || 1),
+      rooms: Number(p.rooms || 1),
+      bathrooms: Number(p.bathrooms || 1),
+      hasProducts,
+      notes: p.notes || '',
+      scheduledDate: p.scheduledDate,
+    },
+    address,
+    pricing: {
+      pricePerHour,
+      estimated: finalEstimated,
+      discountTotal,
+      appliedCoupons: appliedCoupons.map((c) => c.code),
+      platformFee,
+    },
+    payment: {
+      status: 'paid',
+      method: 'pix',
+      transactionId: txId,
+      paidAt: charge.paidAt || new Date(),
+    },
+  });
+
+  if (appliedCoupons.length) {
+    const redemptions = appliedCoupons
+      .filter((coupon) => couponByCode.has(coupon.code))
+      .map((coupon) => ({
+        updateOne: {
+          filter: { paymentIntentId: txId, coupon: couponByCode.get(coupon.code)._id },
+          update: {
+            $setOnInsert: {
+              coupon: couponByCode.get(coupon.code)._id,
+              user: charge.client,
+              serviceRequest: request._id,
+              paymentIntentId: txId,
+              couponCodeSnapshot: coupon.code,
+              discountAmount: coupon.discountAmount,
+            },
+          },
+          upsert: true,
+        },
+      }));
+
+    if (redemptions.length) {
+      await CouponRedemption.bulkWrite(redemptions, { ordered: false });
+    }
+  }
+
+  charge.serviceRequest = request._id;
+  charge.status = 'paid';
+  if (!charge.paidAt) charge.paidAt = new Date();
+  await charge.save();
 
   if (io) dispatchToNextProfessional(request._id, io);
   return request;
@@ -313,6 +434,248 @@ router.post('/confirm', auth, async (req, res) => {
   } catch (err) {
     console.error('Confirm payment error:', err);
     res.status(500).json({ message: 'Erro ao confirmar pagamento' });
+  }
+});
+
+// POST /api/payments/cora/pix/create
+// Cria uma cobranca Pix Cora com expiracao local de 15 minutos (sem reutilizacao)
+router.post('/cora/pix/create', auth, async (req, res) => {
+  if (req.user.userType !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
+  }
+
+  if (!hasCoraConfigured()) {
+    return res.status(503).json({ message: 'Cora nao configurada no backend' });
+  }
+
+  const {
+    hours,
+    hasProducts,
+    rooms,
+    bathrooms,
+    notes,
+    address,
+    scheduledDate,
+    serviceTypeSlug,
+    couponCodes,
+  } = req.body;
+
+  if (!hours || !address?.street || !address?.city || !scheduledDate) {
+    return res.status(400).json({ message: 'Dados do pedido incompletos' });
+  }
+
+  try {
+    const user = await User.findById(req.user._id);
+    const cpf = onlyDigits(user.cpf);
+    if (!cpf || cpf.length !== 11) {
+      return res.status(400).json({ message: 'CPF valido e obrigatorio para pagamento via Pix' });
+    }
+
+    const { estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
+    const checkout = await resolveCouponsForCheckout({
+      couponCodes,
+      user: req.user,
+      orderSubtotal: estimated,
+    });
+
+    const finalAmount = checkout.pricing.finalTotal;
+    const finalAmountCents = Math.round(finalAmount * 100);
+    if (finalAmountCents < 500) {
+      return res.status(400).json({ message: 'Valor minimo para Pix e de R$ 5,00' });
+    }
+
+    const invoice = await createPixInvoice({
+      amountCents: finalAmountCents,
+      code: `ja-${req.user._id}-${Date.now()}`,
+      customer: {
+        name: user.name,
+        email: user.email,
+        document: cpf,
+        documentType: 'CPF',
+      },
+      serviceDescription: `Servico agendado para ${scheduledDate}`,
+      dueDate: toIsoDate(new Date()),
+    });
+
+    const expiresAt = new Date(Date.now() + (15 * 60 * 1000));
+    const charge = await CoraPixCharge.create({
+      client: req.user._id,
+      coraInvoiceId: invoice.invoiceId,
+      coraStatus: invoice.status || 'OPEN',
+      status: mapCoraInvoiceStatus(invoice.status),
+      amount: finalAmount,
+      subtotal: estimated,
+      discountTotal: checkout.pricing.totalDiscount,
+      appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({
+        code: c.code,
+        discountAmount: c.discountAmount,
+      })),
+      rejectedCoupons: checkout.rejectedCoupons,
+      requestPayload: {
+        hours,
+        hasProducts: !!hasProducts,
+        rooms: rooms || 1,
+        bathrooms: bathrooms || 1,
+        notes: notes || '',
+        address,
+        scheduledDate,
+        serviceTypeSlug: serviceTypeSlug || null,
+      },
+      qrCodeUrl: invoice.qrCodeUrl,
+      emv: invoice.emv,
+      expiresAt,
+      paidAt: invoice.status === 'PAID' ? new Date() : null,
+    });
+
+    if (charge.status === 'paid') {
+      const io = req.app.get('io');
+      await createRequestFromCoraCharge(charge, io);
+    }
+
+    return res.status(201).json({
+      charge: {
+        id: charge._id,
+        status: charge.status,
+        amount: charge.amount,
+        subtotal: charge.subtotal,
+        discountTotal: charge.discountTotal,
+        appliedCoupons: charge.appliedCoupons,
+        rejectedCoupons: charge.rejectedCoupons,
+        qrCodeUrl: charge.qrCodeUrl,
+        emv: charge.emv,
+        expiresAt: charge.expiresAt,
+      },
+    });
+  } catch (err) {
+    console.error('Cora pix create error:', err);
+    return res.status(500).json({ message: 'Erro ao criar cobranca Pix Cora' });
+  }
+});
+
+// GET /api/payments/cora/pix/:chargeId/status
+// Consulta status local e sincroniza com Cora quando pendente
+router.get('/cora/pix/:chargeId/status', auth, async (req, res) => {
+  try {
+    const charge = await CoraPixCharge.findById(req.params.chargeId);
+    if (!charge) return res.status(404).json({ message: 'Cobranca nao encontrada' });
+    if (String(charge.client) !== String(req.user._id)) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    if (charge.status === 'pending' && new Date() > charge.expiresAt) {
+      charge.status = 'expired';
+      await charge.save();
+    }
+
+    if (charge.status === 'pending' && hasCoraConfigured()) {
+      try {
+        const invoice = await getInvoice(charge.coraInvoiceId);
+        const nextStatus = mapCoraInvoiceStatus(invoice.status);
+        charge.coraStatus = invoice.status || charge.coraStatus;
+
+        if (nextStatus === 'paid') {
+          charge.status = 'paid';
+          charge.paidAt = charge.paidAt || new Date();
+          await charge.save();
+          const io = req.app.get('io');
+          await createRequestFromCoraCharge(charge, io);
+        } else if (nextStatus === 'cancelled') {
+          charge.status = 'cancelled';
+          await charge.save();
+        } else {
+          await charge.save();
+        }
+      } catch {
+        // Mantem status local se a consulta externa falhar.
+      }
+    }
+
+    const remainingMs = Math.max(0, new Date(charge.expiresAt).getTime() - Date.now());
+    const response = {
+      id: charge._id,
+      status: charge.status,
+      amount: charge.amount,
+      subtotal: charge.subtotal,
+      discountTotal: charge.discountTotal,
+      qrCodeUrl: charge.qrCodeUrl,
+      emv: charge.emv,
+      expiresAt: charge.expiresAt,
+      remainingSeconds: Math.ceil(remainingMs / 1000),
+      requestId: charge.serviceRequest || null,
+    };
+
+    return res.json(response);
+  } catch {
+    return res.status(500).json({ message: 'Erro ao consultar cobranca Pix' });
+  }
+});
+
+// GET /api/payments/cora/webhook/endpoints
+// Retorna URLs para cadastro de webhooks no Cora Web
+router.get('/cora/webhook/endpoints', (req, res) => {
+  const base = getWebhookBaseUrl(req);
+  return res.json({
+    webhookUrl: `${base}/api/payments/cora/webhook`,
+    suggestedEvents: [
+      { resource: 'invoice', trigger: 'paid' },
+      { resource: 'invoice', trigger: '*' },
+    ],
+  });
+});
+
+// POST /api/payments/cora/webhook/register
+// Opcional: registra endpoint na Cora automaticamente para invoice.paid
+router.post('/cora/webhook/register', auth, async (req, res) => {
+  if (req.user.userType !== 'admin') {
+    return res.status(403).json({ message: 'Apenas admin pode registrar webhook' });
+  }
+
+  if (!hasCoraConfigured()) {
+    return res.status(503).json({ message: 'Cora nao configurada no backend' });
+  }
+
+  try {
+    const { url, resource = 'invoice', trigger = 'paid' } = req.body || {};
+    const endpointUrl = String(url || '').trim() || `${getWebhookBaseUrl(req)}/api/payments/cora/webhook`;
+    const result = await createWebhookEndpoint({ url: endpointUrl, resource, trigger });
+    return res.status(201).json({ endpoint: result });
+  } catch (err) {
+    console.error('Cora webhook register error:', err);
+    return res.status(500).json({ message: 'Erro ao registrar endpoint de webhook na Cora' });
+  }
+});
+
+// POST /api/payments/cora/webhook
+// Webhook de eventos da Cora. O evento chega via headers.
+router.post('/cora/webhook', async (req, res) => {
+  try {
+    const eventType = String(req.headers['webhook-event-type'] || '').toLowerCase();
+    const resourceId = String(req.headers['webhook-resource-id'] || '').trim();
+
+    if (!resourceId) return res.json({ success: true, ignored: true });
+
+    const charge = await CoraPixCharge.findOne({ coraInvoiceId: resourceId });
+    if (!charge) return res.json({ success: true, ignored: true });
+
+    if (eventType === 'invoice.paid' || eventType.endsWith('.paid')) {
+      charge.status = 'paid';
+      charge.coraStatus = 'PAID';
+      charge.paidAt = charge.paidAt || new Date();
+      await charge.save();
+      const io = req.app.get('io');
+      await createRequestFromCoraCharge(charge, io);
+    } else if (eventType === 'invoice.canceled' || eventType.endsWith('.canceled')) {
+      if (charge.status === 'pending') {
+        charge.status = 'cancelled';
+        charge.coraStatus = 'CANCELLED';
+        await charge.save();
+      }
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Cora webhook error:', err);
+    return res.status(500).json({ success: false });
   }
 });
 

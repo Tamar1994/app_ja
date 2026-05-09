@@ -1,6 +1,7 @@
 // ── CONFIG ─────────────────────────────────────────────────────────
 const API = '/api/admin';
 const API_ST = '/api/service-types';
+const API_PAYMENTS = '/api/payments';
 let adminToken = localStorage.getItem('adminToken');
 let adminData = JSON.parse(localStorage.getItem('adminData') || 'null');
 let currentPage = 'dashboard';
@@ -48,6 +49,18 @@ const stMultipartReq = async (method, path, formData) => {
     headers: { Authorization: `Bearer ${adminToken}` },
     body: formData,
   });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.message || 'Erro');
+  return data;
+};
+
+const paymentReq = async (method, path, body) => {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API_PAYMENTS + path, opts);
   const data = await r.json();
   if (!r.ok) throw new Error(data.message || 'Erro');
   return data;
@@ -1985,10 +1998,15 @@ const renderPayments = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
   try {
-    const data = await req('GET', '/stripe-config');
+    const [data, coraWebhookData] = await Promise.all([
+      req('GET', '/stripe-config'),
+      paymentReq('GET', '/cora/webhook/endpoints').catch(() => null),
+    ]);
     const isProd = data.mode === 'production';
     const canSwitchToProd = data.hasProdKeys;
     const isSuperAdmin = adminData?.role === 'super_admin';
+    const webhookUrl = coraWebhookData?.webhookUrl || '';
+    const suggestedEvents = coraWebhookData?.suggestedEvents || [];
 
     c.innerHTML = `
       ${isProd ? `
@@ -2048,6 +2066,30 @@ const renderPayments = async () => {
           <li>Salve e aguarde o redeploy automático</li>
           <li>Volte aqui e ative o modo <strong>PRODUÇÃO</strong></li>
         </ol>
+      </div>
+
+      <div class="card" style="max-width:760px;margin-top:20px;">
+        <h3 style="margin:0 0 6px;font-size:18px;color:#1A1A2E;">🔔 Webhook Cora PIX</h3>
+        <p style="color:#666;margin:0 0 16px;font-size:14px;">
+          Use esta URL no Cora Web para receber eventos de pagamento PIX e liberar o pedido automaticamente no app.
+        </p>
+
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label">URL webhook</label>
+          <input id="cora-webhook-url" class="form-input" value="${escHtml(webhookUrl)}" readonly />
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <button class="btn btn-primary" onclick="copyCoraWebhookUrl()">Copiar URL webhook</button>
+          <button id="btn-register-cora-webhook" class="btn btn-ghost" onclick="registerCoraInvoicePaidWebhook()">Registrar endpoint invoice.paid</button>
+        </div>
+
+        <div style="font-size:12px;color:#666;line-height:1.7;">
+          <strong>Eventos sugeridos:</strong>
+          ${suggestedEvents.length
+    ? suggestedEvents.map((e) => `<code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;margin-right:6px;">${escHtml(`${e.resource}.${e.trigger}`)}</code>`).join('')
+    : '<code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">invoice.paid</code>'}
+        </div>
       </div>
     `;
   } catch (err) {
@@ -2208,6 +2250,56 @@ window.setStripeMode = async (mode) => {
     renderPayments();
   } catch (err) {
     alert('Erro ao alterar modo: ' + (err.message || 'Tente novamente'));
+  }
+};
+
+window.copyCoraWebhookUrl = async () => {
+  const input = document.getElementById('cora-webhook-url');
+  const value = input?.value?.trim();
+  if (!value) {
+    showAlert('URL de webhook ainda não disponível.');
+    return;
+  }
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      input.removeAttribute('readonly');
+      input.select();
+      document.execCommand('copy');
+      input.setAttribute('readonly', 'readonly');
+    }
+    showAlert('URL de webhook copiada com sucesso.', 'success');
+  } catch {
+    showAlert('Não foi possível copiar automaticamente.');
+  }
+};
+
+window.registerCoraInvoicePaidWebhook = async () => {
+  const input = document.getElementById('cora-webhook-url');
+  const button = document.getElementById('btn-register-cora-webhook');
+  const url = input?.value?.trim();
+
+  if (!url) {
+    showAlert('URL webhook inválida.');
+    return;
+  }
+
+  if (button) button.disabled = true;
+  try {
+    const response = await paymentReq('POST', '/cora/webhook/register', {
+      url,
+      resource: 'invoice',
+      trigger: 'paid',
+    });
+    const endpointId = response?.endpoint?.id;
+    showAlert(endpointId ? `Endpoint registrado na Cora (id ${endpointId}).` : 'Endpoint invoice.paid registrado na Cora.', 'success');
+    renderPayments();
+  } catch (err) {
+    showAlert(err.message || 'Erro ao registrar endpoint na Cora.');
+  } finally {
+    if (button) button.disabled = false;
   }
 };
 

@@ -9,6 +9,7 @@ import { colors } from '../theme';
 import HomeScreen from '../screens/client/HomeScreen';
 import RequestServiceScreen from '../screens/client/RequestServiceScreen';
 import PaymentScreen from '../screens/client/PaymentScreen';
+import PixCheckoutScreen from '../screens/client/PixCheckoutScreen';
 import SearchingScreen from '../screens/client/SearchingScreen';
 import TrackingScreen from '../screens/client/TrackingScreen';
 import HistoryScreen from '../screens/client/HistoryScreen';
@@ -32,6 +33,7 @@ function HomeStack() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="RequestService" component={RequestServiceScreen} />
       <Stack.Screen name="Payment" component={PaymentScreen} />
+      <Stack.Screen name="PixCheckout" component={PixCheckoutScreen} />
       <Stack.Screen name="Searching" component={SearchingScreen} />
       <Stack.Screen name="ProfessionalFound" component={ProfessionalFoundScreen} />
       <Stack.Screen name="Tracking" component={TrackingScreen} />
