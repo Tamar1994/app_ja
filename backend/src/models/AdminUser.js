@@ -33,6 +33,7 @@ const adminUserSchema = new mongoose.Schema({
   pauseStartAt: { type: Date, default: null },
   pauseEndsAt: { type: Date, default: null },
   pauseDurationMinutes: { type: Number, default: null },
+  pauseTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'PauseType', default: null },
 }, { timestamps: true });
 
 adminUserSchema.pre('save', async function (next) {

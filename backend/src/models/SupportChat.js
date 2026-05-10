@@ -21,6 +21,7 @@ const supportChatSchema = new mongoose.Schema({
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser', default: null },
   queuedAt: { type: Date, default: Date.now },
   assignedAt: { type: Date, default: null },
+  closedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('SupportChat', supportChatSchema);

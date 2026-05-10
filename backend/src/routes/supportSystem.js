@@ -8,6 +8,7 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponClaim = require('../models/CouponClaim');
 const SupportCouponRelease = require('../models/SupportCouponRelease');
+const PauseType = require('../models/PauseType');
 const { adminAuth, ADMIN_PERMISSIONS, hasPermission } = require('../middleware/adminAuth');
 const { tryAssignChat, onChatClosed } = require('../utils/supportQueue');
 
@@ -37,13 +38,18 @@ async function autoResumeIfPauseEnded(adminId) {
   const admin = await AdminUser.findById(adminId);
   if (!admin) return null;
 
-  if (admin.supportStatus === 'paused' && admin.pauseEndsAt && admin.pauseEndsAt.getTime() <= Date.now()) {
-    admin.supportStatus = 'online';
-    admin.pauseStartAt = null;
-    admin.pauseEndsAt = null;
-    admin.pauseRequestedAt = null;
-    admin.pauseDurationMinutes = null;
-    await admin.save();
+  // Only auto-resume if pause ended but NOT yet 10 min overdue (that requires supervisor unlock)
+  if (admin.supportStatus === 'paused' && admin.pauseEndsAt) {
+    const overdueMins = (Date.now() - admin.pauseEndsAt.getTime()) / 60000;
+    if (overdueMins >= 0 && overdueMins < 10) {
+      admin.supportStatus = 'online';
+      admin.pauseStartAt = null;
+      admin.pauseEndsAt = null;
+      admin.pauseRequestedAt = null;
+      admin.pauseDurationMinutes = null;
+      admin.pauseTypeId = null;
+      await admin.save();
+    }
   }
 
   return admin;
@@ -119,6 +125,13 @@ router.get('/me', async (req, res) => {
   const waitingCount = await SupportChat.countDocuments({ status: 'waiting' });
   const waitingP1Count = await SupportChat.countDocuments({ status: 'waiting', priority: 'p1' });
 
+  const pauseEndsAt = req.admin.pauseEndsAt;
+  let pauseLockedBySupervisor = false;
+  if (req.admin.supportStatus === 'paused' && pauseEndsAt) {
+    const overdueMins = (Date.now() - pauseEndsAt.getTime()) / 60000;
+    pauseLockedBySupervisor = overdueMins >= 10;
+  }
+
   res.json({
     admin: {
       id: req.admin._id,
@@ -131,6 +144,8 @@ router.get('/me', async (req, res) => {
       pauseEndsAt: req.admin.pauseEndsAt,
       pauseRequestedAt: req.admin.pauseRequestedAt,
       pauseDurationMinutes: req.admin.pauseDurationMinutes,
+      pauseTypeId: req.admin.pauseTypeId,
+      pauseLockedBySupervisor,
       activeSupportChats: activeChats,
     },
     waitingCount,
@@ -148,6 +163,7 @@ router.patch('/operator/go-online', async (req, res) => {
   req.admin.pauseEndsAt = null;
   req.admin.pauseRequestedAt = null;
   req.admin.pauseDurationMinutes = null;
+  req.admin.pauseTypeId = null;
   req.admin.activeSupportChats = await ensureActiveChatCount(req.admin._id);
   await req.admin.save();
 
@@ -159,10 +175,23 @@ router.patch('/operator/go-online', async (req, res) => {
 router.patch('/operator/request-pause', async (req, res) => {
   if (!isOperator(req.admin)) return res.status(403).json({ message: 'Somente operadores' });
 
-  const durationMinutes = Math.max(1, Math.min(180, Number(req.body.durationMinutes || 10)));
+  const { pauseTypeId } = req.body;
+  let durationMinutes;
+  let resolvedPauseTypeId = null;
+
+  if (pauseTypeId) {
+    const pt = await PauseType.findOne({ _id: pauseTypeId, isActive: true });
+    if (!pt) return res.status(400).json({ message: 'Tipo de pausa inválido ou inativo' });
+    durationMinutes = pt.durationMinutes;
+    resolvedPauseTypeId = pt._id;
+  } else {
+    durationMinutes = Math.max(1, Math.min(480, Number(req.body.durationMinutes || 10)));
+  }
+
   const activeChats = await ensureActiveChatCount(req.admin._id);
 
   req.admin.pauseDurationMinutes = durationMinutes;
+  req.admin.pauseTypeId = resolvedPauseTypeId;
   req.admin.pauseRequestedAt = new Date();
 
   if (activeChats > 0) {
@@ -195,6 +224,7 @@ router.patch('/operator/cancel-pause', async (req, res) => {
   req.admin.supportStatus = 'online';
   req.admin.pauseRequestedAt = null;
   req.admin.pauseDurationMinutes = null;
+  req.admin.pauseTypeId = null;
   req.admin.pauseStartAt = null;
   req.admin.pauseEndsAt = null;
   await req.admin.save();
@@ -207,9 +237,18 @@ router.patch('/operator/cancel-pause', async (req, res) => {
 router.patch('/operator/end-pause', async (req, res) => {
   if (!isOperator(req.admin)) return res.status(403).json({ message: 'Somente operadores' });
 
+  // If locked by supervisor (>10min overdue), require supervisor password
+  if (req.admin.supportStatus === 'paused' && req.admin.pauseEndsAt) {
+    const overdueMins = (Date.now() - req.admin.pauseEndsAt.getTime()) / 60000;
+    if (overdueMins >= 10) {
+      return res.status(403).json({ message: 'Pausa bloqueada. Solicite ao supervisor para desbloquear.', locked: true });
+    }
+  }
+
   req.admin.supportStatus = 'online';
   req.admin.pauseRequestedAt = null;
   req.admin.pauseDurationMinutes = null;
+  req.admin.pauseTypeId = null;
   req.admin.pauseStartAt = null;
   req.admin.pauseEndsAt = null;
   await req.admin.save();
@@ -307,6 +346,7 @@ router.patch('/chats/:id/close', async (req, res) => {
   }
 
   chat.status = 'closed';
+  chat.closedAt = new Date();
   await chat.save();
 
   const io = req.app.get('io');
@@ -377,13 +417,30 @@ router.get('/supervisor/operators', async (req, res) => {
     supportRole: 'operator',
     supportSupervisor: req.admin._id,
     isActive: true,
-  }).select('name email supportStatus activeSupportChats pauseStartAt pauseEndsAt pauseRequestedAt');
+  }).select('name email supportStatus activeSupportChats pauseStartAt pauseEndsAt pauseRequestedAt pauseDurationMinutes onlineAt');
 
   const operatorIds = operators.map((op) => op._id);
   const openChats = await SupportChat.find({
     assignedTo: { $in: operatorIds },
     status: 'assigned',
   }).select('_id assignedTo userId subject priority assignedAt').populate('userId', 'name email');
+
+  // Compute avg handling time from last 30 closed chats per operator
+  const closedChats = await SupportChat.find({
+    assignedTo: { $in: operatorIds },
+    status: 'closed',
+    assignedAt: { $ne: null },
+    closedAt: { $ne: null },
+  }).select('assignedTo assignedAt closedAt').sort({ closedAt: -1 }).limit(operatorIds.length * 30);
+
+  const handlingByOp = {};
+  closedChats.forEach((ch) => {
+    const key = String(ch.assignedTo);
+    if (!handlingByOp[key]) handlingByOp[key] = [];
+    if (handlingByOp[key].length < 30) {
+      handlingByOp[key].push((ch.closedAt - ch.assignedAt) / 1000);
+    }
+  });
 
   const grouped = {};
   openChats.forEach((chat) => {
@@ -392,12 +449,75 @@ router.get('/supervisor/operators', async (req, res) => {
     grouped[key].push(chat);
   });
 
+  const now = Date.now();
+
   res.json({
-    operators: operators.map((op) => ({
-      ...op.toObject(),
-      chats: grouped[String(op._id)] || [],
-    })),
+    operators: operators.map((op) => {
+      const key = String(op._id);
+      const handlingTimes = handlingByOp[key] || [];
+      const avgHandlingTimeSeconds = handlingTimes.length
+        ? Math.round(handlingTimes.reduce((a, b) => a + b, 0) / handlingTimes.length)
+        : null;
+
+      // Pause time remaining in seconds (negative = overdue)
+      let pauseSecondsRemaining = null;
+      let pauseLockedBySupervisor = false;
+      if (op.supportStatus === 'paused' && op.pauseEndsAt) {
+        pauseSecondsRemaining = Math.round((op.pauseEndsAt.getTime() - now) / 1000);
+        pauseLockedBySupervisor = pauseSecondsRemaining <= -600; // -10 min
+      }
+
+      return {
+        ...op.toObject(),
+        chats: grouped[key] || [],
+        avgHandlingTimeSeconds,
+        pauseSecondsRemaining,
+        pauseLockedBySupervisor,
+      };
+    }),
   });
+});
+
+// GET /api/support-system/pause-types
+router.get('/pause-types', async (req, res) => {
+  try {
+    const types = await PauseType.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    res.json({ pauseTypes: types });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar tipos de pausa' });
+  }
+});
+
+// PATCH /api/support-system/supervisor/operators/:id/unlock-pause
+router.patch('/supervisor/operators/:id/unlock-pause', async (req, res) => {
+  if (!isSupervisor(req.admin)) return res.status(403).json({ message: 'Somente supervisores' });
+
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ message: 'Senha do supervisor é obrigatória' });
+
+  // Validate supervisor password
+  const supervisor = await AdminUser.findById(req.admin._id).select('+password');
+  const valid = await supervisor.comparePassword(password);
+  if (!valid) return res.status(401).json({ message: 'Senha incorreta' });
+
+  const operator = await AdminUser.findOne({
+    _id: req.params.id,
+    supportRole: 'operator',
+    supportSupervisor: req.admin._id,
+  });
+  if (!operator) return res.status(404).json({ message: 'Operador não encontrado' });
+  if (operator.supportStatus !== 'paused') return res.status(400).json({ message: 'Operador não está em pausa' });
+
+  operator.supportStatus = 'online';
+  operator.pauseStartAt = null;
+  operator.pauseEndsAt = null;
+  operator.pauseRequestedAt = null;
+  operator.pauseDurationMinutes = null;
+  operator.pauseTypeId = null;
+  await operator.save();
+
+  await fillOperatorCapacity(operator._id, req.app.get('io'));
+  res.json({ message: 'Pausa desbloqueada pelo supervisor', operatorId: operator._id });
 });
 
 // GET /api/support-system/coupons/available

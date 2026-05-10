@@ -3,174 +3,484 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Support System</title>
+  <title>JÁ! Support System</title>
   <style>
     :root {
-      --bg: #f4f6fb;
-      --card: #ffffff;
-      --text: #1f2937;
-      --muted: #6b7280;
-      --accent: #0d9488;
-      --warn: #d97706;
-      --danger: #dc2626;
-      --border: #e5e7eb;
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --card:     #1c2230;
+      --card2:    #21283a;
+      --border:   #2d3748;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --accent:   #f97316;
+      --accent2:  #3b82f6;
+      --green:    #22c55e;
+      --yellow:   #eab308;
+      --red:      #ef4444;
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #ecfeff 0%, #f8fafc 60%, #eef2ff 100%);
-      color: var(--text);
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .hidden  { display: none !important; }
+    .w100    { width: 100%; }
+    input, select, textarea {
+      background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 13px; padding: 9px 12px; outline: none;
+      transition: border-color .15s;
     }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
-    .grid { display: grid; gap: 14px; }
-    .grid.two { grid-template-columns: 1fr 1fr; }
-    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .between { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
-    h1, h2, h3 { margin: 0; }
-    h1 { font-size: 22px; }
-    h2 { font-size: 18px; }
-    h3 { font-size: 15px; }
-    input, select, textarea, button {
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      padding: 9px 11px;
-      font-size: 14px;
+    input:focus, select:focus, textarea:focus { border-color: var(--accent2); }
+    input::placeholder, textarea::placeholder { color: var(--muted); }
+    textarea { resize: none; width: 100%; }
+    select option { background: var(--card2); }
+    button { border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; padding: 9px 16px; transition: all .15s; }
+    .btn-ghost  { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--muted); }
+    .btn-accent { background: var(--accent); color: #fff; }
+    .btn-accent:hover { background: #ea6c0a; }
+    .btn-blue   { background: var(--accent2); color: #fff; }
+    .btn-blue:hover { background: #2563eb; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-green  { background: #16a34a; color: #fff; }
+    .btn-logout { background: transparent; color: var(--red); border: 1px solid var(--red); font-weight: 700; letter-spacing: .5px; padding: 6px 14px; font-size: 12px; border-radius: 6px; }
+    .btn-logout:hover { background: var(--red); color: #fff; }
+    .badge { border-radius: 99px; padding: 3px 9px; font-size: 11px; font-weight: 700; letter-spacing: .3px; }
+    .badge-online  { background: rgba(34,197,94,.18); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+    .badge-offline { background: rgba(139,148,158,.15); color: var(--muted); border: 1px solid rgba(139,148,158,.25); }
+    .badge-paused  { background: rgba(234,179,8,.15); color: #fcd34d; border: 1px solid rgba(234,179,8,.3); }
+    .badge-p1      { background: rgba(239,68,68,.18); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+    .badge-active  { background: rgba(249,115,22,.18); color: #fb923c; border: 1px solid rgba(249,115,22,.3); }
+    .muted   { color: var(--muted); font-size: 12px; }
+
+    /* LOGIN */
+    #loginView {
+      display: flex; align-items: center; justify-content: center; height: 100vh;
+      background: radial-gradient(ellipse at 20% 50%, rgba(249,115,22,.08) 0%, transparent 60%),
+                  radial-gradient(ellipse at 80% 20%, rgba(59,130,246,.06) 0%, transparent 50%), var(--bg);
     }
-    textarea { min-height: 80px; width: 100%; }
-    button { cursor: pointer; background: #fff; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.warn { background: var(--warn); border-color: var(--warn); color: #fff; }
-    button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-    .badge { border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 600; }
-    .badge.online { background: #dcfce7; color: #166534; }
-    .badge.offline { background: #e5e7eb; color: #374151; }
-    .badge.paused { background: #fef3c7; color: #92400e; }
-    .badge.p1 { background: #fee2e2; color: #991b1b; }
-    .list { display: grid; gap: 8px; max-height: 360px; overflow: auto; }
-    .item { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #fff; }
-    .muted { color: var(--muted); font-size: 13px; }
-    .hidden { display: none !important; }
-    #alert { position: fixed; right: 16px; bottom: 16px; background: #111827; color: #fff; padding: 10px 12px; border-radius: 10px; display: none; }
-    @media (max-width: 900px) { .grid.two { grid-template-columns: 1fr; } }
+    .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 40px 36px; width: 380px; max-width: 92vw; box-shadow: 0 24px 48px rgba(0,0,0,.5); }
+    .login-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+    .login-logo-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), #fb923c); font-size: 22px; }
+    .login-logo h1 { font-size: 20px; font-weight: 800; letter-spacing: -.5px; }
+    .login-logo span { color: var(--accent); }
+    .login-subtitle { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+    .login-field { margin-bottom: 14px; }
+    .login-field label { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 6px; letter-spacing: .5px; text-transform: uppercase; }
+    .login-field input { width: 100%; }
+    #loginError { color: var(--red); font-size: 12px; margin-top: 10px; display: none; }
+
+    /* APP SHELL */
+    #appView { display: flex; flex-direction: column; height: 100vh; }
+
+    /* TOPBAR */
+    .topbar { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; height: 60px; padding: 0 20px; gap: 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .topbar-left  { display: flex; align-items: center; gap: 16px; }
+    .topbar-center { display: flex; align-items: center; gap: 12px; flex: 1; justify-content: center; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .pause-label  { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+    #topbarTimer  { font-size: 22px; font-weight: 800; letter-spacing: 2px; font-variant-numeric: tabular-nums; min-width: 90px; }
+    #topbarTimer.t-normal { color: var(--green); }
+    #topbarTimer.t-warn   { color: var(--yellow); }
+    #topbarTimer.t-danger { color: var(--red); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.5} }
+    .topbar-op { display: flex; align-items: center; gap: 10px; }
+    .topbar-op-label { font-size: 11px; color: var(--muted); line-height: 1; }
+    .topbar-op-name  { font-size: 14px; font-weight: 700; line-height: 1.3; }
+    .av { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .av-orange { background: var(--accent); color: #fff; }
+    .av-blue   { background: var(--accent2); color: #fff; }
+    .av-green  { background: #16a34a; color: #fff; }
+    .av-purple { background: #8b5cf6; color: #fff; }
+    #topbarStatusDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    #topbarStatusDot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    #topbarStatusDot.offline { background: var(--muted); }
+    #topbarStatusDot.paused  { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+
+    /* OPERATOR 3-COLUMN LAYOUT */
+    .op-layout { display: flex; flex: 1; overflow: hidden; }
+    .op-left { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--surface); }
+    .col-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .col-header h3 { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+    .col-header .count { background: var(--accent); color: #fff; border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+    .chat-list { overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+    .chat-list.flex1 { flex: 1; }
+    .queue-divider { border-top: 1px solid var(--border); max-height: 220px; display: flex; flex-direction: column; flex-shrink: 0; }
+    .chat-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; cursor: pointer; transition: background .12s; border: 1px solid transparent; }
+    .chat-item:hover { background: var(--card2); }
+    .chat-item.active { background: rgba(249,115,22,.1); border-color: rgba(249,115,22,.3); }
+    .chat-item-info { flex: 1; min-width: 0; }
+    .chat-item-name { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+    .chat-item-preview { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .av-sm { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; background: var(--accent2); color: #fff; }
+
+    /* CENTER CHAT */
+    .op-center { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+    .chat-empty { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: var(--muted); }
+    .chat-empty-icon { font-size: 56px; opacity: .2; }
+    .chat-header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+    .chat-header-info h3 { font-size: 15px; font-weight: 700; }
+    .chat-header-info p  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    .messages-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .msg-block { display: flex; flex-direction: column; gap: 2px; }
+    .msg-block.me { align-items: flex-end; }
+    .msg-sender { font-size: 11px; color: var(--muted); margin-bottom: 3px; padding: 0 4px; }
+    .msg-sender.me { text-align: right; }
+    .bubble { max-width: 65%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; word-break: break-word; }
+    .bubble.user { background: var(--card2); border-bottom-left-radius: 4px; }
+    .bubble.op   { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .chat-input-wrap { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .chat-input-wrap input { flex: 1; }
+    .send-btn { background: var(--accent); color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+    .send-btn:hover { background: #ea6c0a; }
+
+    /* RIGHT PANEL */
+    .op-right { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); overflow: hidden; }
+    .panel-sec { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .panel-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .panel-scroll { overflow-y: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .result-card { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; cursor: pointer; transition: border-color .12s; }
+    .result-card:hover { border-color: var(--accent2); }
+    .result-card h4 { font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+    .result-card p  { font-size: 11px; color: var(--muted); }
+    .action-card { background: var(--card2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 8px 14px 0; }
+    .action-card-title { font-size: 11px; font-weight: 700; color: var(--accent); letter-spacing: .5px; margin-bottom: 10px; }
+    .coupon-form { padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
+    .release-chip { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+    .release-chip strong { font-size: 12px; display: block; margin-bottom: 2px; }
+    .chip-pending  { color: var(--yellow); font-size: 11px; }
+    .chip-approved { color: var(--green); font-size: 11px; }
+    .chip-rejected { color: var(--red); font-size: 11px; }
+
+    /* SUPERVISOR LAYOUT */
+    .sv-layout { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .sv-nav { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; padding: 0 20px; }
+    .sv-tab { padding: 14px 20px; font-size: 13px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; cursor: pointer; transition: all .15s; margin-bottom: -1px; user-select: none; }
+    .sv-tab:hover { color: var(--text); }
+    .sv-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .sv-content { flex: 1; overflow-y: auto; padding: 20px; }
+
+    /* KPI CARDS */
+    .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 22px; }
+    .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; position: relative; overflow: hidden; }
+    .kpi-card::before { content:''; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 14px 14px 0 0; }
+    .kpi-card.orange::before { background: var(--accent); }
+    .kpi-card.blue::before   { background: var(--accent2); }
+    .kpi-card.green::before  { background: var(--green); }
+    .kpi-card.yellow::before { background: var(--yellow); }
+    .kpi-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 8px; }
+    .kpi-value { font-size: 36px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+    .kpi-sub   { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .kpi-icon  { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 36px; opacity: .1; }
+
+    /* OPERATOR CARDS (supervisor) */
+    .ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 14px; }
+    .op-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; transition: border-color .2s; }
+    .op-card.warn-border   { border-color: var(--yellow); }
+    .op-card.danger-border { border-color: var(--red); background: rgba(239,68,68,.04); }
+    .op-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .op-card-info h4 { font-size: 14px; font-weight: 700; }
+    .op-card-info p  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    .op-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .op-stat { background: var(--card2); border-radius: 8px; padding: 8px 10px; }
+    .op-stat-label { font-size: 10px; color: var(--muted); font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+    .op-stat-value { font-size: 20px; font-weight: 800; margin-top: 2px; }
+    .op-pause-row { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .op-timer { font-size: 26px; font-weight: 800; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
+    .op-timer.t-normal { color: var(--green); }
+    .op-timer.t-warn   { color: var(--yellow); }
+    .op-timer.t-danger { color: var(--red); animation: pulse 1s infinite; }
+    .op-chats-mini { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+    .op-chat-mini { background: var(--card2); border-radius: 6px; padding: 4px 8px; font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+
+    /* RELEASES TABLE */
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: auto; }
+    .table-wrap table { width: 100%; border-collapse: collapse; }
+    .table-wrap thead th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; border-bottom: 1px solid var(--border); background: var(--card); white-space: nowrap; }
+    .table-wrap tbody td { padding: 11px 14px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .table-wrap tbody tr:last-child td { border-bottom: none; }
+    .table-wrap tbody tr:hover td { background: rgba(255,255,255,.02); }
+    .st-pending  { color: var(--yellow); font-weight: 700; }
+    .st-approved { color: var(--green);  font-weight: 700; }
+    .st-rejected { color: var(--red);    font-weight: 700; }
+    .tbl-actions { display: flex; gap: 6px; }
+
+    /* SECTION HEADER */
+    .sh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .sh h2 { font-size: 15px; font-weight: 700; }
+
+    /* ALERT */
+    #alert { position: fixed; right: 20px; bottom: 20px; z-index: 999; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 12px 18px; border-radius: 10px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,.5); display: none; max-width: 320px; }
+
+    /* MODALS */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 380px; max-width: 92vw; box-shadow: 0 24px 48px rgba(0,0,0,.6); }
+    .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .modal .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+    @media (max-width:1100px) { .kpi-grid { grid-template-columns: repeat(2,1fr); } }
+    @media (max-width:900px) { .op-left { width: 240px; } .op-right { width: 260px; } }
+    @media (max-width:720px) { .op-right { display:none; } .op-left { width: 210px; } }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div id="loginView" class="card" style="max-width:420px;margin:40px auto;">
-      <h1>Support System</h1>
-      <p class="muted">Acesso restrito de operação de suporte.</p>
-      <div class="grid">
-        <input id="email" type="email" placeholder="E-mail" />
-        <input id="password" type="password" placeholder="Senha" />
-        <button class="primary" id="loginBtn">Entrar</button>
+
+<!-- LOGIN -->
+<div id="loginView">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">⚡</div>
+      <h1>JÁ! <span>Support</span></h1>
+    </div>
+    <p class="login-subtitle">Acesso restrito da central de operações.</p>
+    <div class="login-field">
+      <label>E-mail</label>
+      <input id="email" type="email" placeholder="operador@ja.app" />
+    </div>
+    <div class="login-field">
+      <label>Senha</label>
+      <input id="password" type="password" placeholder="••••••••" />
+    </div>
+    <button class="btn-accent w100" id="loginBtn" style="margin-top:8px;padding:12px;">Entrar</button>
+    <div id="loginError"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appView" class="hidden">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="btn-logout" id="logoutBtn">LOGOUT</button>
+    </div>
+    <div class="topbar-center" id="topbarCenter"><!-- filled by JS --></div>
+    <div class="topbar-right">
+      <div id="topbarStatusDot" class="offline"></div>
+      <div class="topbar-op">
+        <div class="av av-orange" id="topbarAvatar">?</div>
+        <div>
+          <div class="topbar-op-label" id="topbarRoleLabel">—</div>
+          <div class="topbar-op-name" id="topbarName">—</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- OPERATOR VIEW -->
+  <div id="operatorView" class="op-layout hidden">
+
+    <aside class="op-left">
+      <div class="col-header">
+        <h3>Chats Ativos</h3>
+        <span class="count" id="myChatsCount">0</span>
+      </div>
+      <div class="chat-list flex1" id="myChatsList">
+        <div class="muted" style="padding:16px;text-align:center;">Sem atendimentos</div>
+      </div>
+      <div class="queue-divider">
+        <div class="col-header">
+          <h3>Fila Global</h3>
+          <span class="count" id="queueCount">0</span>
+        </div>
+        <div class="chat-list" style="max-height:180px;" id="queueList">
+          <div class="muted" style="padding:12px;text-align:center;">Fila vazia</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="op-center">
+      <div id="chatEmpty" class="chat-empty" style="flex:1;">
+        <div class="chat-empty-icon">💬</div>
+        <div style="font-size:14px;">Selecione um atendimento para começar</div>
+      </div>
+      <div id="chatConversation" class="hidden" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+        <div class="chat-header" id="chatHeader"></div>
+        <div class="messages-area" id="chatMessages"></div>
+        <div class="chat-input-wrap">
+          <input id="msgText" placeholder="Digite sua mensagem para o cliente..." />
+          <button class="send-btn" id="sendMsgBtn">Enviar →</button>
+          <button class="btn-danger" id="closeChatBtn" style="white-space:nowrap;">Encerrar</button>
+        </div>
+      </div>
+    </main>
+
+    <aside class="op-right">
+      <div class="panel-sec">
+        <div class="panel-title">Pesquisar Serviços</div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <input id="reqSearch" placeholder="ID, nome, e-mail..." style="flex:1;font-size:12px;" />
+          <button class="btn-blue" id="reqSearchBtn" style="padding:8px 12px;">🔍</button>
+        </div>
+        <select id="reqStatus" style="width:100%;font-size:12px;">
+          <option value="all">Todos os status</option>
+          <option value="searching">Searching</option>
+          <option value="accepted">Accepted</option>
+          <option value="in_progress">Em progresso</option>
+          <option value="completed">Concluído</option>
+          <option value="cancelled">Cancelado</option>
+        </select>
+      </div>
+      <div class="panel-scroll" id="reqList" style="max-height:190px;">
+        <div class="muted" style="text-align:center;padding:10px;">Faça uma busca acima</div>
+      </div>
+
+      <div id="serviceActionsPanel" style="display:none;">
+        <div class="action-card">
+          <div class="action-card-title" id="serviceActionsTitle">AÇÕES DO SERVIÇO</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn-blue w100" id="openBackofficeBtn">📋 Abrir Chamado Backoffice</button>
+            <button class="btn-danger w100" id="cancelServiceBtn">⛔ Encerrar Serviço</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:10px;">
+        <div class="panel-sec" style="border-bottom:none;padding-bottom:4px;">
+          <div class="panel-title">Cupom Operacional</div>
+        </div>
+        <div class="coupon-form">
+          <select id="couponSelect" style="font-size:12px;"></select>
+          <input id="targetUserId" placeholder="ID do cliente/profissional" style="font-size:12px;" />
+          <textarea id="couponReason" placeholder="Motivo da liberação" style="height:52px;font-size:12px;"></textarea>
+          <button class="btn-accent w100" id="requestCouponBtn" style="font-size:12px;">Solicitar Liberação</button>
+        </div>
+        <div style="padding:8px 14px 14px;">
+          <div class="panel-title" style="margin-bottom:6px;">Minhas Solicitações</div>
+          <div id="myReleaseList" style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- SUPERVISOR VIEW -->
+  <div id="supervisorView" class="sv-layout hidden">
+    <nav class="sv-nav">
+      <div class="sv-tab active" id="tab-dashboard" onclick="svTab('dashboard')">📊 Dashboard</div>
+      <div class="sv-tab" id="tab-operators" onclick="svTab('operators')">👥 Operadores</div>
+      <div class="sv-tab" id="tab-releases" onclick="svTab('releases')">🎟️ Cupons</div>
+    </nav>
+
+    <!-- Dashboard -->
+    <div class="sv-content" id="svPanel-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card orange">
+          <div class="kpi-label">Chats em Atendimento</div>
+          <div class="kpi-value" id="kpiActiveChats">—</div>
+          <div class="kpi-sub">Ativos agora</div>
+          <div class="kpi-icon">💬</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-label">Fila de Espera</div>
+          <div class="kpi-value" id="kpiQueue">—</div>
+          <div class="kpi-sub">Aguardando operador</div>
+          <div class="kpi-icon">⏳</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">Operadores Online</div>
+          <div class="kpi-value" id="kpiOnlineOps">—</div>
+          <div class="kpi-sub" id="kpiTotalOps">de — no total</div>
+          <div class="kpi-icon">🟢</div>
+        </div>
+        <div class="kpi-card yellow">
+          <div class="kpi-label">Em Pausa</div>
+          <div class="kpi-value" id="kpiPausedOps">—</div>
+          <div class="kpi-sub" id="kpiOverdueOps">— atrasados</div>
+          <div class="kpi-icon">⏸️</div>
+        </div>
+      </div>
+      <div class="sh">
+        <h2>Visão Geral dos Operadores</h2>
+        <button class="btn-ghost" onclick="loadSupervisorData()" style="font-size:12px;padding:7px 12px;">↻ Atualizar</button>
+      </div>
+      <div class="ops-grid" id="operatorsListDash">
+        <div class="muted">Carregando...</div>
       </div>
     </div>
 
-    <div id="appView" class="hidden grid">
-      <div class="card between">
-        <div>
-          <h2 id="welcome">Operação</h2>
-          <div class="muted" id="meInfo"></div>
-        </div>
-        <div class="row">
-          <span id="statusBadge" class="badge offline">offline</span>
-          <button id="logoutBtn">Sair</button>
+    <!-- Operators -->
+    <div class="sv-content hidden" id="svPanel-operators">
+      <div class="sh">
+        <h2>Gerenciamento de Operadores</h2>
+        <button class="btn-ghost" onclick="loadSupervisorData()" style="font-size:12px;padding:7px 12px;">↻ Atualizar</button>
+      </div>
+      <div class="ops-grid" id="operatorsList">
+        <div class="muted">Carregando...</div>
+      </div>
+    </div>
+
+    <!-- Releases -->
+    <div class="sv-content hidden" id="svPanel-releases">
+      <div class="sh">
+        <h2>Solicitações de Cupom Operacional</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="releaseStatusFilter" style="font-size:12px;padding:6px 10px;">
+            <option value="pending">Pendentes</option>
+            <option value="approved">Aprovadas</option>
+            <option value="rejected">Recusadas</option>
+            <option value="all">Todas</option>
+          </select>
+          <button class="btn-ghost" id="reloadReleasesBtn" style="font-size:12px;padding:7px 12px;">↻ Atualizar</button>
         </div>
       </div>
-
-      <div id="operatorView" class="grid hidden">
-        <div class="grid two">
-          <div class="card">
-            <h3>Status Operador</h3>
-            <div class="row" style="margin-top:8px;">
-              <button class="primary" id="goOnlineBtn">Ficar Online</button>
-              <input id="pauseMinutes" type="number" min="1" max="180" value="10" style="width:100px;" />
-              <button class="warn" id="pauseBtn">Programar Pausa</button>
-              <button id="cancelPauseBtn">Cancelar Pausa</button>
-              <button id="endPauseBtn">Encerrar Pausa</button>
-            </div>
-            <div class="muted" id="operatorStats" style="margin-top:8px;"></div>
-          </div>
-          <div class="card">
-            <h3>Fila Global</h3>
-            <div id="queueList" class="list" style="margin-top:8px;"></div>
-          </div>
-        </div>
-
-        <div class="grid two">
-          <div class="card">
-            <h3>Meus Atendimentos</h3>
-            <div id="myChatsList" class="list" style="margin-top:8px;"></div>
-          </div>
-          <div class="card">
-            <h3>Chat Selecionado</h3>
-            <div id="chatDetail" class="muted">Selecione um chat para ver detalhes.</div>
-            <textarea id="msgText" placeholder="Digite a resposta..."></textarea>
-            <div class="row" style="margin-top:8px;">
-              <button class="primary" id="sendMsgBtn">Enviar</button>
-              <button class="danger" id="closeChatBtn">Encerrar Chat</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid two">
-          <div class="card">
-            <h3>Consulta de Serviços</h3>
-            <div class="row" style="margin-top:8px;">
-              <input id="reqSearch" placeholder="ID, nome, e-mail, telefone..." style="flex:1;" />
-              <select id="reqStatus">
-                <option value="all">Todos</option>
-                <option value="searching">Searching</option>
-                <option value="accepted">Accepted</option>
-                <option value="in_progress">In progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-              <button id="reqSearchBtn">Buscar</button>
-            </div>
-            <div id="reqList" class="list" style="margin-top:8px;"></div>
-          </div>
-          <div class="card">
-            <h3>Cupom Operacional (com aprovação)</h3>
-            <div class="grid" style="margin-top:8px;">
-              <select id="couponSelect"></select>
-              <input id="targetUserId" placeholder="ID do cliente/profissional" />
-              <textarea id="couponReason" placeholder="Motivo da liberação"></textarea>
-              <button class="primary" id="requestCouponBtn">Solicitar Liberação</button>
-            </div>
-            <h3 style="margin-top:12px;">Minhas Solicitações</h3>
-            <div id="myReleaseList" class="list" style="margin-top:8px;"></div>
-          </div>
-        </div>
-      </div>
-
-      <div id="supervisorView" class="grid hidden">
-        <div class="grid two">
-          <div class="card">
-            <h3>Operadores do Time</h3>
-            <div id="operatorsList" class="list" style="margin-top:8px;"></div>
-          </div>
-          <div class="card">
-            <h3>Solicitações de Cupom Operacional</h3>
-            <div class="row" style="margin:8px 0;">
-              <select id="releaseStatusFilter">
-                <option value="pending">Pendentes</option>
-                <option value="approved">Aprovadas</option>
-                <option value="rejected">Recusadas</option>
-                <option value="all">Todas</option>
-              </select>
-              <button id="reloadReleasesBtn">Atualizar</button>
-            </div>
-            <div id="supervisorReleaseList" class="list"></div>
-          </div>
-        </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cupom</th><th>Usuário Alvo</th><th>Operador</th><th>Motivo</th><th>Status</th><th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="supervisorReleaseList">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Carregando...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
+</div>
 
-  <div id="alert"></div>
-  <script src="./app.js"></script>
+<!-- PAUSE MODAL (operator) -->
+<div id="pauseModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>⏸️ Inserir Pausa</h3>
+    <p class="sub">Selecione o tipo de pausa. Ela iniciará após seus atendimentos ativos serem encerrados.</p>
+    <select id="pauseTypeSelect" style="width:100%;"></select>
+    <div class="modal-footer">
+      <button class="btn-ghost" id="cancelPauseModalBtn">Cancelar</button>
+      <button class="btn-accent" id="confirmPauseBtn">Confirmar Pausa</button>
+    </div>
+  </div>
+</div>
+
+<!-- CANCEL PAUSE CONFIRM -->
+<div id="cancelPauseModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>❌ Cancelar Pausa</h3>
+    <p class="sub">Deseja cancelar a pausa programada e voltar ao status online?</p>
+    <div class="modal-footer">
+      <button class="btn-ghost" id="cancelPauseNoBtn">Não</button>
+      <button class="btn-danger" id="cancelPauseYesBtn">Cancelar Pausa</button>
+    </div>
+  </div>
+</div>
+
+<!-- UNLOCK MODAL (supervisor) -->
+<div id="unlockModal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3>🔐 Desbloquear Pausa</h3>
+    <p class="sub" id="unlockModalMsg"></p>
+    <input id="unlockPassword" type="password" placeholder="Sua senha de supervisor" style="width:100%;" />
+    <div class="modal-footer">
+      <button class="btn-ghost" id="unlockCancelBtn">Cancelar</button>
+      <button class="btn-accent" id="unlockConfirmBtn">Desbloquear</button>
+    </div>
+  </div>
+</div>
+
+<div id="alert"></div>
+<script src="./app.js"></script>
 </body>
 </html>

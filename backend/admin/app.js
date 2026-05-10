@@ -334,6 +334,9 @@ const renderLayout = async () => {
           ${hasPermission(PERMISSIONS.SUPPORT_CHAT) ? `
           <div class="nav-item ${currentPage==='suporte'?'active':''}" onclick="navTo('suporte')">
             <span class="icon">🏎️</span> Suporte Operador
+          </div>
+          <div class="nav-item ${currentPage==='pause-types'?'active':''}" onclick="navTo('pause-types')">
+            <span class="icon">⏸️</span> Tipos de Pausa
           </div>` : ''}
           ${hasPermission(PERMISSIONS.CONTENT_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='ajuda'?'active':''}" onclick="navTo('ajuda')">
@@ -423,6 +426,7 @@ const navTo = (page) => {
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
     'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
+    'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
   };
   const required = pagePermissionMap[page] || [PERMISSIONS.DASHBOARD];
@@ -448,6 +452,7 @@ const navTo = (page) => {
     pagamentos: 'Pagamentos & Stripe',
     saques: 'Fila de Saques PIX',
     'service-types': 'Profissões e Serviços',
+    'pause-types': 'Tipos de Pausa',
     admins: 'Equipe Admin',
   }[page] || page;
   renderPage();
@@ -466,13 +471,14 @@ const renderPage = () => {
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
     'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
+    'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
   };
   const required = pagePermissionMap[currentPage] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'pause-types': renderPauseTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -2311,6 +2317,121 @@ const toggleCoupon = async (id) => {
   } catch (err) {
     showAlert(err.message);
   }
+};
+
+// ── PAUSE TYPES ─────────────────────────────────────────────────────────
+
+const renderPauseTypes = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', '/pause-types');
+    const types = data.pauseTypes || [];
+    c.innerHTML = `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="openNewPauseTypeModal()">+ Novo Tipo de Pausa</button>
+      </div>
+      <div class="section-card">
+        <div class="section-header"><h2>Tipos de Pausa (${types.length})</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Nome</th><th>Duração</th><th>Ordem</th><th>Status</th><th>Ação</th></tr></thead>
+          <tbody>${types.length ? types.map(pt => `<tr>
+            <td><strong>${escHtml(pt.name)}</strong></td>
+            <td>${pt.durationMinutes} min</td>
+            <td>${pt.order}</td>
+            <td><span class="badge ${pt.isActive ? 'badge-approved' : 'badge-rejected'}">${pt.isActive ? 'Ativo' : 'Inativo'}</span></td>
+            <td style="display:flex;gap:6px;">
+              <button class="btn btn-ghost btn-sm" onclick="openEditPauseTypeModal(${JSON.stringify(JSON.stringify(pt))})">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="deletePauseType('${pt._id}')">Excluir</button>
+            </td>
+          </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:#7A84A0;">Nenhum tipo de pausa cadastrado.</td></tr>'}</tbody>
+        </table></div>
+      </div>`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+const openNewPauseTypeModal = () => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h3>➕ Novo Tipo de Pausa</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Nome</label><input id="npt-name" class="form-input" placeholder="Ex: Pausa Almoço" /></div>
+      <div class="form-group"><label class="form-label">Duração (minutos)</label><input id="npt-duration" class="form-input" type="number" min="1" max="480" value="60" /></div>
+      <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="npt-order" class="form-input" type="number" value="0" /></div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="npt-active" type="checkbox" checked />
+        <label for="npt-active" class="form-label" style="margin:0;">Ativo</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="createPauseType()">Criar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const createPauseType = async () => {
+  const name = document.getElementById('npt-name').value.trim();
+  const durationMinutes = Number(document.getElementById('npt-duration').value);
+  const order = Number(document.getElementById('npt-order').value || 0);
+  const isActive = !!document.getElementById('npt-active').checked;
+  if (!name || !durationMinutes) { showAlert('Preencha nome e duração.'); return; }
+  try {
+    await req('POST', '/pause-types', { name, durationMinutes, order, isActive });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Tipo de pausa criado!', 'success');
+    renderPauseTypes();
+  } catch (err) { showAlert(err.message); }
+};
+
+const openEditPauseTypeModal = (ptJson) => {
+  const pt = JSON.parse(ptJson);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h3>✏️ Editar Tipo de Pausa</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Nome</label><input id="ept-name" class="form-input" value="${escHtml(pt.name)}" /></div>
+      <div class="form-group"><label class="form-label">Duração (minutos)</label><input id="ept-duration" class="form-input" type="number" min="1" max="480" value="${pt.durationMinutes}" /></div>
+      <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ept-order" class="form-input" type="number" value="${pt.order}" /></div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="ept-active" type="checkbox" ${pt.isActive ? 'checked' : ''} />
+        <label for="ept-active" class="form-label" style="margin:0;">Ativo</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePauseType('${pt._id}')">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const savePauseType = async (id) => {
+  const name = document.getElementById('ept-name').value.trim();
+  const durationMinutes = Number(document.getElementById('ept-duration').value);
+  const order = Number(document.getElementById('ept-order').value || 0);
+  const isActive = !!document.getElementById('ept-active').checked;
+  if (!name || !durationMinutes) { showAlert('Preencha nome e duração.'); return; }
+  try {
+    await req('PATCH', `/pause-types/${id}`, { name, durationMinutes, order, isActive });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Tipo de pausa atualizado!', 'success');
+    renderPauseTypes();
+  } catch (err) { showAlert(err.message); }
+};
+
+const deletePauseType = async (id) => {
+  if (!confirm('Excluir este tipo de pausa?')) return;
+  try {
+    await req('DELETE', `/pause-types/${id}`);
+    showAlert('Excluído.', 'success');
+    renderPauseTypes();
+  } catch (err) { showAlert(err.message); }
 };
 
 // ── ADMINS ─────────────────────────────────────────────────────────

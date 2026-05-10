@@ -2036,4 +2036,66 @@ router.patch('/coupons/:id/toggle', adminAuth, async (req, res) => {
   }
 });
 
+// ─── Pause Types ───────────────────────────────────────────────────────────
+
+const PauseType = require('../models/PauseType');
+
+// GET /api/admin/pause-types
+router.get('/pause-types', adminAuth, async (req, res) => {
+  try {
+    const types = await PauseType.find().sort({ order: 1, createdAt: 1 });
+    res.json({ pauseTypes: types });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar tipos de pausa' });
+  }
+});
+
+// POST /api/admin/pause-types
+router.post('/pause-types', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
+  try {
+    const { name, durationMinutes, isActive, order } = req.body;
+    if (!name || !durationMinutes) {
+      return res.status(400).json({ message: 'Nome e duração são obrigatórios' });
+    }
+    const pt = await PauseType.create({
+      name: String(name).trim(),
+      durationMinutes: Math.max(1, Math.min(480, Number(durationMinutes))),
+      isActive: isActive !== false,
+      order: Number(order || 0),
+    });
+    res.status(201).json({ pauseType: pt });
+  } catch {
+    res.status(500).json({ message: 'Erro ao criar tipo de pausa' });
+  }
+});
+
+// PATCH /api/admin/pause-types/:id
+router.patch('/pause-types/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
+  try {
+    const { name, durationMinutes, isActive, order } = req.body;
+    const pt = await PauseType.findById(req.params.id);
+    if (!pt) return res.status(404).json({ message: 'Tipo de pausa não encontrado' });
+    if (name !== undefined) pt.name = String(name).trim();
+    if (durationMinutes !== undefined) pt.durationMinutes = Math.max(1, Math.min(480, Number(durationMinutes)));
+    if (isActive !== undefined) pt.isActive = Boolean(isActive);
+    if (order !== undefined) pt.order = Number(order);
+    await pt.save();
+    res.json({ pauseType: pt });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar tipo de pausa' });
+  }
+});
+
+// DELETE /api/admin/pause-types/:id
+router.delete('/pause-types/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
+  try {
+    const pt = await PauseType.findByIdAndDelete(req.params.id);
+    if (!pt) return res.status(404).json({ message: 'Tipo de pausa não encontrado' });
+    res.json({ message: 'Tipo de pausa excluído' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao excluir tipo de pausa' });
+  }
+});
+
 module.exports = router;
+
