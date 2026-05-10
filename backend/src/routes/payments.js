@@ -1,6 +1,7 @@
 const express = require('express');
 const QRCode = require('qrcode');
 const auth = require('../middleware/auth');
+const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
@@ -646,7 +647,7 @@ router.get('/cora/pix/:chargeId/qr', async (req, res) => {
 
 // GET /api/payments/cora/webhook/endpoints
 // Retorna URLs para cadastro de webhooks no Cora Web
-router.get('/cora/webhook/endpoints', (req, res) => {
+router.get('/cora/webhook/endpoints', adminAuth, requireRole('super_admin', 'admin'), (req, res) => {
   const base = getWebhookBaseUrl(req);
   return res.json({
     webhookUrl: `${base}/api/payments/cora/webhook`,
@@ -659,10 +660,7 @@ router.get('/cora/webhook/endpoints', (req, res) => {
 
 // POST /api/payments/cora/webhook/register
 // Opcional: registra endpoint na Cora automaticamente para invoice.paid
-router.post('/cora/webhook/register', auth, async (req, res) => {
-  if (req.user.userType !== 'admin') {
-    return res.status(403).json({ message: 'Apenas admin pode registrar webhook' });
-  }
+router.post('/cora/webhook/register', adminAuth, requireRole('super_admin', 'admin'), async (req, res) => {
 
   if (!hasCoraConfigured()) {
     return res.status(503).json({ message: 'Cora nao configurada no backend' });
