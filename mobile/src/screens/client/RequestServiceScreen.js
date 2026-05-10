@@ -74,6 +74,8 @@ export default function RequestServiceScreen({ navigation, route }) {
   const [estimate, setEstimate] = useState(null);
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
+  const [timeWindows, setTimeWindows] = useState(serviceType?.timeWindows || []);
+  const [pricePerMinute, setPricePerMinute] = useState(serviceType?.pricePerMinute || 0);
 
   function getTomorrow() {
     const d = new Date();
@@ -199,6 +201,10 @@ export default function RequestServiceScreen({ navigation, route }) {
 
     setCustomFormData((prev) => ({ ...prev, [field.key]: value }));
   };
+
+  function calculatePrice(duration) {
+    return (pricePerMinute * duration).toFixed(2);
+  }
 
   return (
     <KeyboardAvoidingView

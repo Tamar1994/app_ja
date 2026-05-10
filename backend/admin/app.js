@@ -1138,8 +1138,10 @@ const openServiceChatAudit = async (id) => {
     main.innerHTML = `
       <div class="chat-header">
         <div>
-          <div style="font-weight:700;font-size:15px;">${escHtml(chat.clientId?.name || 'Cliente')} → ${escHtml(chat.professionalId?.name || 'Profissional')}</div>
-          <div style="font-size:12px;color:#5C6B7A;">Status do pedido: ${escHtml(chat.requestId?.status || '—')} · Chat: ${escHtml(chat.status)}</div>
+          <div style="font-weight:700;font-size:15px;">${escHtml(chat.clientId?.name || 'Cliente')}</div>
+          <div style="font-size:12px;color:#5C6B7A;">${escHtml(chat.clientId?.email || '')} · <strong>Assunto:</strong> ${escHtml(chat.subject || '—')}</div>
+          ${isP1 ? `<div style="font-size:12px;color:#FF8A80;margin-top:6px;"><strong>Emergência:</strong> ${escHtml(chat.emergencyContext || 'Sem contexto adicional')}</div>` : ''}
+          ${chat.relatedServiceRequestId ? `<div style="font-size:12px;color:#FFB199;margin-top:4px;"><strong>Serviço vinculado:</strong> ${escHtml(chat.relatedServiceRequestId)}</div>` : ''}
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <span class="badge ${chat.status === 'active' ? 'badge-approved' : 'badge-closed'}">${chat.status === 'active' ? 'Ativo' : 'Encerrado'}</span>

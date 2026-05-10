@@ -18,7 +18,6 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [pricePerHour, setPricePerHour] = useState('35');
   const [cpf, setCpf] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -27,6 +26,7 @@ export default function RegisterScreen({ navigation }) {
   const [serviceTypes, setServiceTypes] = useState([]);
   const [selectedSlug, setSelectedSlug] = useState(null);
   const [loadingTypes, setLoadingTypes] = useState(false);
+  const [selectedProfessions, setSelectedProfessions] = useState([]);
 
   useEffect(() => {
     setLoadingTypes(true);
@@ -275,75 +275,27 @@ export default function RegisterScreen({ navigation }) {
                 </View>
               </View>
 
-              {/* Preço (só profissional) */}
+              {/* Seletor de profissões (só profissional) */}
               {userType === 'professional' && (
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Valor por hora (R$)</Text>
-                  <View style={[styles.inputWrap, focusedField === 'price' && styles.inputWrapFocusedPro]}>
-                    <Ionicons
-                      name="cash-outline"
-                      size={20}
-                      color={focusedField === 'price' ? colors.secondary : colors.textLight}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="35"
-                      placeholderTextColor={colors.textLight}
-                      keyboardType="numeric"
-                      value={pricePerHour}
-                      onChangeText={setPricePerHour}
-                      onFocus={() => setFocusedField('price')}
-                      onBlur={() => setFocusedField(null)}
-                    />
-                    <Text style={styles.priceSuffix}>/hora</Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Seletor de profissão (só profissional) */}
-              {userType === 'professional' && (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Sua profissão *</Text>
+                  <Text style={styles.label}>Suas profissões *</Text>
                   {loadingTypes ? (
                     <ActivityIndicator color={colors.secondary} style={{ marginTop: 8 }} />
                   ) : serviceTypes.length === 0 ? (
                     <Text style={styles.profEmpty}>Nenhuma profissão disponível no momento.</Text>
                   ) : (
-                    <View style={styles.profGrid}>
-                      {serviceTypes.map((t) => {
-                        const enabled = t.status === 'enabled';
-                        const selected = selectedSlug === t.slug;
-                        return (
-                          <TouchableOpacity
-                            key={t._id}
-                            style={[
-                              styles.profCard,
-                              selected && styles.profCardSelected,
-                              !enabled && styles.profCardDisabled,
-                            ]}
-                            onPress={() => enabled ? setSelectedSlug(t.slug) : null}
-                            activeOpacity={enabled ? 0.75 : 1}
-                          >
-                            <Text style={styles.profIcon}>{t.icon || '🔧'}</Text>
-                            <Text style={[styles.profName, !enabled && styles.profNameDisabled, selected && styles.profNameSelected]}>
-                              {t.name}
-                            </Text>
-                            {!enabled && (
-                              <Text style={styles.profSoon}>Em breve</Text>
-                            )}
-                            {selected && (
-                              <View style={styles.profCheck}>
-                                <Ionicons name="checkmark-circle" size={16} color={colors.secondary} />
-                              </View>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-                  {userType === 'professional' && !selectedSlug && serviceTypes.some(t => t.status === 'enabled') && (
-                    <Text style={styles.profHint}>Selecione uma profissão para continuar</Text>
+                    <FlatList
+                      data={serviceTypes}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[styles.professionItem, selectedProfessions.includes(item.id) && styles.professionItemSelected]}
+                          onPress={() => toggleProfession(item.id)}
+                        >
+                          <Text style={styles.professionText}>{item.name}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
                   )}
                 </View>
               )}
