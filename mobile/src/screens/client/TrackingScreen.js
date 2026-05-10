@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -19,6 +19,19 @@ const STEPS = [
 ];
 
 const LIVE_POLL_MS = 10000;
+const AVG_SPEED_KMH = 28;
+
+function haversineKm(a, b) {
+  if (!a || !b) return null;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
 
 export default function TrackingScreen({ navigation, route }) {
   const { requestId } = route.params;
@@ -163,6 +176,16 @@ export default function TrackingScreen({ navigation, route }) {
     };
   }, [clientCoords, professionalCoords]);
 
+  const etaMinutes = useMemo(() => {
+    if (!clientCoords || !professionalCoords) return null;
+    const distanceKm = haversineKm(professionalCoords, clientCoords);
+    if (!distanceKm || !Number.isFinite(distanceKm)) return null;
+    const routeFactor = 1.25;
+    const adjustedKm = distanceKm * routeFactor;
+    const minutes = Math.ceil((adjustedKm / AVG_SPEED_KMH) * 60);
+    return Math.max(1, minutes);
+  }, [clientCoords, professionalCoords]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -280,15 +303,17 @@ export default function TrackingScreen({ navigation, route }) {
                   </View>
                 </Marker>
               )}
-
-              {clientCoords && professionalCoords && (
-                <Polyline
-                  coordinates={[professionalCoords, clientCoords]}
-                  strokeColor={colors.primary}
-                  strokeWidth={4}
-                />
-              )}
             </MapView>
+
+            <View style={styles.etaRow}>
+              <View style={styles.etaChip}>
+                <Ionicons name="time-outline" size={14} color={colors.primary} />
+                <Text style={styles.etaChipText}>
+                  {etaMinutes ? `ETA aproximado: ${etaMinutes} min` : 'ETA indisponível no momento'}
+                </Text>
+              </View>
+              <Text style={styles.etaHint}>Estimativa aproximada com base na distância atual.</Text>
+            </View>
           </View>
         )}
 
@@ -476,6 +501,29 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
     borderRadius: borderRadius.lg,
+  },
+  etaRow: {
+    marginTop: 10,
+    gap: 4,
+  },
+  etaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  etaChipText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  etaHint: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textLight,
   },
   homeMarker: {
     backgroundColor: colors.secondary,
