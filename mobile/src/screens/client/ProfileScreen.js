@@ -1,20 +1,102 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  TouchableOpacity, ScrollView, Alert,
+  TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
+import { uploadAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api').replace(/\/api\/?$/, '');
+
+function buildImageUrl(path) {
+  if (!path) return null;
+  if (String(path).startsWith('http://') || String(path).startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 export default function ProfileScreen({ navigation }) {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const handleLogout = () => {
     Alert.alert('Sair', 'Deseja sair da sua conta?', [
       { text: 'Cancelar' },
       { text: 'Sair', style: 'destructive', onPress: logout },
+    ]);
+  };
+
+  const uploadAvatarAsset = async (asset) => {
+    if (!asset?.uri) return;
+    setUploadingAvatar(true);
+    try {
+      const ext = asset.uri.split('.').pop()?.toLowerCase();
+      const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
+      const formData = new FormData();
+      formData.append('avatar', {
+        uri: asset.uri,
+        name: `avatar.${safeExt}`,
+        type: `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
+      });
+
+      const { data } = await uploadAPI.avatar(formData);
+      if (data?.avatarUrl) {
+        updateUser({ avatar: data.avatarUrl });
+      }
+      Alert.alert('Sucesso', 'Foto de perfil atualizada!');
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Nao foi possivel atualizar a foto.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const pickFromGallery = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permissao necessaria', 'Precisamos de acesso a sua galeria.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (!result.canceled && result.assets?.[0]) {
+      await uploadAvatarAsset(result.assets[0]);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permissao necessaria', 'Precisamos de acesso a camera.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (!result.canceled && result.assets?.[0]) {
+      await uploadAvatarAsset(result.assets[0]);
+    }
+  };
+
+  const showAvatarOptions = () => {
+    if (uploadingAvatar) return;
+    Alert.alert('Foto de perfil', 'Como deseja alterar sua foto?', [
+      { text: 'Camera', onPress: takePhoto },
+      { text: 'Galeria', onPress: pickFromGallery },
+      { text: 'Cancelar', style: 'cancel' },
     ]);
   };
 
@@ -39,14 +121,24 @@ export default function ProfileScreen({ navigation }) {
         >
           <Text style={styles.headerTitle}>Perfil</Text>
           <View style={styles.profileSection}>
-            <View style={styles.avatarWrap}>
-              <LinearGradient
-                colors={['rgba(255,255,255,0.3)', 'rgba(255,255,255,0.1)']}
-                style={styles.avatar}
-              >
-                <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
-              </LinearGradient>
-            </View>
+            <TouchableOpacity style={styles.avatarWrap} onPress={showAvatarOptions} activeOpacity={0.85}>
+              {user?.avatar ? (
+                <Image source={{ uri: buildImageUrl(user.avatar) }} style={styles.avatarImage} />
+              ) : (
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.3)', 'rgba(255,255,255,0.1)']}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase() || '?'}</Text>
+                </LinearGradient>
+              )}
+
+              <View style={styles.avatarEditBadge}>
+                {uploadingAvatar
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="camera" size={14} color="#fff" />}
+              </View>
+            </TouchableOpacity>
             <Text style={styles.userName}>{user.name}</Text>
             <Text style={styles.userEmail}>{user.email}</Text>
             <View style={styles.typeBadge}>
@@ -131,6 +223,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.4)',
+  },
+  avatarImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: { color: colors.white, fontSize: 38, fontWeight: '700' },
   userName: { fontSize: typography.fontSizes.xl, fontWeight: '800', color: colors.white },
