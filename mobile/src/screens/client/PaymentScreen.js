@@ -328,6 +328,34 @@ export default function PaymentScreen({ navigation, route }) {
           )}
         </View>
 
+        {/* Métodos aceitos */}
+        <View style={styles.methodsRow}>
+          <TouchableOpacity
+            style={[styles.methodChip, selectedMethod === 'card' && styles.methodChipActive]}
+            onPress={() => setSelectedMethod('card')}
+          >
+            <Ionicons name="card-outline" size={14} color={colors.primary} />
+            <Text style={styles.methodChipText}>Cartao</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.methodChip, selectedMethod === 'pix' && styles.methodChipActive]}
+            onPress={() => setSelectedMethod('pix')}
+          >
+            <Ionicons name="qr-code-outline" size={14} color={colors.primary} />
+            <Text style={styles.methodChipText}>PIX</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Segurança */}
+        <View style={styles.secureRow}>
+          <Ionicons name="lock-closed" size={14} color={colors.success} />
+          <Text style={styles.secureText}>
+            {selectedMethod === 'pix'
+              ? 'PIX com QR unico e expiracao em 15 minutos'
+              : 'Pagamento seguro via Stripe · Dados criptografados'}
+          </Text>
+        </View>
+
         {/* Cartões salvos (preview) */}
         {savedMethods.length > 0 && (
           <View style={styles.card}>
@@ -443,33 +471,6 @@ export default function PaymentScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* Métodos aceitos */}
-        <View style={styles.methodsRow}>
-          <TouchableOpacity
-            style={[styles.methodChip, selectedMethod === 'card' && styles.methodChipActive]}
-            onPress={() => setSelectedMethod('card')}
-          >
-            <Ionicons name="card-outline" size={14} color={colors.primary} />
-            <Text style={styles.methodChipText}>Cartao</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.methodChip, selectedMethod === 'pix' && styles.methodChipActive]}
-            onPress={() => setSelectedMethod('pix')}
-          >
-            <Ionicons name="qr-code-outline" size={14} color={colors.primary} />
-            <Text style={styles.methodChipText}>PIX Cora</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Segurança */}
-        <View style={styles.secureRow}>
-          <Ionicons name="lock-closed" size={14} color={colors.success} />
-          <Text style={styles.secureText}>
-            {selectedMethod === 'pix'
-              ? 'PIX Cora com QR unico e expiracao em 15 minutos'
-              : 'Pagamento seguro via Stripe · Dados criptografados'}
-          </Text>
-        </View>
       </ScrollView>
 
       {/* Footer com total + botão pagar */}
@@ -540,6 +541,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     gap: 10,
+    marginBottom: 14,
     ...shadows.sm,
   },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
@@ -635,7 +637,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F5E9', borderRadius: 8, padding: 8,
   },
   walletAppliedText: { fontSize: typography.fontSizes.sm, color: colors.success, fontWeight: '600' },
-  methodsRow: { flexDirection: 'row', gap: 10 },
+  methodsRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   methodChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: colors.white, borderRadius: 20,
@@ -651,6 +653,7 @@ const styles = StyleSheet.create({
   secureRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     justifyContent: 'center',
+    marginBottom: 14,
   },
   secureText: { fontSize: 12, color: colors.textSecondary },
   footer: {

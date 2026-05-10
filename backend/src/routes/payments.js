@@ -997,7 +997,7 @@ router.get('/cora/pix/:chargeId/status', auth, async (req, res) => {
 });
 
 // GET /api/payments/cora/pix/:chargeId/qr
-// Gera um QR code puro (sem branding Cora) em formato SVG a partir do EMV
+// Gera um QR code puro (sem branding Cora) em formato PNG a partir do EMV
 router.get('/cora/pix/:chargeId/qr', async (req, res) => {
   try {
     const charge = await CoraPixCharge.findById(req.params.chargeId);
@@ -1009,9 +1009,9 @@ router.get('/cora/pix/:chargeId/qr', async (req, res) => {
       return res.status(400).json({ message: 'Cobranca sem codigo EMV disponivel' });
     }
 
-    // Gera QR code em formato SVG a partir do EMV
-    const qrSvg = await QRCode.toString(charge.emv, {
-      type: 'image/svg+xml',
+    // React Native <Image /> renderiza PNG remoto com mais confiabilidade que SVG.
+    const qrPng = await QRCode.toBuffer(charge.emv, {
+      type: 'png',
       width: 300,
       margin: 1,
       color: {
@@ -1020,9 +1020,9 @@ router.get('/cora/pix/:chargeId/qr', async (req, res) => {
       },
     });
 
-    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    return res.send(qrSvg);
+    return res.send(qrPng);
   } catch (err) {
     console.error('Erro ao gerar QR code:', err);
     return res.status(500).json({ message: 'Erro ao gerar QR code' });

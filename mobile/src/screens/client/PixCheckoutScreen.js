@@ -15,11 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { paymentAPI } from '../../services/api';
 import { colors } from '../../theme';
 
-// Obtem a URL base da API
-function getApiBaseUrl() {
-  // Expo/React Native: usa var de ambiente ou padrão local
-  return process.env.REACT_APP_API_URL || 'http://localhost:4000';
-}
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api';
 
 function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -40,8 +36,9 @@ export default function PixCheckoutScreen({ navigation, route }) {
     const expiresAt = new Date(initialCharge.expiresAt || Date.now()).getTime();
     return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
   });
-  const [checking, setChecking] = useState(false);
+  const [manualChecking, setManualChecking] = useState(false);
   const pollingRef = useRef(null);
+  const statusRequestRef = useRef(false);
 
   const isFinished = useMemo(() => ['paid', 'expired', 'cancelled', 'failed'].includes(status), [status]);
 
@@ -59,10 +56,11 @@ export default function PixCheckoutScreen({ navigation, route }) {
     return () => clearInterval(timer);
   }, [status]);
 
-  const refreshStatus = async () => {
-    if (!charge.id) return;
+  const refreshStatus = async ({ manual = false } = {}) => {
+    if (!charge.id || statusRequestRef.current) return;
+    statusRequestRef.current = true;
     try {
-      setChecking(true);
+      if (manual) setManualChecking(true);
       const { data } = await paymentAPI.getCoraPixStatus(charge.id);
       setCharge((prev) => ({ ...prev, ...data }));
       setStatus(data.status);
@@ -76,7 +74,8 @@ export default function PixCheckoutScreen({ navigation, route }) {
     } catch {
       // Falha de rede nao deve interromper o fluxo.
     } finally {
-      setChecking(false);
+      if (manual) setManualChecking(false);
+      statusRequestRef.current = false;
     }
   };
 
@@ -125,7 +124,7 @@ export default function PixCheckoutScreen({ navigation, route }) {
         {charge.id ? (
           <View style={styles.qrWrap}>
             <Image 
-              source={{ uri: `${getApiBaseUrl()}/api/payments/cora/pix/${charge.id}/qr` }} 
+              source={{ uri: `${API_BASE_URL}/payments/cora/pix/${charge.id}/qr` }} 
               style={styles.qrImage} 
               resizeMode="contain" 
             />
@@ -147,8 +146,12 @@ export default function PixCheckoutScreen({ navigation, route }) {
           </View>
         )}
 
-        <TouchableOpacity style={styles.primaryBtn} disabled={checking} onPress={refreshStatus}>
-          <Text style={styles.primaryBtnText}>{checking ? 'Atualizando...' : 'Ja paguei, atualizar status'}</Text>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          disabled={manualChecking}
+          onPress={() => refreshStatus({ manual: true })}
+        >
+          <Text style={styles.primaryBtnText}>{manualChecking ? 'Atualizando...' : 'Ja paguei, atualizar status'}</Text>
         </TouchableOpacity>
 
         {status === 'expired' && (
