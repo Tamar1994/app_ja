@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const QRCode = require('qrcode');
 const auth = require('../middleware/auth');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
@@ -7,6 +8,7 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
 const CoraPixCharge = require('../models/CoraPixCharge');
+const ClientWalletTransaction = require('../models/ClientWalletTransaction');
 const StripeConfig = require('../models/StripeConfig');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
 const { resolveCouponsForCheckout } = require('../services/couponService');
@@ -119,6 +121,90 @@ function getWebhookBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function normalizeWalletInput(rawUseWallet, rawWalletAmount) {
+  const useWallet = Boolean(rawUseWallet);
+  const parsed = Number(rawWalletAmount);
+  const walletAmount = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  return {
+    useWallet,
+    walletAmount,
+  };
+}
+
+function buildWalletUsage({ user, totalPayableAfterCoupons, requestedWalletAmount = null, forceUseWallet = false }) {
+  const clientWalletBalance = Number(user?.clientWallet?.balance || 0);
+  const professionalWalletBalance = Number(user?.wallet?.balance || 0);
+  const maxWalletAvailable = Math.max(0, clientWalletBalance + professionalWalletBalance);
+
+  const requested = requestedWalletAmount === null
+    ? (forceUseWallet ? totalPayableAfterCoupons : 0)
+    : requestedWalletAmount;
+
+  const targetWalletUse = Math.max(0, Math.min(Number(requested || 0), totalPayableAfterCoupons, maxWalletAvailable));
+  const fromClientWallet = Math.min(clientWalletBalance, targetWalletUse);
+  const fromProfessionalWallet = Math.min(professionalWalletBalance, targetWalletUse - fromClientWallet);
+  const totalWalletUsed = Number((fromClientWallet + fromProfessionalWallet).toFixed(2));
+
+  return {
+    fromClientWallet: Number(fromClientWallet.toFixed(2)),
+    fromProfessionalWallet: Number(fromProfessionalWallet.toFixed(2)),
+    totalWalletUsed,
+    maxWalletAvailable: Number(maxWalletAvailable.toFixed(2)),
+  };
+}
+
+async function applyWalletDebit({ userId, serviceRequestId, walletUsage, transactionLabel = 'Checkout' }) {
+  const debitClient = Number(walletUsage?.fromClientWallet || 0);
+  const debitProfessional = Number(walletUsage?.fromProfessionalWallet || 0);
+  const totalDebit = Number((debitClient + debitProfessional).toFixed(2));
+  if (totalDebit <= 0) return;
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const user = await User.findById(userId).session(session);
+      if (!user) throw new Error('Usuário não encontrado para débito em carteira');
+
+      const availableClient = Number(user.clientWallet?.balance || 0);
+      const availableProfessional = Number(user.wallet?.balance || 0);
+      if (availableClient + availableProfessional + 0.0001 < totalDebit) {
+        throw new Error('Saldo em carteira insuficiente para concluir pagamento');
+      }
+
+      const safeDebitClient = Math.min(availableClient, debitClient);
+      const safeDebitProfessional = Math.min(availableProfessional, debitProfessional);
+
+      if (safeDebitClient > 0) {
+        user.clientWallet.balance = Number((availableClient - safeDebitClient).toFixed(2));
+      }
+      if (safeDebitProfessional > 0) {
+        user.wallet.balance = Number((availableProfessional - safeDebitProfessional).toFixed(2));
+      }
+
+      await user.save({ session });
+
+      await ClientWalletTransaction.create([{
+        user: user._id,
+        serviceRequest: serviceRequestId || null,
+        type: 'debit_payment',
+        source: safeDebitClient > 0 && safeDebitProfessional > 0
+          ? 'mixed'
+          : (safeDebitClient > 0 ? 'client_wallet' : 'professional_wallet'),
+        amount: totalDebit,
+        balanceAfterClientWallet: Number(user.clientWallet?.balance || 0),
+        balanceAfterProfessionalWallet: Number(user.wallet?.balance || 0),
+        metadata: {
+          label: transactionLabel,
+          fromClientWallet: Number(safeDebitClient.toFixed(2)),
+          fromProfessionalWallet: Number(safeDebitProfessional.toFixed(2)),
+        },
+      }], { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
 // Cria o ServiceRequest a partir dos metadados do PaymentIntent (idempotente)
 async function createRequestFromIntent(intent, io) {
   const existing = await ServiceRequest.findOne({ 'payment.transactionId': intent.id });
@@ -151,7 +237,11 @@ async function createRequestFromIntent(intent, io) {
   });
   const couponsMeta = parseCouponMeta(m.couponCodes, m.couponDiscounts);
   const discountTotal = couponsMeta.reduce((sum, c) => sum + Number(c.discountAmount || 0), 0);
-  const finalEstimated = Math.max(0, estimated - discountTotal);
+  const walletAppliedTotal = Number(m.walletAppliedTotal || 0);
+  const walletAppliedClient = Number(m.walletAppliedClient || 0);
+  const walletAppliedProfessional = Number(m.walletAppliedProfessional || 0);
+  const customerTotalAfterCoupons = Math.max(0, estimated - discountTotal);
+  const customerTotalPaid = Math.max(0, customerTotalAfterCoupons - walletAppliedTotal);
   const couponDocs = await Coupon.find({ code: { $in: couponsMeta.map((c) => c.code) } }).select('_id code');
   const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
 
@@ -171,7 +261,13 @@ async function createRequestFromIntent(intent, io) {
     address,
     pricing: {
       pricePerHour,
-      estimated: finalEstimated,
+      estimated,
+      final: customerTotalAfterCoupons,
+      customerTotal: customerTotalAfterCoupons,
+      customerPaidExternal: customerTotalPaid,
+      walletAppliedTotal,
+      walletAppliedClient,
+      walletAppliedProfessional,
       discountTotal,
       appliedCoupons: couponsMeta.map((c) => c.code),
       platformFee,
@@ -181,8 +277,21 @@ async function createRequestFromIntent(intent, io) {
       method: intent.payment_method_types?.[0] || 'card',
       transactionId: intent.id,
       paidAt: new Date(),
+      walletUsedAmount: walletAppliedTotal,
     },
   });
+
+  if (walletAppliedTotal > 0) {
+    await applyWalletDebit({
+      userId: m.clientId,
+      serviceRequestId: request._id,
+      walletUsage: {
+        fromClientWallet: walletAppliedClient,
+        fromProfessionalWallet: walletAppliedProfessional,
+      },
+      transactionLabel: 'Pagamento parcial com carteira',
+    });
+  }
 
   if (couponsMeta.length) {
     const redemptions = couponsMeta
@@ -248,7 +357,11 @@ async function createRequestFromCoraCharge(charge, io) {
   });
 
   const discountTotal = Number(charge.discountTotal || 0);
-  const finalEstimated = Math.max(0, estimated - discountTotal);
+  const walletAppliedTotal = Number(charge.walletAppliedTotal || 0);
+  const walletAppliedClient = Number(charge.walletAppliedClient || 0);
+  const walletAppliedProfessional = Number(charge.walletAppliedProfessional || 0);
+  const customerTotalAfterCoupons = Math.max(0, estimated - discountTotal);
+  const customerTotalPaid = Math.max(0, customerTotalAfterCoupons - walletAppliedTotal);
   const appliedCoupons = Array.isArray(charge.appliedCoupons) ? charge.appliedCoupons : [];
   const couponDocs = await Coupon.find({ code: { $in: appliedCoupons.map((c) => c.code) } }).select('_id code');
   const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
@@ -269,7 +382,13 @@ async function createRequestFromCoraCharge(charge, io) {
     address,
     pricing: {
       pricePerHour,
-      estimated: finalEstimated,
+      estimated,
+      final: customerTotalAfterCoupons,
+      customerTotal: customerTotalAfterCoupons,
+      customerPaidExternal: customerTotalPaid,
+      walletAppliedTotal,
+      walletAppliedClient,
+      walletAppliedProfessional,
       discountTotal,
       appliedCoupons: appliedCoupons.map((c) => c.code),
       platformFee,
@@ -279,8 +398,21 @@ async function createRequestFromCoraCharge(charge, io) {
       method: 'pix',
       transactionId: txId,
       paidAt: charge.paidAt || new Date(),
+      walletUsedAmount: walletAppliedTotal,
     },
   });
+
+  if (walletAppliedTotal > 0) {
+    await applyWalletDebit({
+      userId: charge.client,
+      serviceRequestId: request._id,
+      walletUsage: {
+        fromClientWallet: walletAppliedClient,
+        fromProfessionalWallet: walletAppliedProfessional,
+      },
+      transactionLabel: 'Pagamento Pix parcial com carteira',
+    });
+  }
 
   if (appliedCoupons.length) {
     const redemptions = appliedCoupons
@@ -336,13 +468,21 @@ router.post('/create-intent', auth, async (req, res) => {
     serviceTypeSlug,
     customFormData,
     couponCodes,
+    useWallet,
+    walletAmount,
   } = req.body;
   if (!hours || !address?.street || !address?.city || !scheduledDate) {
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
   try {
-    const { estimated, normalizedCustomFormData } = await calculateCheckoutPricing({
+    const {
+      estimated,
+      pricePerHour,
+      platformFee,
+      normalizedCustomFormData,
+      customFormSummary,
+    } = await calculateCheckoutPricing({
       hours,
       hasProducts: !!hasProducts,
       serviceTypeSlug: serviceTypeSlug || null,
@@ -353,13 +493,83 @@ router.post('/create-intent', auth, async (req, res) => {
       user: req.user,
       orderSubtotal: estimated,
     });
-    const finalAmount = checkout.pricing.finalTotal;
-    const finalAmountCents = Math.round(finalAmount * 100);
+
+    const finalAmount = Number(checkout.pricing.finalTotal || 0);
     const user = await User.findById(req.user._id);
+    const walletInput = normalizeWalletInput(useWallet, walletAmount);
+    const walletUsage = buildWalletUsage({
+      user,
+      totalPayableAfterCoupons: finalAmount,
+      requestedWalletAmount: walletInput.walletAmount,
+      forceUseWallet: walletInput.useWallet,
+    });
+    const payableAfterWallet = Number((finalAmount - walletUsage.totalWalletUsed).toFixed(2));
+
+    if (payableAfterWallet <= 0) {
+      const request = await ServiceRequest.create({
+        client: req.user._id,
+        serviceTypeSlug: serviceTypeSlug || null,
+        details: {
+          hours: Number(hours),
+          rooms: Number(rooms || 1),
+          bathrooms: Number(bathrooms || 1),
+          hasProducts: Boolean(hasProducts),
+          customFormData: normalizedCustomFormData,
+          customFormSummary,
+          notes: notes || '',
+          scheduledDate,
+        },
+        address,
+        pricing: {
+          pricePerHour,
+          estimated,
+          final: finalAmount,
+          customerTotal: finalAmount,
+          customerPaidExternal: 0,
+          walletAppliedTotal: walletUsage.totalWalletUsed,
+          walletAppliedClient: walletUsage.fromClientWallet,
+          walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+          discountTotal: checkout.pricing.totalDiscount,
+          appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code),
+          platformFee,
+        },
+        payment: {
+          status: 'paid',
+          method: 'wallet',
+          transactionId: `wallet:${req.user._id}:${Date.now()}`,
+          paidAt: new Date(),
+          walletUsedAmount: walletUsage.totalWalletUsed,
+        },
+      });
+
+      await applyWalletDebit({
+        userId: req.user._id,
+        serviceRequestId: request._id,
+        walletUsage,
+        transactionLabel: 'Pagamento integral com carteira',
+      });
+
+      const io = req.app.get('io');
+      if (io) dispatchToNextProfessional(request._id, io);
+
+      return res.status(201).json({
+        walletOnly: true,
+        request,
+        amount: 0,
+        subtotal: estimated,
+        discountTotal: checkout.pricing.totalDiscount,
+        walletApplied: walletUsage.totalWalletUsed,
+        walletAppliedClient: walletUsage.fromClientWallet,
+        walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+        appliedCoupons: checkout.pricing.appliedCoupons,
+        rejectedCoupons: checkout.rejectedCoupons,
+      });
+    }
+
+    const payableCents = Math.round(payableAfterWallet * 100);
     const stripe = await getStripe();
     const customerId = await getOrCreateCustomer(user);
 
-    // Atualizar CPF no Customer do Stripe (exigido para PIX)
     if (user.cpf) {
       try {
         await stripe.customers.update(customerId, {
@@ -372,7 +582,7 @@ router.post('/create-intent', auth, async (req, res) => {
 
     const [intent, ephemeralKey] = await Promise.all([
       stripe.paymentIntents.create({
-        amount: finalAmountCents,
+        amount: payableCents,
         currency: 'brl',
         customer: customerId,
         automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
@@ -391,6 +601,9 @@ router.post('/create-intent', auth, async (req, res) => {
           customFormData: JSON.stringify(normalizedCustomFormData),
           couponCodes: checkout.pricing.appliedCoupons.map((c) => c.code).join(','),
           couponDiscounts: checkout.pricing.appliedCoupons.map((c) => String(c.discountAmount)).join(','),
+          walletAppliedTotal: String(walletUsage.totalWalletUsed),
+          walletAppliedClient: String(walletUsage.fromClientWallet),
+          walletAppliedProfessional: String(walletUsage.fromProfessionalWallet),
           address: JSON.stringify(address),
         },
       }),
@@ -405,9 +618,14 @@ router.post('/create-intent', auth, async (req, res) => {
       paymentIntentId: intent.id,
       ephemeralKey: ephemeralKey.secret,
       customerId,
-      amount: finalAmount,
+      amount: payableAfterWallet,
       subtotal: estimated,
       discountTotal: checkout.pricing.totalDiscount,
+      walletApplied: walletUsage.totalWalletUsed,
+      walletAppliedClient: walletUsage.fromClientWallet,
+      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+      walletAvailable: walletUsage.maxWalletAvailable,
+      totalBeforeWallet: finalAmount,
       appliedCoupons: checkout.pricing.appliedCoupons,
       rejectedCoupons: checkout.rejectedCoupons,
     });
@@ -424,7 +642,15 @@ router.post('/preview', auth, async (req, res) => {
     return res.status(403).json({ message: 'Apenas clientes podem simular pagamento' });
   }
 
-  const { hours, hasProducts, serviceTypeSlug, customFormData, couponCodes } = req.body;
+  const {
+    hours,
+    hasProducts,
+    serviceTypeSlug,
+    customFormData,
+    couponCodes,
+    useWallet,
+    walletAmount,
+  } = req.body;
   if (!hours) return res.status(400).json({ message: 'hours é obrigatório' });
 
   try {
@@ -440,10 +666,23 @@ router.post('/preview', auth, async (req, res) => {
       orderSubtotal: estimated,
     });
 
+    const walletInput = normalizeWalletInput(useWallet, walletAmount);
+    const walletUsage = buildWalletUsage({
+      user: req.user,
+      totalPayableAfterCoupons: checkout.pricing.finalTotal,
+      requestedWalletAmount: walletInput.walletAmount,
+      forceUseWallet: walletInput.useWallet,
+    });
+
     res.json({
       subtotal: estimated,
       discountTotal: checkout.pricing.totalDiscount,
-      total: checkout.pricing.finalTotal,
+      totalBeforeWallet: checkout.pricing.finalTotal,
+      walletApplied: walletUsage.totalWalletUsed,
+      walletAppliedClient: walletUsage.fromClientWallet,
+      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+      walletAvailable: walletUsage.maxWalletAvailable,
+      total: Number((checkout.pricing.finalTotal - walletUsage.totalWalletUsed).toFixed(2)),
       pricePerHour,
       customFormData: normalizedCustomFormData,
       pricingBreakdown,
@@ -507,6 +746,8 @@ router.post('/cora/pix/create', auth, async (req, res) => {
     serviceTypeSlug,
     customFormData,
     couponCodes,
+    useWallet,
+    walletAmount,
   } = req.body;
 
   if (!hours || !address?.street || !address?.city || !scheduledDate) {
@@ -520,7 +761,13 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       return res.status(400).json({ message: 'CPF valido e obrigatorio para pagamento via Pix' });
     }
 
-    const { estimated, normalizedCustomFormData } = await calculateCheckoutPricing({
+    const {
+      estimated,
+      pricePerHour,
+      platformFee,
+      normalizedCustomFormData,
+      customFormSummary,
+    } = await calculateCheckoutPricing({
       hours,
       hasProducts: !!hasProducts,
       serviceTypeSlug: serviceTypeSlug || null,
@@ -532,14 +779,77 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       orderSubtotal: estimated,
     });
 
-    const finalAmount = checkout.pricing.finalTotal;
-    const finalAmountCents = Math.round(finalAmount * 100);
-    if (finalAmountCents < 500) {
-      return res.status(400).json({ message: 'Valor minimo para Pix e de R$ 5,00' });
+    const walletInput = normalizeWalletInput(useWallet, walletAmount);
+    const walletUsage = buildWalletUsage({
+      user,
+      totalPayableAfterCoupons: checkout.pricing.finalTotal,
+      requestedWalletAmount: walletInput.walletAmount,
+      forceUseWallet: walletInput.useWallet,
+    });
+
+    const payableAfterWallet = Number((checkout.pricing.finalTotal - walletUsage.totalWalletUsed).toFixed(2));
+    const payableCents = Math.round(payableAfterWallet * 100);
+
+    if (payableAfterWallet <= 0) {
+      const request = await ServiceRequest.create({
+        client: req.user._id,
+        serviceTypeSlug: serviceTypeSlug || null,
+        details: {
+          hours: Number(hours),
+          rooms: Number(rooms || 1),
+          bathrooms: Number(bathrooms || 1),
+          hasProducts: Boolean(hasProducts),
+          customFormData: normalizedCustomFormData,
+          customFormSummary,
+          notes: notes || '',
+          scheduledDate,
+        },
+        address,
+        pricing: {
+          pricePerHour,
+          estimated,
+          final: checkout.pricing.finalTotal,
+          customerTotal: checkout.pricing.finalTotal,
+          customerPaidExternal: 0,
+          walletAppliedTotal: walletUsage.totalWalletUsed,
+          walletAppliedClient: walletUsage.fromClientWallet,
+          walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+          discountTotal: checkout.pricing.totalDiscount,
+          appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code),
+          platformFee,
+        },
+        payment: {
+          status: 'paid',
+          method: 'wallet',
+          transactionId: `wallet:${req.user._id}:${Date.now()}`,
+          paidAt: new Date(),
+          walletUsedAmount: walletUsage.totalWalletUsed,
+        },
+      });
+
+      await applyWalletDebit({
+        userId: req.user._id,
+        serviceRequestId: request._id,
+        walletUsage,
+        transactionLabel: 'Pagamento integral com carteira (Pix flow)',
+      });
+
+      const io = req.app.get('io');
+      if (io) dispatchToNextProfessional(request._id, io);
+
+      return res.status(201).json({
+        walletOnly: true,
+        request,
+        charge: null,
+      });
+    }
+
+    if (payableCents < 500) {
+      return res.status(400).json({ message: 'Valor minimo para Pix e de R$ 5,00 apos carteira' });
     }
 
     const invoice = await createPixInvoice({
-      amountCents: finalAmountCents,
+      amountCents: payableCents,
       code: `ja-${req.user._id}-${Date.now()}`,
       customer: {
         name: user.name,
@@ -557,9 +867,15 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       coraInvoiceId: invoice.invoiceId,
       coraStatus: invoice.status || 'OPEN',
       status: mapCoraInvoiceStatus(invoice.status),
-      amount: finalAmount,
+      amount: payableAfterWallet,
       subtotal: estimated,
       discountTotal: checkout.pricing.totalDiscount,
+      walletAppliedTotal: walletUsage.totalWalletUsed,
+      walletAppliedClient: walletUsage.fromClientWallet,
+      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+      walletAppliedTotal: walletUsage.totalWalletUsed,
+      walletAppliedClient: walletUsage.fromClientWallet,
+      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
       appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({
         code: c.code,
         discountAmount: c.discountAmount,
@@ -575,6 +891,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
         scheduledDate,
         serviceTypeSlug: serviceTypeSlug || null,
         customFormData: normalizedCustomFormData,
+        customFormSummary,
       },
       qrCodeUrl: invoice.qrCodeUrl,
       emv: invoice.emv,
@@ -594,6 +911,9 @@ router.post('/cora/pix/create', auth, async (req, res) => {
         amount: charge.amount,
         subtotal: charge.subtotal,
         discountTotal: charge.discountTotal,
+        walletApplied: charge.walletAppliedTotal || 0,
+        walletAppliedClient: charge.walletAppliedClient || 0,
+        walletAppliedProfessional: charge.walletAppliedProfessional || 0,
         appliedCoupons: charge.appliedCoupons,
         rejectedCoupons: charge.rejectedCoupons,
         qrCodeUrl: charge.qrCodeUrl,
@@ -652,6 +972,9 @@ router.get('/cora/pix/:chargeId/status', auth, async (req, res) => {
       amount: charge.amount,
       subtotal: charge.subtotal,
       discountTotal: charge.discountTotal,
+      walletApplied: charge.walletAppliedTotal || 0,
+      walletAppliedClient: charge.walletAppliedClient || 0,
+      walletAppliedProfessional: charge.walletAppliedProfessional || 0,
       qrCodeUrl: charge.qrCodeUrl,
       emv: charge.emv,
       expiresAt: charge.expiresAt,

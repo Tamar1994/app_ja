@@ -383,7 +383,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
     const pricingConfig = await PricingConfig.getSingleton();
 
     // Creditar carteira do profissional com possível incentivo de cupom
-    const grossAmount = request.pricing.final || request.pricing.estimated;
+    // Payout SEMPRE baseado no valor bruto do servico (pricing.estimated), independente de cupons do cliente
+    const grossAmount = request.pricing.estimated;
     const defaultFeePercent = Number(pricingConfig.platformFeePercent || 15);
     const reward = await resolveProfessionalRewardForCompletion({
       professionalUser: req.user,

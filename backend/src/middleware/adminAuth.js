@@ -95,4 +95,5 @@ module.exports = {
   sanitizePermissions,
   ADMIN_PERMISSIONS,
   ALL_PERMISSION_VALUES,
+  DEFAULT_ROLE_PERMISSIONS,
 };

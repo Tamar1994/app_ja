@@ -36,6 +36,8 @@ export const userAPI = {
     api.patch('/users/me/password', { currentPassword, newPassword }),
   deleteAccount: (password) =>
     api.delete('/users/me', { data: { password } }),
+  enableProfile: (profile) => api.post('/users/me/profiles', { profile }),
+  switchProfile: (profile) => api.patch('/users/me/active-profile', { profile }),
 };
 
 // Solicitações de serviço
@@ -70,6 +72,17 @@ export const walletAPI = {
   myWithdrawals: () => api.get('/wallet/withdrawals/my'),
 };
 
+// Carteira do cliente (histórico de uso)
+export const clientWalletAPI = {
+  preview: (requestData, couponCodes = [], useWallet = false, walletAmount = null) =>
+    api.post('/payments/preview', {
+      ...requestData,
+      couponCodes,
+      useWallet,
+      walletAmount,
+    }),
+};
+
 // Central de Ajuda
 export const helpAPI = {
   getTopics: () => api.get('/help'),
@@ -91,8 +104,13 @@ export const serviceChatAPI = {
 
 // Pagamentos
 export const paymentAPI = {
-  preview: (requestData, couponCodes = []) =>
-    api.post('/payments/preview', { ...requestData, couponCodes }),
+  preview: (requestData, couponCodes = [], useWallet = false, walletAmount = null) =>
+    api.post('/payments/preview', {
+      ...requestData,
+      couponCodes,
+      useWallet,
+      walletAmount,
+    }),
   createIntent: (requestData) => api.post('/payments/create-intent', requestData),
   confirm: (paymentIntentId) => api.post('/payments/confirm', { paymentIntentId }),
   createCoraPixCharge: (requestData) => api.post('/payments/cora/pix/create', requestData),

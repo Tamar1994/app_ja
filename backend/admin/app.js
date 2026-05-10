@@ -11,6 +11,13 @@ let adminSocket = null;
 let p1AlertCount = 0;
 let p1AudioContext = null;
 let permissionCatalog = [];
+let permissionRolePresets = {};
+let supportAuditFilters = {
+  module: 'support',
+  actor: '',
+  from: '',
+  to: '',
+};
 let withdrawalQueueState = {
   status: 'all',
   search: '',
@@ -808,6 +815,23 @@ const renderSupporte = async () => {
           <span class="support-panel-title">Auditoria (recente)</span>
           <button class="btn btn-ghost btn-sm" onclick="loadSupportAuditLogs()">↻</button>
         </div>
+        <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:8px;">
+          <select id="audit-filter-module" class="form-select" onchange="applySupportAuditFilters()">
+            <option value="support" ${supportAuditFilters.module === 'support' ? 'selected' : ''}>Módulo suporte</option>
+            <option value="financial" ${supportAuditFilters.module === 'financial' ? 'selected' : ''}>Módulo financeiro</option>
+            <option value="access" ${supportAuditFilters.module === 'access' ? 'selected' : ''}>Módulo acesso</option>
+            <option value="" ${supportAuditFilters.module === '' ? 'selected' : ''}>Todos módulos</option>
+          </select>
+          <input id="audit-filter-actor" class="form-input" placeholder="Ator (nome, email ou ID)" value="${escHtml(supportAuditFilters.actor)}" onkeydown="if(event.key==='Enter')applySupportAuditFilters()" />
+          <div style="display:flex;gap:8px;">
+            <input id="audit-filter-from" type="date" class="form-input" value="${escHtml(supportAuditFilters.from)}" />
+            <input id="audit-filter-to" type="date" class="form-input" value="${escHtml(supportAuditFilters.to)}" />
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm" onclick="applySupportAuditFilters()">Aplicar</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportSupportAuditCsv()">Exportar CSV</button>
+          </div>
+        </div>
         <div id="support-audit-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
       <div id="support-chat-main" style="display:flex;align-items:center;justify-content:center;color:#3D4460;font-size:14px;">
@@ -863,7 +887,13 @@ const loadSupportAuditLogs = async () => {
   const el = document.getElementById('support-audit-list');
   if (!el) return;
   try {
-    const data = await req('GET', '/audit-logs?module=support&limit=20');
+    const params = new URLSearchParams();
+    params.set('limit', '20');
+    if (supportAuditFilters.module) params.set('module', supportAuditFilters.module);
+    if (supportAuditFilters.actor) params.set('actor', supportAuditFilters.actor);
+    if (supportAuditFilters.from) params.set('from', supportAuditFilters.from);
+    if (supportAuditFilters.to) params.set('to', supportAuditFilters.to);
+    const data = await req('GET', `/audit-logs?${params.toString()}`);
     const logs = data.logs || [];
     if (!logs.length) {
       el.innerHTML = `<div style="padding:16px;color:#3D4460;font-size:12px;text-align:center;">Sem eventos recentes</div>`;
@@ -882,6 +912,51 @@ const loadSupportAuditLogs = async () => {
   } catch {
     el.innerHTML = `<div style="padding:16px;color:#FF8A80;font-size:12px;text-align:center;">Erro ao carregar auditoria</div>`;
   }
+};
+
+const applySupportAuditFilters = () => {
+  supportAuditFilters = {
+    module: document.getElementById('audit-filter-module')?.value || '',
+    actor: (document.getElementById('audit-filter-actor')?.value || '').trim(),
+    from: document.getElementById('audit-filter-from')?.value || '',
+    to: document.getElementById('audit-filter-to')?.value || '',
+  };
+  loadSupportAuditLogs();
+};
+
+const exportSupportAuditCsv = () => {
+  const params = new URLSearchParams();
+  params.set('limit', '2000');
+  if (supportAuditFilters.module) params.set('module', supportAuditFilters.module);
+  if (supportAuditFilters.actor) params.set('actor', supportAuditFilters.actor);
+  if (supportAuditFilters.from) params.set('from', supportAuditFilters.from);
+  if (supportAuditFilters.to) params.set('to', supportAuditFilters.to);
+  const url = `${API}/audit-logs/export.csv?${params.toString()}`;
+  fetch(url, {
+    headers: { Authorization: `Bearer ${adminToken}` },
+  }).then(async (response) => {
+    if (!response.ok) {
+      let message = 'Erro ao exportar auditoria';
+      try {
+        const data = await response.json();
+        message = data?.message || message;
+      } catch {}
+      throw new Error(message);
+    }
+    return response.blob();
+  }).then((blob) => {
+    const link = document.createElement('a');
+    const objectUrl = URL.createObjectURL(blob);
+    link.href = objectUrl;
+    link.download = `auditoria-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+    showAlert('CSV da auditoria exportado com sucesso', 'success');
+  }).catch((err) => {
+    showAlert(err.message || 'Erro ao exportar auditoria');
+  });
 };
 
 const loadOperatorStatus = async () => {
@@ -2242,6 +2317,11 @@ const adminPermissionLabel = (key) => {
   return found?.label || key;
 };
 
+const rolePresetPermissions = (role) => {
+  if (role === 'super_admin') return [];
+  return permissionRolePresets?.[role] || [];
+};
+
 const renderPermissionChecks = (selected = []) => {
   const set = new Set(selected || []);
   return permissionCatalog.map((perm) => `
@@ -2254,6 +2334,23 @@ const renderPermissionChecks = (selected = []) => {
 
 const readSelectedPermissions = () => Array.from(document.querySelectorAll('.perm-check:checked')).map((el) => el.value);
 
+const setPermissionChecks = (permissionKeys = []) => {
+  const set = new Set(permissionKeys || []);
+  document.querySelectorAll('.perm-check').forEach((el) => {
+    el.checked = set.has(el.value);
+  });
+};
+
+const applyRolePresetChecks = (roleSelectId, lockRole = false) => {
+  const role = document.getElementById(roleSelectId)?.value || 'support';
+  const preset = rolePresetPermissions(role);
+  setPermissionChecks(preset);
+  const isSuper = role === 'super_admin';
+  document.querySelectorAll('.perm-check').forEach((el) => {
+    el.disabled = isSuper || lockRole;
+  });
+};
+
 const renderAdmins = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
@@ -2263,6 +2360,7 @@ const renderAdmins = async () => {
       req('GET', '/access/permissions'),
     ]);
     permissionCatalog = permsData.permissions || [];
+    permissionRolePresets = permsData.rolePresets || {};
     window.__adminsById = Object.fromEntries((admins || []).map((a) => [a._id, a]));
     c.innerHTML = `
       <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
@@ -2301,11 +2399,15 @@ const openNewAdminModal = () => {
       <div class="form-group"><label class="form-label">E-mail</label><input id="na-email" class="form-input" type="email" placeholder="email@ja.app" /></div>
       <div class="form-group"><label class="form-label">Senha</label><input id="na-pass" class="form-input" type="password" placeholder="Mínimo 8 caracteres" /></div>
       <div class="form-group"><label class="form-label">Perfil</label>
-        <select id="na-role" class="form-select">
+        <select id="na-role" class="form-select" onchange="applyRolePresetChecks('na-role')">
           <option value="support">Suporte</option>
           <option value="admin">Admin</option>
           <option value="super_admin">Super Admin</option>
         </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="na-apply-preset" type="checkbox" checked />
+        <label for="na-apply-preset" class="form-label" style="margin:0;">Aplicar preset do perfil automaticamente</label>
       </div>
       <div class="form-group">
         <label class="form-label">Permissões</label>
@@ -2318,6 +2420,7 @@ const openNewAdminModal = () => {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  applyRolePresetChecks('na-role');
 };
 
 const createAdmin = async () => {
@@ -2326,9 +2429,10 @@ const createAdmin = async () => {
   const password = document.getElementById('na-pass').value;
   const role = document.getElementById('na-role').value;
   const permissions = readSelectedPermissions();
+  const applyRolePreset = !!document.getElementById('na-apply-preset')?.checked;
   if (!name || !email || !password) { alert('Preencha todos os campos.'); return; }
   try {
-    await req('POST', '/admins', { name, email, password, role, permissions });
+    await req('POST', '/admins', { name, email, password, role, permissions, applyRolePreset });
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Membro criado com sucesso!', 'success');
     renderAdmins();
@@ -2343,7 +2447,7 @@ const openEditAdminAccessModal = (admin) => {
     <div class="modal-header"><h3>🛡️ Acessos de ${escHtml(admin.name)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
     <div class="modal-body">
       <div class="form-group"><label class="form-label">Perfil</label>
-        <select id="ea-role" class="form-select">
+        <select id="ea-role" class="form-select" onchange="applyRolePresetChecks('ea-role')">
           <option value="support" ${admin.role === 'support' ? 'selected' : ''}>Suporte</option>
           <option value="admin" ${admin.role === 'admin' ? 'selected' : ''}>Admin</option>
           <option value="super_admin" ${admin.role === 'super_admin' ? 'selected' : ''}>Super Admin</option>
@@ -2355,6 +2459,9 @@ const openEditAdminAccessModal = (admin) => {
       </div>
       <div class="form-group">
         <label class="form-label">Permissões</label>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="applyRolePresetChecks('ea-role')">Aplicar preset</button>
+        </div>
         <div style="max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px;">${renderPermissionChecks(selected)}</div>
       </div>
     </div>
@@ -2364,6 +2471,7 @@ const openEditAdminAccessModal = (admin) => {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  applyRolePresetChecks('ea-role', admin.role === 'super_admin');
 };
 
 const openEditAdminAccessModalById = (id) => {

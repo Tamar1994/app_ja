@@ -62,9 +62,14 @@ const serviceRequestSchema = new mongoose.Schema({
   },
   pricing: {
     pricePerHour: { type: Number, required: true },
-    estimated: { type: Number, required: true },
+    estimated: { type: Number, required: true }, // valor bruto do servico (base para repasse do profissional)
     discountTotal: { type: Number, default: 0 },
     appliedCoupons: [{ type: String }],
+    customerTotal: { type: Number, default: null }, // total apos cupons
+    customerPaidExternal: { type: Number, default: 0 }, // valor efetivamente pago via gateway externo
+    walletAppliedTotal: { type: Number, default: 0 },
+    walletAppliedClient: { type: Number, default: 0 },
+    walletAppliedProfessional: { type: Number, default: 0 },
     professionalBonus: { type: Number, default: 0 },
     platformFeeDiscount: { type: Number, default: 0 },
     professionalRewardCoupon: { type: String, default: null },
@@ -84,6 +89,8 @@ const serviceRequestSchema = new mongoose.Schema({
     refundedAt: { type: Date, default: null },
     refundReference: { type: String, default: null },
     refundReason: { type: String, default: null },
+    walletUsedAmount: { type: Number, default: 0 },
+    refundDestination: { type: String, enum: ['gateway', 'wallet'], default: 'gateway' },
   },
   // Histórico de profissionais que recusaram
   rejectedBy: [{

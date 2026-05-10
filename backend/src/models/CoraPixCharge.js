@@ -35,6 +35,18 @@ const coraPixChargeSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  walletAppliedTotal: {
+    type: Number,
+    default: 0,
+  },
+  walletAppliedClient: {
+    type: Number,
+    default: 0,
+  },
+  walletAppliedProfessional: {
+    type: Number,
+    default: 0,
+  },
   appliedCoupons: [{
     code: { type: String, required: true },
     discountAmount: { type: Number, required: true, min: 0 },

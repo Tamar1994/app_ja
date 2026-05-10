@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
 import { couponAPI, paymentAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const BRAND_ICONS = {
@@ -35,6 +36,10 @@ export default function PaymentScreen({ navigation, route }) {
   const [selectedCouponCodes, setSelectedCouponCodes] = useState([]);
   const [couponInput, setCouponInput] = useState('');
   const [redeemingCoupon, setRedeemingCoupon] = useState(false);
+  const { user } = useAuth();
+  const totalWalletAvailable = Number((user?.clientWallet?.balance || 0) + (user?.wallet?.balance || 0));
+  const [useWallet, setUseWallet] = useState(false);
+  const [walletPreview, setWalletPreview] = useState({ walletApplied: 0, walletAppliedClient: 0, walletAppliedProfessional: 0 });
   const [pricingPreview, setPricingPreview] = useState({
     subtotal: estimate?.estimated || 0,
     discountTotal: 0,
@@ -64,9 +69,9 @@ export default function PaymentScreen({ navigation, route }) {
     initializePayment();
   }, []);
 
-  const refreshPreview = useCallback(async (couponCodes) => {
+  const refreshPreview = useCallback(async (couponCodes, applyWallet = useWallet) => {
     try {
-      const { data } = await paymentAPI.preview(requestData, couponCodes);
+      const { data } = await paymentAPI.preview(requestData, couponCodes, applyWallet);
       setPricingPreview({
         subtotal: data.subtotal || 0,
         discountTotal: data.discountTotal || 0,
@@ -74,15 +79,22 @@ export default function PaymentScreen({ navigation, route }) {
         appliedCoupons: data.appliedCoupons || [],
         rejectedCoupons: data.rejectedCoupons || [],
       });
+      if (data.walletApplied !== undefined) {
+        setWalletPreview({
+          walletApplied: data.walletApplied || 0,
+          walletAppliedClient: data.walletAppliedClient || 0,
+          walletAppliedProfessional: data.walletAppliedProfessional || 0,
+        });
+      }
       return data;
     } catch {
       return null;
     }
-  }, [requestData]);
+  }, [requestData, useWallet]);
 
   useEffect(() => {
-    if (!loading) refreshPreview(selectedCouponCodes);
-  }, [selectedCouponCodes, loading, refreshPreview]);
+    if (!loading) refreshPreview(selectedCouponCodes, useWallet);
+  }, [selectedCouponCodes, useWallet, loading, refreshPreview]);
 
   const toggleCoupon = async (code) => {
     const next = selectedCouponCodes.includes(code)
@@ -138,7 +150,13 @@ export default function PaymentScreen({ navigation, route }) {
         const { data } = await paymentAPI.createCoraPixCharge({
           ...requestData,
           couponCodes: selectedCouponCodes,
+          useWallet,
         });
+
+        if (data?.walletOnly) {
+          navigation.replace('Searching', { requestId: data.request._id });
+          return;
+        }
 
         if (data?.charge?.rejectedCoupons?.length) {
           const lines = data.charge.rejectedCoupons.map((r) => `${r.code}: ${r.reason}`).join('\n');
@@ -153,7 +171,13 @@ export default function PaymentScreen({ navigation, route }) {
       const { data: intentData } = await paymentAPI.createIntent({
         ...requestData,
         couponCodes: selectedCouponCodes,
+        useWallet,
       });
+
+      if (intentData?.walletOnly) {
+        navigation.replace('Searching', { requestId: intentData.request._id });
+        return;
+      }
 
       if (intentData?.rejectedCoupons?.length) {
         const lines = intentData.rejectedCoupons.map((r) => `${r.code}: ${r.reason}`).join('\n');
@@ -387,6 +411,38 @@ export default function PaymentScreen({ navigation, route }) {
           )}
         </View>
 
+        {/* Créditos da carteira */}
+        {totalWalletAvailable > 0 && (
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.walletToggleRow}
+              onPress={() => setUseWallet((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.walletToggleLeft}>
+                <Ionicons name="wallet-outline" size={20} color={colors.primary} />
+                <View>
+                  <Text style={styles.walletToggleTitle}>Usar créditos da carteira</Text>
+                  <Text style={styles.walletToggleSub}>
+                    Disponível: R$ {totalWalletAvailable.toFixed(2).replace('.', ',')}
+                  </Text>
+                </View>
+              </View>
+              <View style={[styles.walletToggleSwitch, useWallet && styles.walletToggleSwitchOn]}>
+                <View style={[styles.walletToggleKnob, useWallet && styles.walletToggleKnobOn]} />
+              </View>
+            </TouchableOpacity>
+            {useWallet && walletPreview.walletApplied > 0 && (
+              <View style={styles.walletAppliedRow}>
+                <Ionicons name="checkmark-circle" size={15} color={colors.success} />
+                <Text style={styles.walletAppliedText}>
+                  R$ {walletPreview.walletApplied.toFixed(2).replace('.', ',')} de créditos aplicados
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Métodos aceitos */}
         <View style={styles.methodsRow}>
           <TouchableOpacity
@@ -560,6 +616,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   rejectedText: { fontSize: 12, color: '#E65100' },
+  walletToggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  walletToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  walletToggleTitle: { fontSize: typography.fontSizes.sm, fontWeight: '700', color: colors.textPrimary },
+  walletToggleSub: { fontSize: typography.fontSizes.xs, color: colors.textSecondary, marginTop: 2 },
+  walletToggleSwitch: {
+    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.border,
+    justifyContent: 'center', padding: 2,
+  },
+  walletToggleSwitchOn: { backgroundColor: colors.primary },
+  walletToggleKnob: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.white,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 2, shadowOffset: { width: 0, height: 1 },
+  },
+  walletToggleKnobOn: { alignSelf: 'flex-end' },
+  walletAppliedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
+    backgroundColor: '#E8F5E9', borderRadius: 8, padding: 8,
+  },
+  walletAppliedText: { fontSize: typography.fontSizes.sm, color: colors.success, fontWeight: '600' },
   methodsRow: { flexDirection: 'row', gap: 10 },
   methodChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

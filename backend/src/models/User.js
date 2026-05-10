@@ -30,6 +30,27 @@ const userSchema = new mongoose.Schema({
     enum: ['client', 'professional'],
     required: true,
   },
+  profileModes: {
+    client: {
+      type: Boolean,
+      default: function profileClientDefault() {
+        return this.userType === 'client';
+      },
+    },
+    professional: {
+      type: Boolean,
+      default: function profileProfessionalDefault() {
+        return this.userType === 'professional';
+      },
+    },
+  },
+  activeProfile: {
+    type: String,
+    enum: ['client', 'professional'],
+    default: function activeProfileDefault() {
+      return this.userType || 'client';
+    },
+  },
   avatar: {
     type: String,
     default: null,
@@ -80,10 +101,15 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
-  // Carteira do profissional
+  // Carteira do profissional (ganhos)
   wallet: {
     balance: { type: Number, default: 0 },
     totalEarned: { type: Number, default: 0 },
+  },
+  // Carteira do cliente (creditos / estornos)
+  clientWallet: {
+    balance: { type: Number, default: 0 },
+    totalRefunded: { type: Number, default: 0 },
   },
   // pending_documents → pending_review → approved | rejected
   verificationStatus: {
@@ -121,6 +147,22 @@ const userSchema = new mongoose.Schema({
 
 // Índice geoespacial para busca por proximidade
 userSchema.index({ location: '2dsphere' });
+
+// Inicializar profileModes e activeProfile se necessário
+userSchema.pre('save', function (next) {
+  if (!this.profileModes || (this.profileModes.client === undefined && this.profileModes.professional === undefined)) {
+    this.profileModes = {
+      client: this.userType === 'client',
+      professional: this.userType === 'professional',
+    };
+  }
+
+  if (!this.activeProfile) {
+    this.activeProfile = this.userType || 'client';
+  }
+
+  next();
+});
 
 // Hash da senha antes de salvar
 userSchema.pre('save', async function (next) {

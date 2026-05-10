@@ -13,6 +13,25 @@ const generateToken = (id) =>
 const generateCode = () =>
   String(crypto.randomInt(100000, 999999));
 
+const buildAuthUserPayload = (user) => ({
+  id: user._id,
+  name: user.name,
+  email: user.email,
+  phone: user.phone,
+  userType: user.userType,
+  activeProfile: user.activeProfile || user.userType,
+  profileModes: {
+    client: Boolean(user.profileModes?.client || user.userType === 'client'),
+    professional: Boolean(user.profileModes?.professional || user.userType === 'professional'),
+  },
+  avatar: user.avatar,
+  isEmailVerified: user.isEmailVerified,
+  verificationStatus: user.verificationStatus,
+  professional: user.professional,
+  wallet: user.wallet,
+  clientWallet: user.clientWallet,
+});
+
 // POST /api/auth/register
 router.post('/register', [
   body('name').trim().notEmpty().withMessage('Nome é obrigatório'),
@@ -42,6 +61,12 @@ router.post('/register', [
       // Reenviar código para cadastro incompleto
       existing.emailVerificationCode = code;
       existing.emailVerificationExpires = expires;
+      existing.activeProfile = userType;
+      existing.userType = userType;
+      existing.profileModes = {
+        client: Boolean(existing.profileModes?.client || userType === 'client'),
+        professional: Boolean(existing.profileModes?.professional || userType === 'professional'),
+      };
       if (cpf) existing.cpf = cpf.replace(/[^\d]/g, '');
       if (birthDate) existing.birthDate = new Date(birthDate);
       if (serviceTypeSlug) existing.serviceTypeSlug = serviceTypeSlug;
@@ -49,7 +74,16 @@ router.post('/register', [
       user = existing;
     } else {
       const userData = {
-        name, email, phone, password, userType,
+        name,
+        email,
+        phone,
+        password,
+        userType,
+        activeProfile: userType,
+        profileModes: {
+          client: userType === 'client',
+          professional: userType === 'professional',
+        },
         emailVerificationCode: code,
         emailVerificationExpires: expires,
       };
@@ -114,16 +148,7 @@ router.post('/verify-email', [
     const token = generateToken(user._id);
     res.json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        userType: user.userType,
-        isEmailVerified: true,
-        verificationStatus: user.verificationStatus,
-        professional: user.professional,
-      },
+      user: buildAuthUserPayload(user),
     });
   } catch (err) {
     console.error(err);
@@ -180,17 +205,7 @@ router.post('/login', [
     const token = generateToken(user._id);
     res.json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        userType: user.userType,
-        avatar: user.avatar,
-        isEmailVerified: user.isEmailVerified,
-        verificationStatus: user.verificationStatus,
-        professional: user.professional,
-      },
+      user: buildAuthUserPayload(user),
     });
   } catch {
     res.status(500).json({ message: 'Erro ao fazer login' });

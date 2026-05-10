@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { uploadAPI } from '../../services/api';
+import ProfileSwitcher from '../../components/ProfileSwitcher';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api').replace(/\/api\/?$/, '');
@@ -166,6 +167,9 @@ export default function ProfileScreen({ navigation }) {
               </View>
             ))}
           </View>
+
+          {/* Perfis */}
+          <ProfileSwitcher />
 
           {/* Menu */}
           <View style={styles.menuCard}>

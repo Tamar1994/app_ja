@@ -25,10 +25,12 @@ const {
   adminAuth,
   requireRole,
   requirePermission,
+  hasPermission,
   getEffectivePermissions,
   sanitizePermissions,
   ADMIN_PERMISSIONS,
   ALL_PERMISSION_VALUES,
+  DEFAULT_ROLE_PERMISSIONS,
 } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
@@ -70,6 +72,82 @@ const withEffectivePermissions = (adminDoc) => {
     effectivePermissions: getEffectivePermissions(raw),
   };
 };
+
+const getRolePermissionPreset = (role) => {
+  if (role === 'super_admin') return [];
+  const preset = DEFAULT_ROLE_PERMISSIONS[role] || [];
+  return sanitizePermissions(preset);
+};
+
+const resolvePermissionsForRole = ({ role, permissions, applyRolePreset = false }) => {
+  const sanitized = sanitizePermissions(permissions);
+  if (applyRolePreset || sanitized.length === 0) {
+    return getRolePermissionPreset(role);
+  }
+  return sanitized;
+};
+
+const csvCell = (value) => {
+  const str = String(value == null ? '' : value);
+  return `"${str.replace(/"/g, '""')}"`;
+};
+
+async function buildAuditQuery(req) {
+  const moduleFilter = String(req.query.module || '').trim();
+  const actor = String(req.query.actor || '').trim();
+  const from = String(req.query.from || '').trim();
+  const to = String(req.query.to || '').trim();
+
+  const query = {};
+  const canViewFinancial = hasPermission(req.admin, ADMIN_PERMISSIONS.FINANCIAL);
+  const canViewAccess = hasPermission(req.admin, ADMIN_PERMISSIONS.ACCESS_MANAGEMENT);
+  const canViewSupport = hasPermission(req.admin, ADMIN_PERMISSIONS.SUPPORT_CHAT);
+
+  if (!canViewSupport && !canViewFinancial && !canViewAccess) {
+    query.module = '__none__';
+  } else if (!canViewFinancial && !canViewAccess && canViewSupport) {
+    query.module = 'support';
+  } else if (moduleFilter) {
+    query.module = moduleFilter;
+  }
+
+  if (from || to) {
+    query.createdAt = {};
+    if (from) {
+      const fromDate = new Date(from);
+      if (!Number.isNaN(fromDate.getTime())) query.createdAt.$gte = fromDate;
+    }
+    if (to) {
+      const toDate = new Date(to);
+      if (!Number.isNaN(toDate.getTime())) {
+        toDate.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = toDate;
+      }
+    }
+    if (Object.keys(query.createdAt).length === 0) delete query.createdAt;
+  }
+
+  if (actor) {
+    const actorOr = [];
+    if (mongoose.Types.ObjectId.isValid(actor)) {
+      actorOr.push({ actorAdminId: new mongoose.Types.ObjectId(actor) });
+      actorOr.push({ actorUserId: new mongoose.Types.ObjectId(actor) });
+    }
+    const regex = new RegExp(escapeRegex(actor), 'i');
+    const [admins, users] = await Promise.all([
+      AdminUser.find({ $or: [{ name: regex }, { email: regex }] }).select('_id').limit(200),
+      User.find({ $or: [{ name: regex }, { email: regex }] }).select('_id').limit(200),
+    ]);
+    const adminIds = admins.map((a) => a._id);
+    const userIds = users.map((u) => u._id);
+    if (adminIds.length) actorOr.push({ actorAdminId: { $in: adminIds } });
+    if (userIds.length) actorOr.push({ actorUserId: { $in: userIds } });
+    if (actorOr.length) query.$or = actorOr;
+    else query.targetId = '__none__';
+  }
+
+  return query;
+}
 
 const uploadsRoot = path.join(__dirname, '../../uploads');
 const withdrawalProofDir = path.join(uploadsRoot, 'withdrawal-proofs');
@@ -605,25 +683,37 @@ router.get('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANA
 });
 
 router.get('/access/permissions', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
+  const rolePresets = {
+    support: getRolePermissionPreset('support'),
+    admin: getRolePermissionPreset('admin'),
+    super_admin: ['*'],
+  };
   res.json({
     permissions: permissionCatalog,
     allPermissionKeys: ALL_PERMISSION_VALUES,
+    rolePresets,
   });
 });
 
 // POST /api/admin/admins
 router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
-  const { name, email, password, role, permissions } = req.body;
+  const { name, email, password, role, permissions, applyRolePreset } = req.body;
   if (!name || !email || !password) return res.status(400).json({ message: 'Campos obrigatórios faltando' });
   try {
     const existing = await AdminUser.findOne({ email });
     if (existing) return res.status(400).json({ message: 'E-mail já cadastrado' });
+    const finalRole = role || 'support';
+    const resolvedPermissions = resolvePermissionsForRole({
+      role: finalRole,
+      permissions,
+      applyRolePreset: applyRolePreset === true,
+    });
     const admin = await AdminUser.create({
       name,
       email,
       password,
-      role: role || 'support',
-      permissions: sanitizePermissions(permissions),
+      role: finalRole,
+      permissions: resolvedPermissions,
     });
     await logAudit({
       module: 'access',
@@ -636,6 +726,7 @@ router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MAN
       metadata: {
         role: admin.role,
         permissions: sanitizePermissions(admin.permissions),
+        presetApplied: applyRolePreset === true || (sanitizePermissions(permissions).length === 0),
       },
     });
     res.status(201).json({ message: 'Admin criado', admin: withEffectivePermissions(admin) });
@@ -646,12 +737,14 @@ router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MAN
 
 router.patch('/admins/:id/access', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
   try {
-    const { role, isActive, permissions } = req.body;
+    const { role, isActive, permissions, applyRolePreset } = req.body;
     const admin = await AdminUser.findById(req.params.id);
     if (!admin) return res.status(404).json({ message: 'Admin não encontrado' });
 
+    let nextRole = admin.role;
     if (role && ['super_admin', 'admin', 'support'].includes(role)) {
       admin.role = role;
+      nextRole = role;
     }
     if (typeof isActive === 'boolean') {
       if (req.params.id === req.admin._id.toString() && !isActive) {
@@ -659,8 +752,12 @@ router.patch('/admins/:id/access', adminAuth, requirePermission(ADMIN_PERMISSION
       }
       admin.isActive = isActive;
     }
-    if (permissions !== undefined) {
-      admin.permissions = sanitizePermissions(permissions);
+    if (permissions !== undefined || applyRolePreset === true || role) {
+      admin.permissions = resolvePermissionsForRole({
+        role: nextRole,
+        permissions,
+        applyRolePreset: applyRolePreset === true || permissions === undefined,
+      });
     }
 
     await admin.save();
@@ -1083,8 +1180,10 @@ router.patch('/support/requests/:id/cancel', adminAuth, requirePermission(ADMIN_
 router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   try {
     const reason = String(req.body.reason || '').trim();
+    const destination = String(req.body.destination || 'gateway').trim().toLowerCase();
+    const useWalletRefund = destination === 'wallet';
     const request = await ServiceRequest.findById(req.params.id)
-      .populate('client', 'name')
+      .populate('client', 'name wallet clientWallet')
       .populate('professional', 'name');
     if (!request) return res.status(404).json({ message: 'Serviço não encontrado' });
 
@@ -1094,6 +1193,67 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
 
     const tx = String(request?.payment?.transactionId || '');
     const method = String(request?.payment?.method || '').toLowerCase();
+    const refundAmount = Number(request?.pricing?.customerTotal || request?.pricing?.estimated || 0);
+
+    if (useWalletRefund) {
+      // Estornar para carteira do cliente
+      const client = await User.findById(request.client._id);
+      if (!client) return res.status(404).json({ message: 'Cliente não encontrado' });
+
+      client.clientWallet = client.clientWallet || { balance: 0, totalRefunded: 0 };
+      client.clientWallet.balance = Number((Number(client.clientWallet.balance || 0) + refundAmount).toFixed(2));
+      client.clientWallet.totalRefunded = Number((Number(client.clientWallet.totalRefunded || 0) + refundAmount).toFixed(2));
+      await client.save();
+
+      const ClientWalletTransaction = require('../models/ClientWalletTransaction');
+      await ClientWalletTransaction.create({
+        user: client._id,
+        serviceRequest: request._id,
+        type: 'credit_refund',
+        source: 'support_refund_wallet',
+        amount: refundAmount,
+        balanceAfterClientWallet: client.clientWallet.balance,
+        metadata: {
+          label: `Estorno para carteira por ${req.admin.name}`,
+          reason: reason || 'Estorno administrativo',
+        },
+      });
+
+      request.payment.status = 'refunded';
+      request.payment.refundedAt = new Date();
+      request.payment.refundReason = reason || `Estorno para carteira por ${req.admin.name}`;
+      request.payment.refundReference = `wallet:${client._id}:${Date.now()}`;
+      request.payment.refundDestination = 'wallet';
+      await request.save();
+
+      await logAudit({
+        module: 'financial',
+        action: 'support_refund_wallet',
+        severity: 'high',
+        actorType: 'admin',
+        actorAdminId: req.admin._id,
+        targetType: 'service_request',
+        targetId: request._id,
+        message: 'Estorno creditado na carteira do cliente',
+        metadata: { amount: refundAmount, clientId: client._id },
+      });
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${request.client._id}`).emit('request_refunded_by_support', {
+          requestId: request._id,
+          destination: 'wallet',
+          amount: refundAmount,
+        });
+      }
+
+      return res.json({
+        message: `R$ ${refundAmount.toFixed(2)} creditado na carteira do cliente`,
+        request,
+        refundDestination: 'wallet',
+        walletNewBalance: client.clientWallet.balance,
+      });
+    }
 
     if (tx.startsWith('cora:') || method === 'pix') {
       request.payment.refundRequestedAt = new Date();
@@ -1121,6 +1281,36 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
       });
     }
 
+    if (tx.startsWith('wallet:')) {
+      // Devolve para carteira se foi pago integralmente por carteira
+      const client = await User.findById(request.client._id);
+      if (!client) return res.status(404).json({ message: 'Cliente não encontrado' });
+
+      client.clientWallet = client.clientWallet || { balance: 0, totalRefunded: 0 };
+      client.clientWallet.balance = Number((Number(client.clientWallet.balance || 0) + refundAmount).toFixed(2));
+      client.clientWallet.totalRefunded = Number((Number(client.clientWallet.totalRefunded || 0) + refundAmount).toFixed(2));
+      await client.save();
+
+      const ClientWalletTransaction = require('../models/ClientWalletTransaction');
+      await ClientWalletTransaction.create({
+        user: client._id,
+        serviceRequest: request._id,
+        type: 'credit_refund',
+        source: 'support_refund_wallet',
+        amount: refundAmount,
+        balanceAfterClientWallet: client.clientWallet.balance,
+        metadata: { label: 'Estorno de pagamento via carteira', reason },
+      });
+
+      request.payment.status = 'refunded';
+      request.payment.refundedAt = new Date();
+      request.payment.refundReason = reason || `Estorno de carteira por ${req.admin.name}`;
+      request.payment.refundDestination = 'wallet';
+      await request.save();
+
+      return res.json({ message: 'Estorno creditado na carteira', request, refundDestination: 'wallet' });
+    }
+
     if (!tx) {
       return res.status(400).json({ message: 'Transação inválida para estorno' });
     }
@@ -1135,6 +1325,7 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
     request.payment.refundedAt = new Date();
     request.payment.refundReason = reason || `Estorno efetuado via suporte por ${req.admin.name}`;
     request.payment.refundReference = refund.id;
+    request.payment.refundDestination = 'gateway';
     await request.save();
 
     await logAudit({
@@ -1158,6 +1349,7 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
       io.to(`user_${request.client._id}`).emit('request_refunded_by_support', {
         requestId: request._id,
         refundId: refund.id,
+        destination: 'gateway',
       });
     }
 
@@ -1171,9 +1363,8 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
 
 router.get('/audit-logs', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.ACCESS_MANAGEMENT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   try {
-    const moduleFilter = String(req.query.module || '').trim();
+    const query = await buildAuditQuery(req);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 40)));
-    const query = moduleFilter ? { module: moduleFilter } : {};
 
     const logs = await AuditLog.find(query)
       .populate('actorAdminId', 'name email role')
@@ -1184,6 +1375,58 @@ router.get('/audit-logs', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT
     res.json({ logs });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao buscar auditoria' });
+  }
+});
+
+router.get('/audit-logs/export.csv', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.ACCESS_MANAGEMENT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const query = await buildAuditQuery(req);
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 1000)));
+    const logs = await AuditLog.find(query)
+      .populate('actorAdminId', 'name email role')
+      .populate('actorUserId', 'name email userType')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    const header = [
+      'createdAt',
+      'module',
+      'action',
+      'severity',
+      'actorType',
+      'actorName',
+      'actorEmail',
+      'targetType',
+      'targetId',
+      'message',
+      'metadata',
+    ];
+    const rows = logs.map((log) => {
+      const actorName = log.actorAdminId?.name || log.actorUserId?.name || '';
+      const actorEmail = log.actorAdminId?.email || log.actorUserId?.email || '';
+      return [
+        new Date(log.createdAt).toISOString(),
+        log.module,
+        log.action,
+        log.severity,
+        log.actorType,
+        actorName,
+        actorEmail,
+        log.targetType || '',
+        log.targetId || '',
+        log.message || '',
+        JSON.stringify(log.metadata || {}),
+      ].map(csvCell).join(',');
+    });
+    const csv = [header.map(csvCell).join(','), ...rows].join('\n');
+
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="audit-logs-${stamp}.csv"`);
+    res.send(`\uFEFF${csv}`);
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao exportar auditoria CSV' });
   }
 });
 

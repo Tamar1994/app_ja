@@ -10,10 +10,68 @@ router.get('/me', auth, async (req, res) => {
   res.json({ user: req.user });
 });
 
+// POST /api/users/me/profiles — habilita um perfil adicional (client/professional)
+router.post('/me/profiles', auth, async (req, res) => {
+  const profile = String(req.body?.profile || '').trim().toLowerCase();
+  if (!['client', 'professional'].includes(profile)) {
+    return res.status(400).json({ message: 'Perfil inválido' });
+  }
+
+  try {
+    const updates = { [`profileModes.${profile}`]: true };
+
+    if (profile === 'professional' && !req.user.profileModes?.professional) {
+      updates.verificationStatus = 'pending_documents';
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    res.json({ user });
+  } catch {
+    res.status(500).json({ message: 'Erro ao habilitar perfil' });
+  }
+});
+
+// PATCH /api/users/me/active-profile — alterna perfil ativo entre client/professional
+router.patch('/me/active-profile', auth, async (req, res) => {
+  const profile = String(req.body?.profile || '').trim().toLowerCase();
+  if (!['client', 'professional'].includes(profile)) {
+    return res.status(400).json({ message: 'Perfil inválido' });
+  }
+
+  try {
+    const latestUser = await User.findById(req.user._id);
+    if (!latestUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    const hasProfile = Boolean(
+      (profile === 'client' && latestUser.profileModes?.client)
+      || (profile === 'professional' && latestUser.profileModes?.professional)
+      || latestUser.userType === profile
+    );
+
+    if (!hasProfile) {
+      return res.status(400).json({ message: 'Perfil ainda não habilitado para esta conta' });
+    }
+
+    latestUser.activeProfile = profile;
+    latestUser.userType = profile;
+    await latestUser.save();
+
+    res.json({ user: latestUser });
+  } catch {
+    res.status(500).json({ message: 'Erro ao alternar perfil' });
+  }
+});
+
 // PATCH /api/users/me — atualizar perfil
 router.patch('/me', auth, async (req, res) => {
   const allowed = ['name', 'phone', 'avatar'];
-  if (req.user.userType === 'professional') {
+  if (req.user.userType === 'professional' || req.user.profileModes?.professional) {
     allowed.push('professional');
   }
 
