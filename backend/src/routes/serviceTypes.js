@@ -9,6 +9,79 @@ const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadClea
 
 const router = express.Router();
 
+function parseCheckoutFields(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return undefined;
+
+  let parsed = rawValue;
+  if (typeof rawValue === 'string') {
+    try {
+      parsed = JSON.parse(rawValue);
+    } catch {
+      const err = new Error('checkoutFields invalido (JSON mal formatado)');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    const err = new Error('checkoutFields deve ser uma lista');
+    err.status = 400;
+    throw err;
+  }
+
+  const normalized = parsed.map((field, idx) => {
+    const key = String(field?.key || '').trim().toLowerCase();
+    const label = String(field?.label || '').trim();
+    const inputType = String(field?.inputType || '').trim();
+    const allowedTypes = new Set(['number', 'boolean', 'text', 'select']);
+
+    if (!key || !label || !allowedTypes.has(inputType)) {
+      const err = new Error(`Campo customizado invalido na posicao ${idx + 1}`);
+      err.status = 400;
+      throw err;
+    }
+
+    const options = Array.isArray(field.options)
+      ? field.options
+        .map((opt) => ({
+          label: String(opt?.label || '').trim(),
+          value: String(opt?.value || '').trim(),
+          priceImpact: Number(opt?.priceImpact || 0),
+        }))
+        .filter((opt) => opt.label && opt.value)
+      : [];
+
+    return {
+      key,
+      label,
+      inputType,
+      required: Boolean(field.required),
+      placeholder: String(field.placeholder || ''),
+      defaultValue: field.defaultValue === undefined ? null : field.defaultValue,
+      min: field.min === '' || field.min === null || field.min === undefined ? null : Number(field.min),
+      max: field.max === '' || field.max === null || field.max === undefined ? null : Number(field.max),
+      step: field.step === '' || field.step === null || field.step === undefined ? 1 : Number(field.step),
+      options,
+      pricingEnabled: Boolean(field.pricingEnabled),
+      pricingMode: field.pricingMode === 'add_per_hour' ? 'add_per_hour' : 'add_total',
+      pricingAmount: Number(field.pricingAmount || 0),
+      sortOrder: Number(field.sortOrder || idx),
+    };
+  });
+
+  const keySet = new Set();
+  for (const field of normalized) {
+    if (keySet.has(field.key)) {
+      const err = new Error(`Chave duplicada em checkoutFields: ${field.key}`);
+      err.status = 400;
+      throw err;
+    }
+    keySet.add(field.key);
+  }
+
+  return normalized;
+}
+
 const serviceTypeUploadsDir = path.join(__dirname, '../../uploads/service-types');
 if (!fs.existsSync(serviceTypeUploadsDir)) fs.mkdirSync(serviceTypeUploadsDir, { recursive: true });
 
@@ -49,6 +122,7 @@ router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, re
     return res.status(400).json({ message: 'slug e name são obrigatórios' });
   }
   try {
+    const checkoutFields = parseCheckoutFields(req.body.checkoutFields);
     const st = await ServiceType.create({
       slug,
       name,
@@ -57,10 +131,12 @@ router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, re
       imageUrl: req.file ? `/uploads/service-types/${req.file.filename}` : null,
       status: status || 'disabled',
       sortOrder: sortOrder ?? 99,
+      ...(checkoutFields !== undefined ? { checkoutFields } : {}),
     });
     res.status(201).json({ serviceType: st });
   } catch (err) {
     await cleanupRequestUploads(req);
+    if (err.status === 400) return res.status(400).json({ message: err.message });
     if (err.code === 11000) return res.status(400).json({ message: 'Slug já existe' });
     res.status(500).json({ message: 'Erro ao criar tipo de serviço' });
   }
@@ -76,6 +152,8 @@ router.patch('/:id', adminAuth, serviceTypeUpload.single('iconFile'), async (req
     }
 
     const updates = { ...req.body };
+    const checkoutFields = parseCheckoutFields(req.body.checkoutFields);
+    if (checkoutFields !== undefined) updates.checkoutFields = checkoutFields;
     if (req.file) updates.imageUrl = `/uploads/service-types/${req.file.filename}`;
     const st = await ServiceType.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (req.file && existingServiceType.imageUrl && existingServiceType.imageUrl !== st.imageUrl) {
@@ -88,6 +166,7 @@ router.patch('/:id', adminAuth, serviceTypeUpload.single('iconFile'), async (req
     res.json({ serviceType: st });
   } catch (err) {
     await cleanupRequestUploads(req);
+    if (err.status === 400) return res.status(400).json({ message: err.message });
     res.status(500).json({ message: 'Erro ao atualizar tipo de serviço' });
   }
 });

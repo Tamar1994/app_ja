@@ -22,13 +22,46 @@ function getDateLabel(date) {
   return target.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
+function buildInitialCustomFormData(fields = []) {
+  const initial = {};
+  (fields || []).forEach((field) => {
+    if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
+      initial[field.key] = field.defaultValue;
+      return;
+    }
+    if (field.inputType === 'boolean') initial[field.key] = false;
+    if (field.inputType === 'number') initial[field.key] = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
+    if (field.inputType === 'text') initial[field.key] = '';
+    if (field.inputType === 'select') {
+      const first = Array.isArray(field.options) && field.options.length ? field.options[0].value : '';
+      initial[field.key] = first || '';
+    }
+  });
+  return initial;
+}
+
+function formatCustomFieldValue(field, value) {
+  if (field.inputType === 'boolean') return value ? 'Sim' : 'Não';
+  if (field.inputType === 'select') {
+    const option = (field.options || []).find((opt) => String(opt.value) === String(value));
+    return option?.label || '-';
+  }
+  return value === undefined || value === null || value === '' ? '-' : String(value);
+}
+
 export default function RequestServiceScreen({ navigation, route }) {
   const serviceType = route?.params?.serviceType || null;
+  const checkoutFields = Array.isArray(serviceType?.checkoutFields)
+    ? [...serviceType.checkoutFields].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    : [];
+  const hasDynamicFields = checkoutFields.length > 0;
+  const supportsProducts = !serviceType?.slug || serviceType.slug === 'diarista';
   const [step, setStep] = useState(1); // 1: detalhes, 2: endereço, 3: confirmação
   const [hours, setHours] = useState(4);
   const [rooms, setRooms] = useState(2);
   const [bathrooms, setBathrooms] = useState(1);
   const [hasProducts, setHasProducts] = useState(false);
+  const [customFormData, setCustomFormData] = useState(() => buildInitialCustomFormData(checkoutFields));
   const [notes, setNotes] = useState('');
   const [scheduleMode, setScheduleMode] = useState('now'); // 'now' | 'later'
   const [scheduledDate, setScheduledDate] = useState(getTomorrow());
@@ -72,13 +105,22 @@ export default function RequestServiceScreen({ navigation, route }) {
   };
 
   useEffect(() => {
+    setCustomFormData(buildInitialCustomFormData(checkoutFields));
+  }, [serviceType?.slug]);
+
+  useEffect(() => {
     fetchEstimate();
-  }, [hours, hasProducts]);
+  }, [hours, hasProducts, JSON.stringify(customFormData), serviceType?.slug]);
 
   const fetchEstimate = async () => {
     setLoadingEstimate(true);
     try {
-      const { data } = await requestAPI.estimate(hours, hasProducts, serviceType?.slug || null);
+      const { data } = await requestAPI.estimate(
+        hours,
+        supportsProducts ? hasProducts : true,
+        serviceType?.slug || null,
+        customFormData
+      );
       setEstimate(data);
     } catch {
       // ignora erro de estimativa
@@ -122,11 +164,40 @@ export default function RequestServiceScreen({ navigation, route }) {
       return;
     }
     const requestData = {
-      hours, rooms, bathrooms, hasProducts, notes,
+      hours, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
       address, scheduledDate: getFinalScheduledDate(),
       serviceTypeSlug: serviceType?.slug || null,
+      customFormData,
     };
-    navigation.navigate('Payment', { requestData, estimate });
+    navigation.navigate('Payment', { requestData, estimate, serviceType });
+  };
+
+  const handleContinue = () => {
+    if (step === 1 && hasDynamicFields) {
+      const missing = checkoutFields.find((field) => {
+        if (!field.required) return false;
+        const value = customFormData[field.key];
+        if (field.inputType === 'boolean') return !value;
+        return value === undefined || value === null || value === '';
+      });
+      if (missing) {
+        Alert.alert('Campo obrigatório', `Preencha: ${missing.label}`);
+        return;
+      }
+    }
+    setStep(step + 1);
+  };
+
+  const updateCustomField = (field, rawValue) => {
+    let value = rawValue;
+    if (field.inputType === 'number') {
+      const num = Number(rawValue);
+      value = Number.isFinite(num) ? num : 0;
+      if (Number.isFinite(Number(field.min))) value = Math.max(Number(field.min), value);
+      if (Number.isFinite(Number(field.max))) value = Math.min(Number(field.max), value);
+    }
+
+    setCustomFormData((prev) => ({ ...prev, [field.key]: value }));
   };
 
   return (
@@ -201,46 +272,147 @@ export default function RequestServiceScreen({ navigation, route }) {
               ))}
             </View>
 
-            <View style={styles.countersRow}>
-              <View style={styles.counterCard}>
-                <Text style={styles.counterLabel}>Cômodos</Text>
-                <View style={styles.counter}>
-                  <TouchableOpacity onPress={() => setRooms(Math.max(1, rooms - 1))} style={styles.counterBtn}>
-                    <Ionicons name="remove" size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                  <Text style={styles.counterVal}>{rooms}</Text>
-                  <TouchableOpacity onPress={() => setRooms(rooms + 1)} style={styles.counterBtn}>
-                    <Ionicons name="add" size={18} color={colors.primary} />
-                  </TouchableOpacity>
+            {!hasDynamicFields && (
+              <View style={styles.countersRow}>
+                <View style={styles.counterCard}>
+                  <Text style={styles.counterLabel}>Cômodos</Text>
+                  <View style={styles.counter}>
+                    <TouchableOpacity onPress={() => setRooms(Math.max(1, rooms - 1))} style={styles.counterBtn}>
+                      <Ionicons name="remove" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    <Text style={styles.counterVal}>{rooms}</Text>
+                    <TouchableOpacity onPress={() => setRooms(rooms + 1)} style={styles.counterBtn}>
+                      <Ionicons name="add" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={styles.counterCard}>
+                  <Text style={styles.counterLabel}>Banheiros</Text>
+                  <View style={styles.counter}>
+                    <TouchableOpacity onPress={() => setBathrooms(Math.max(1, bathrooms - 1))} style={styles.counterBtn}>
+                      <Ionicons name="remove" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                    <Text style={styles.counterVal}>{bathrooms}</Text>
+                    <TouchableOpacity onPress={() => setBathrooms(bathrooms + 1)} style={styles.counterBtn}>
+                      <Ionicons name="add" size={18} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-              <View style={styles.counterCard}>
-                <Text style={styles.counterLabel}>Banheiros</Text>
-                <View style={styles.counter}>
-                  <TouchableOpacity onPress={() => setBathrooms(Math.max(1, bathrooms - 1))} style={styles.counterBtn}>
-                    <Ionicons name="remove" size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                  <Text style={styles.counterVal}>{bathrooms}</Text>
-                  <TouchableOpacity onPress={() => setBathrooms(bathrooms + 1)} style={styles.counterBtn}>
-                    <Ionicons name="add" size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
+            )}
 
-            <TouchableOpacity
-              style={[styles.checkRow, hasProducts && styles.checkRowActive]}
-              onPress={() => setHasProducts(!hasProducts)}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.checkbox, hasProducts && styles.checkboxActive]}>
-                {hasProducts && <Ionicons name="checkmark" size={14} color={colors.white} />}
+            {hasDynamicFields && (
+              <View style={{ gap: 10 }}>
+                {checkoutFields.map((field) => {
+                  const value = customFormData[field.key];
+
+                  if (field.inputType === 'boolean') {
+                    return (
+                      <TouchableOpacity
+                        key={field.key}
+                        style={[styles.checkRow, value && styles.checkRowActive]}
+                        onPress={() => updateCustomField(field, !value)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={[styles.checkbox, value && styles.checkboxActive]}>
+                          {value && <Ionicons name="checkmark" size={14} color={colors.white} />}
+                        </View>
+                        <View>
+                          <Text style={styles.checkLabel}>{field.label}</Text>
+                          {!!field.placeholder && <Text style={styles.checkSub}>{field.placeholder}</Text>}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  if (field.inputType === 'number') {
+                    const current = Number(value || 0);
+                    const min = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
+                    const max = Number.isFinite(Number(field.max)) ? Number(field.max) : Number.MAX_SAFE_INTEGER;
+                    const stepSize = Number.isFinite(Number(field.step)) ? Number(field.step) : 1;
+
+                    return (
+                      <View key={field.key} style={styles.counterCard}>
+                        <Text style={styles.counterLabel}>{field.label}</Text>
+                        <View style={styles.counter}>
+                          <TouchableOpacity
+                            onPress={() => updateCustomField(field, Math.max(min, current - stepSize))}
+                            style={styles.counterBtn}
+                          >
+                            <Ionicons name="remove" size={18} color={colors.primary} />
+                          </TouchableOpacity>
+                          <Text style={styles.counterVal}>{current}</Text>
+                          <TouchableOpacity
+                            onPress={() => updateCustomField(field, Math.min(max, current + stepSize))}
+                            style={styles.counterBtn}
+                          >
+                            <Ionicons name="add" size={18} color={colors.primary} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  }
+
+                  if (field.inputType === 'select') {
+                    return (
+                      <View key={field.key}>
+                        <Text style={styles.label}>{field.label}</Text>
+                        <View style={styles.optionsRow}>
+                          {(field.options || []).map((opt) => {
+                            const selected = String(value) === String(opt.value);
+                            return (
+                              <TouchableOpacity
+                                key={`${field.key}-${opt.value}`}
+                                style={[styles.optionBtn, selected && styles.optionBtnActive]}
+                                onPress={() => updateCustomField(field, opt.value)}
+                                activeOpacity={0.8}
+                              >
+                                {selected
+                                  ? (
+                                    <LinearGradient colors={colors.gradientPrimary} style={styles.optionBtnGrad}>
+                                      <Text style={styles.optionTextActive}>{opt.label}</Text>
+                                    </LinearGradient>
+                                  )
+                                  : <Text style={styles.optionText}>{opt.label}</Text>}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <View key={field.key} style={styles.inputGroup}>
+                      <Text style={styles.label}>{field.label}</Text>
+                      <TextInput
+                        style={styles.inputField}
+                        placeholder={field.placeholder || ''}
+                        placeholderTextColor={colors.textLight}
+                        value={value ? String(value) : ''}
+                        onChangeText={(text) => updateCustomField(field, text)}
+                      />
+                    </View>
+                  );
+                })}
               </View>
-              <View>
-                <Text style={styles.checkLabel}>Eu forneço os produtos de limpeza</Text>
-                {!hasProducts && <Text style={styles.checkSub}>+R$5/h quando profissional traz</Text>}
-              </View>
-            </TouchableOpacity>
+            )}
+
+            {supportsProducts && (
+              <TouchableOpacity
+                style={[styles.checkRow, hasProducts && styles.checkRowActive]}
+                onPress={() => setHasProducts(!hasProducts)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkbox, hasProducts && styles.checkboxActive]}>
+                  {hasProducts && <Ionicons name="checkmark" size={14} color={colors.white} />}
+                </View>
+                <View>
+                  <Text style={styles.checkLabel}>Eu forneço os produtos de limpeza</Text>
+                  {!hasProducts && <Text style={styles.checkSub}>+R$5/h quando profissional traz</Text>}
+                </View>
+              </TouchableOpacity>
+            )}
 
             <Text style={styles.label}>Observações (opcional)</Text>
             <TextInput
@@ -402,10 +574,15 @@ export default function RequestServiceScreen({ navigation, route }) {
             <View style={styles.confirmCard}>
               {[
                 { icon: 'time-outline', label: 'Duração', value: `${hours} horas` },
-                { icon: 'home-outline', label: 'Cômodos', value: `${rooms} cômodo(s) · ${bathrooms} banheiro(s)` },
+                ...(!hasDynamicFields ? [{ icon: 'home-outline', label: 'Cômodos', value: `${rooms} cômodo(s) · ${bathrooms} banheiro(s)` }] : []),
+                ...checkoutFields.map((field) => ({
+                  icon: field.inputType === 'boolean' ? 'checkbox-outline' : 'list-outline',
+                  label: field.label,
+                  value: formatCustomFieldValue(field, customFormData[field.key]),
+                })),
                 { icon: 'location-outline', label: 'Endereço', value: `${address.street}, ${address.city}` },
                 { icon: 'calendar-outline', label: 'Data', value: scheduleMode === 'now' ? 'Agora (imediato)' : `${getDateLabel(scheduledDate)} às ${selectedTime}` },
-                { icon: 'cube-outline', label: 'Produtos', value: hasProducts ? 'Você fornece' : 'Profissional traz (+R$5/h)' },
+                ...(supportsProducts ? [{ icon: 'cube-outline', label: 'Produtos', value: hasProducts ? 'Você fornece' : 'Profissional traz (+R$5/h)' }] : []),
                 ...(notes ? [{ icon: 'chatbubble-outline', label: 'Obs.', value: notes }] : []),
               ].map((row, i, arr) => (
                 <View key={i} style={[styles.confirmRow, i < arr.length - 1 && styles.confirmRowBorder]}>
@@ -444,7 +621,7 @@ export default function RequestServiceScreen({ navigation, route }) {
         {step < 3 ? (
           <TouchableOpacity
             style={[styles.btnNextWrap, step === 1 && { flex: 1 }]}
-            onPress={() => setStep(step + 1)}
+            onPress={handleContinue}
             activeOpacity={0.85}
           >
             <LinearGradient colors={colors.gradientPrimary} style={styles.btnNext}>

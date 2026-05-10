@@ -171,9 +171,11 @@ export default function DashboardScreen({ navigation }) {
       <View style={styles.cardTags}>
         {[
           { icon: 'time-outline', label: `${item.details.hours}h` },
-          { icon: 'home-outline', label: `${item.details.rooms} côm.` },
+          ...((item.details.customFormSummary || []).length
+            ? [{ icon: 'list-outline', label: `${item.details.customFormSummary.length} campo(s)` }]
+            : [{ icon: 'home-outline', label: `${item.details.rooms} côm.` }]),
           { icon: 'calendar-outline', label: new Date(item.details.scheduledDate).toLocaleDateString('pt-BR') },
-          ...(item.details.hasProducts ? [{ icon: 'cube-outline', label: 'Produtos' }] : []),
+          ...(item.serviceTypeSlug === 'diarista' && item.details.hasProducts ? [{ icon: 'cube-outline', label: 'Produtos' }] : []),
         ].map((tag, i) => (
           <View key={i} style={styles.tag}>
             <Ionicons name={tag.icon} size={12} color={colors.secondary} />
@@ -297,7 +299,13 @@ export default function DashboardScreen({ navigation }) {
                   {[
                     { icon: 'person-outline', label: 'Cliente', value: selectedRequest.client?.name },
                     { icon: 'time-outline', label: 'Duração', value: `${selectedRequest.details.hours} horas` },
-                    { icon: 'home-outline', label: 'Cômodos', value: `${selectedRequest.details.rooms} cômodo(s) · ${selectedRequest.details.bathrooms} banheiro(s)` },
+                    ...((selectedRequest.details.customFormSummary || []).length
+                      ? (selectedRequest.details.customFormSummary || []).map((item) => ({
+                        icon: 'list-outline',
+                        label: item.label,
+                        value: item.displayValue || String(item.value || '-'),
+                      }))
+                      : [{ icon: 'home-outline', label: 'Cômodos', value: `${selectedRequest.details.rooms} cômodo(s) · ${selectedRequest.details.bathrooms} banheiro(s)` }]),
                     { icon: 'location-outline', label: 'Endereço', value: `${selectedRequest.address.street}, ${selectedRequest.address.city}` },
                     { icon: 'calendar-outline', label: 'Data', value: new Date(selectedRequest.details.scheduledDate).toLocaleDateString('pt-BR') },
                   ].map((row, i) => (

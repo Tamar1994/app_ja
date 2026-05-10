@@ -199,8 +199,16 @@ export default function ActiveJobScreen({ navigation, route }) {
             {[
               { icon: 'location-outline', label: 'Endereço', value: `${request.address.street}${request.address.complement ? `, ${request.address.complement}` : ''} — ${request.address.city}` },
               { icon: 'time-outline', label: 'Duração', value: `${request.details.hours} horas` },
-              { icon: 'grid-outline', label: 'Cômodos', value: `${request.details.rooms} cômodo(s), ${request.details.bathrooms} banheiro(s)` },
-              { icon: 'cube-outline', label: 'Produtos', value: request.details.hasProducts ? 'Cliente fornece' : 'Você traz' },
+              ...((request.details.customFormSummary || []).length
+                ? (request.details.customFormSummary || []).map((item) => ({
+                  icon: 'list-outline',
+                  label: item.label,
+                  value: item.displayValue || String(item.value || '-'),
+                }))
+                : [{ icon: 'grid-outline', label: 'Cômodos', value: `${request.details.rooms} cômodo(s), ${request.details.bathrooms} banheiro(s)` }]),
+              ...(request.serviceTypeSlug === 'diarista'
+                ? [{ icon: 'cube-outline', label: 'Produtos', value: request.details.hasProducts ? 'Cliente fornece' : 'Você traz' }]
+                : []),
               ...(request.details.notes ? [{ icon: 'chatbubble-outline', label: 'Obs.', value: request.details.notes }] : []),
             ].map((row, i) => (
               <View key={i} style={styles.detailRow}>

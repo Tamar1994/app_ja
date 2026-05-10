@@ -42,6 +42,21 @@ const serviceRequestSchema = new mongoose.Schema({
     rooms: { type: Number, default: 1 },
     bathrooms: { type: Number, default: 1 },
     hasProducts: { type: Boolean, default: false }, // cliente fornece produtos
+    customFormData: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    customFormSummary: {
+      type: [{
+        key: { type: String },
+        label: { type: String },
+        inputType: { type: String },
+        value: mongoose.Schema.Types.Mixed,
+        displayValue: { type: String },
+      }],
+      default: [],
+    },
     notes: { type: String, default: '' },
     scheduledDate: { type: Date, required: true },
   },

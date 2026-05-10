@@ -1,5 +1,75 @@
 const mongoose = require('mongoose');
 
+const checkoutFieldOptionSchema = new mongoose.Schema({
+  label: { type: String, required: true, trim: true },
+  value: { type: String, required: true, trim: true },
+  priceImpact: { type: Number, default: 0 },
+}, { _id: false });
+
+const checkoutFieldSchema = new mongoose.Schema({
+  key: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true,
+  },
+  label: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  inputType: {
+    type: String,
+    enum: ['number', 'boolean', 'text', 'select'],
+    required: true,
+  },
+  required: {
+    type: Boolean,
+    default: false,
+  },
+  placeholder: {
+    type: String,
+    default: '',
+  },
+  defaultValue: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
+  },
+  min: {
+    type: Number,
+    default: null,
+  },
+  max: {
+    type: Number,
+    default: null,
+  },
+  step: {
+    type: Number,
+    default: 1,
+  },
+  options: {
+    type: [checkoutFieldOptionSchema],
+    default: [],
+  },
+  pricingEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  pricingMode: {
+    type: String,
+    enum: ['add_total', 'add_per_hour'],
+    default: 'add_total',
+  },
+  pricingAmount: {
+    type: Number,
+    default: 0,
+  },
+  sortOrder: {
+    type: Number,
+    default: 0,
+  },
+}, { _id: false });
+
 const serviceTypeSchema = new mongoose.Schema({
   slug: {
     type: String,
@@ -33,6 +103,10 @@ const serviceTypeSchema = new mongoose.Schema({
   sortOrder: {
     type: Number,
     default: 99,
+  },
+  checkoutFields: {
+    type: [checkoutFieldSchema],
+    default: [],
   },
 }, { timestamps: true });
 

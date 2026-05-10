@@ -6,42 +6,39 @@ const Review = require('../models/Review');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const CouponRedemption = require('../models/CouponRedemption');
-const PricingConfig = require('../models/PricingConfig');
 const { dispatchToNextProfessional, clearRequestTimer } = require('../utils/requestQueue');
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
+const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
 
 const router = express.Router();
 
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
-  const { hours, hasProducts, serviceTypeSlug } = req.body;
+  const { hours, hasProducts, serviceTypeSlug, customFormData } = req.body;
   try {
-    const cfg = await PricingConfig.getSingleton();
-    if (!hours || hours < cfg.minHours || hours > cfg.maxHours) {
-      return res.status(400).json({ message: `Horas devem ser entre ${cfg.minHours} e ${cfg.maxHours}` });
-    }
-    const serviceBasePrices = cfg.serviceBasePrices instanceof Map
-      ? Object.fromEntries(cfg.serviceBasePrices)
-      : (cfg.serviceBasePrices || {});
-    const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
-      ? Number(serviceBasePrices[serviceTypeSlug])
-      : null;
-
-    let pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
-    if (!hasProducts) pricePerHour += cfg.productsSurcharge;
-    const estimated = pricePerHour * hours;
-    const platformFee = (estimated * cfg.platformFeePercent) / 100;
-    res.json({
-      pricePerHour,
+    const pricing = await calculateCheckoutPricing({
       hours,
-      estimated,
-      platformFee,
-      total: estimated,
+      hasProducts: !!hasProducts,
       serviceTypeSlug: serviceTypeSlug || null,
-      usedServiceBasePrice: Number.isFinite(serviceBase),
+      customFormData: customFormData || {},
     });
-  } catch {
+
+    res.json({
+      pricePerHour: pricing.pricePerHour,
+      hours,
+      estimated: pricing.estimated,
+      platformFee: pricing.platformFee,
+      total: pricing.estimated,
+      serviceTypeSlug: serviceTypeSlug || null,
+      usedServiceBasePrice: pricing.usedServiceBasePrice,
+      customFormData: pricing.normalizedCustomFormData,
+      pricingBreakdown: pricing.pricingBreakdown,
+    });
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ message: err.message });
+    }
     res.status(500).json({ message: 'Erro ao calcular estimativa' });
   }
 });
@@ -62,33 +59,59 @@ router.post('/', auth, [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { hours, rooms, bathrooms, hasProducts, notes, address, scheduledDate, serviceTypeSlug } = req.body;
+  const {
+    hours,
+    rooms,
+    bathrooms,
+    hasProducts,
+    notes,
+    address,
+    scheduledDate,
+    serviceTypeSlug,
+    customFormData,
+  } = req.body;
 
   let pricePerHour, estimated, platformFee;
+  let normalizedCustomFormData = {};
+  let customFormSummary = [];
   try {
-    const cfg = await PricingConfig.getSingleton();
-    const serviceBasePrices = cfg.serviceBasePrices instanceof Map
-      ? Object.fromEntries(cfg.serviceBasePrices)
-      : (cfg.serviceBasePrices || {});
-    const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
-      ? Number(serviceBasePrices[serviceTypeSlug])
-      : null;
-    pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
-    if (!hasProducts) pricePerHour += cfg.productsSurcharge;
-    estimated = pricePerHour * hours;
-    platformFee = (estimated * cfg.platformFeePercent) / 100;
-  } catch {
+    const pricing = await calculateCheckoutPricing({
+      hours,
+      hasProducts: !!hasProducts,
+      serviceTypeSlug: serviceTypeSlug || null,
+      customFormData: customFormData || {},
+    });
+    pricePerHour = pricing.pricePerHour;
+    estimated = pricing.estimated;
+    platformFee = pricing.platformFee;
+    normalizedCustomFormData = pricing.normalizedCustomFormData;
+    customFormSummary = pricing.customFormSummary;
+  } catch (err) {
+    if (err.status === 400) {
+      return res.status(400).json({ message: err.message });
+    }
     pricePerHour = 35;
     if (!hasProducts) pricePerHour += 5;
     estimated = pricePerHour * hours;
     platformFee = (estimated * 15) / 100;
+    normalizedCustomFormData = customFormData && typeof customFormData === 'object' ? customFormData : {};
+    customFormSummary = [];
   }
 
   try {
     const request = await ServiceRequest.create({
       client: req.user._id,
       serviceTypeSlug: serviceTypeSlug || null,
-      details: { hours, rooms, bathrooms, hasProducts, notes, scheduledDate },
+      details: {
+        hours,
+        rooms,
+        bathrooms,
+        hasProducts,
+        customFormData: normalizedCustomFormData,
+        customFormSummary,
+        notes,
+        scheduledDate,
+      },
       address,
       pricing: {
         pricePerHour,
@@ -104,7 +127,7 @@ router.post('/', auth, [
     }
 
     res.status(201).json({ request });
-  } catch (err) {
+  } catch {
     res.status(500).json({ message: 'Erro ao criar solicitação' });
   }
 });

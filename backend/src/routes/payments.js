@@ -7,10 +7,10 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
 const CoraPixCharge = require('../models/CoraPixCharge');
-const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
 const { resolveCouponsForCheckout } = require('../services/couponService');
+const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
 const {
   hasCoraConfigured,
   createPixInvoice,
@@ -81,22 +81,6 @@ async function getOrCreateCustomer(user) {
   return customer.id;
 }
 
-async function calculatePricing(hours, hasProducts, serviceTypeSlug = null) {
-  const cfg = await PricingConfig.getSingleton();
-  const serviceBasePrices = cfg.serviceBasePrices instanceof Map
-    ? Object.fromEntries(cfg.serviceBasePrices)
-    : (cfg.serviceBasePrices || {});
-  const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
-    ? Number(serviceBasePrices[serviceTypeSlug])
-    : null;
-
-  let pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
-  if (!hasProducts) pricePerHour += cfg.productsSurcharge;
-  const estimated = pricePerHour * hours;
-  const platformFee = (estimated * cfg.platformFeePercent) / 100;
-  return { pricePerHour, estimated, platformFee, amountCents: Math.round(estimated * 100) };
-}
-
 function parseCouponMeta(rawCodes, rawDiscounts) {
   const codes = String(rawCodes || '')
     .split(',')
@@ -145,7 +129,26 @@ async function createRequestFromIntent(intent, io) {
   const address = JSON.parse(m.address);
   const hasProducts = m.hasProducts === 'true';
   const serviceTypeSlug = m.serviceTypeSlug || null;
-  const { pricePerHour, estimated, platformFee } = await calculatePricing(parseInt(m.hours), hasProducts, serviceTypeSlug);
+  let customFormData = {};
+  if (m.customFormData) {
+    try {
+      customFormData = JSON.parse(m.customFormData);
+    } catch {
+      customFormData = {};
+    }
+  }
+  const {
+    pricePerHour,
+    estimated,
+    platformFee,
+    normalizedCustomFormData,
+    customFormSummary,
+  } = await calculateCheckoutPricing({
+    hours: parseInt(m.hours),
+    hasProducts,
+    serviceTypeSlug,
+    customFormData,
+  });
   const couponsMeta = parseCouponMeta(m.couponCodes, m.couponDiscounts);
   const discountTotal = couponsMeta.reduce((sum, c) => sum + Number(c.discountAmount || 0), 0);
   const finalEstimated = Math.max(0, estimated - discountTotal);
@@ -160,6 +163,8 @@ async function createRequestFromIntent(intent, io) {
       rooms: parseInt(m.rooms),
       bathrooms: parseInt(m.bathrooms),
       hasProducts,
+      customFormData: normalizedCustomFormData,
+      customFormSummary,
       notes: m.notes,
       scheduledDate: m.scheduledDate,
     },
@@ -229,7 +234,18 @@ async function createRequestFromCoraCharge(charge, io) {
   const address = p.address || {};
   const hasProducts = Boolean(p.hasProducts);
   const serviceTypeSlug = p.serviceTypeSlug || null;
-  const { pricePerHour, estimated, platformFee } = await calculatePricing(Number(p.hours), hasProducts, serviceTypeSlug);
+  const {
+    pricePerHour,
+    estimated,
+    platformFee,
+    normalizedCustomFormData,
+    customFormSummary,
+  } = await calculateCheckoutPricing({
+    hours: Number(p.hours),
+    hasProducts,
+    serviceTypeSlug,
+    customFormData: p.customFormData || {},
+  });
 
   const discountTotal = Number(charge.discountTotal || 0);
   const finalEstimated = Math.max(0, estimated - discountTotal);
@@ -245,6 +261,8 @@ async function createRequestFromCoraCharge(charge, io) {
       rooms: Number(p.rooms || 1),
       bathrooms: Number(p.bathrooms || 1),
       hasProducts,
+      customFormData: normalizedCustomFormData,
+      customFormSummary,
       notes: p.notes || '',
       scheduledDate: p.scheduledDate,
     },
@@ -316,6 +334,7 @@ router.post('/create-intent', auth, async (req, res) => {
     address,
     scheduledDate,
     serviceTypeSlug,
+    customFormData,
     couponCodes,
   } = req.body;
   if (!hours || !address?.street || !address?.city || !scheduledDate) {
@@ -323,7 +342,12 @@ router.post('/create-intent', auth, async (req, res) => {
   }
 
   try {
-    const { amountCents, estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
+    const { estimated, normalizedCustomFormData } = await calculateCheckoutPricing({
+      hours,
+      hasProducts: !!hasProducts,
+      serviceTypeSlug: serviceTypeSlug || null,
+      customFormData: customFormData || {},
+    });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,
       user: req.user,
@@ -364,6 +388,7 @@ router.post('/create-intent', auth, async (req, res) => {
           notes: notes || '',
           scheduledDate,
           serviceTypeSlug: serviceTypeSlug || '',
+          customFormData: JSON.stringify(normalizedCustomFormData),
           couponCodes: checkout.pricing.appliedCoupons.map((c) => c.code).join(','),
           couponDiscounts: checkout.pricing.appliedCoupons.map((c) => String(c.discountAmount)).join(','),
           address: JSON.stringify(address),
@@ -399,11 +424,16 @@ router.post('/preview', auth, async (req, res) => {
     return res.status(403).json({ message: 'Apenas clientes podem simular pagamento' });
   }
 
-  const { hours, hasProducts, serviceTypeSlug, couponCodes } = req.body;
+  const { hours, hasProducts, serviceTypeSlug, customFormData, couponCodes } = req.body;
   if (!hours) return res.status(400).json({ message: 'hours é obrigatório' });
 
   try {
-    const { estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
+    const { estimated, pricePerHour, normalizedCustomFormData, pricingBreakdown } = await calculateCheckoutPricing({
+      hours,
+      hasProducts: !!hasProducts,
+      serviceTypeSlug: serviceTypeSlug || null,
+      customFormData: customFormData || {},
+    });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,
       user: req.user,
@@ -414,6 +444,9 @@ router.post('/preview', auth, async (req, res) => {
       subtotal: estimated,
       discountTotal: checkout.pricing.totalDiscount,
       total: checkout.pricing.finalTotal,
+      pricePerHour,
+      customFormData: normalizedCustomFormData,
+      pricingBreakdown,
       appliedCoupons: checkout.pricing.appliedCoupons,
       rejectedCoupons: checkout.rejectedCoupons,
     });
@@ -472,6 +505,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
     address,
     scheduledDate,
     serviceTypeSlug,
+    customFormData,
     couponCodes,
   } = req.body;
 
@@ -486,7 +520,12 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       return res.status(400).json({ message: 'CPF valido e obrigatorio para pagamento via Pix' });
     }
 
-    const { estimated } = await calculatePricing(hours, !!hasProducts, serviceTypeSlug || null);
+    const { estimated, normalizedCustomFormData } = await calculateCheckoutPricing({
+      hours,
+      hasProducts: !!hasProducts,
+      serviceTypeSlug: serviceTypeSlug || null,
+      customFormData: customFormData || {},
+    });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,
       user: req.user,
@@ -535,6 +574,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
         address,
         scheduledDate,
         serviceTypeSlug: serviceTypeSlug || null,
+        customFormData: normalizedCustomFormData,
       },
       qrCodeUrl: invoice.qrCodeUrl,
       emv: invoice.emv,

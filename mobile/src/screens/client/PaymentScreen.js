@@ -24,7 +24,7 @@ const BRAND_COLORS = {
 };
 
 export default function PaymentScreen({ navigation, route }) {
-  const { requestData, estimate } = route.params;
+  const { requestData, estimate, serviceType } = route.params;
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [loading, setLoading] = useState(true);
@@ -222,7 +222,11 @@ export default function PaymentScreen({ navigation, route }) {
     return names[brand] || brand;
   };
 
-  const { hours, hasProducts, address } = requestData;
+  const { hours, hasProducts, address, customFormData } = requestData;
+  const checkoutFields = Array.isArray(serviceType?.checkoutFields)
+    ? [...serviceType.checkoutFields].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    : [];
+  const supportsProducts = !serviceType?.slug || serviceType.slug === 'diarista';
   const subtotal = Number(pricingPreview?.subtotal || estimate?.estimated || 0);
   const discountTotal = Number(pricingPreview?.discountTotal || 0);
   const total = Number(pricingPreview?.total || estimate?.estimated || 0);
@@ -270,13 +274,29 @@ export default function PaymentScreen({ navigation, route }) {
           <Text style={styles.cardTitle}>Resumo do pedido</Text>
           <View style={styles.summaryRow}>
             <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.summaryText}>{hours}h de limpeza</Text>
+            <Text style={styles.summaryText}>{hours}h de serviço</Text>
           </View>
+          {checkoutFields.map((field) => {
+            let value = customFormData?.[field.key];
+            if (field.inputType === 'boolean') value = value ? 'Sim' : 'Nao';
+            if (field.inputType === 'select') {
+              const option = (field.options || []).find((opt) => String(opt.value) === String(value));
+              value = option?.label || '-';
+            }
+            if (value === undefined || value === null || value === '') value = '-';
+
+            return (
+              <View style={styles.summaryRow} key={field.key}>
+                <Ionicons name="list-outline" size={16} color={colors.textSecondary} />
+                <Text style={styles.summaryText}>{field.label}: {String(value)}</Text>
+              </View>
+            );
+          })}
           <View style={styles.summaryRow}>
             <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.summaryText} numberOfLines={1}>{address.street}, {address.city}</Text>
           </View>
-          {hasProducts && (
+          {supportsProducts && hasProducts && (
             <View style={styles.summaryRow}>
               <Ionicons name="cube-outline" size={16} color={colors.textSecondary} />
               <Text style={styles.summaryText}>Você fornece os produtos</Text>

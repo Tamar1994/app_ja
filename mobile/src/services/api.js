@@ -40,8 +40,8 @@ export const userAPI = {
 
 // Solicitações de serviço
 export const requestAPI = {
-  estimate: (hours, hasProducts, serviceTypeSlug = null) =>
-    api.post('/requests/estimate', { hours, hasProducts, serviceTypeSlug }),
+  estimate: (hours, hasProducts, serviceTypeSlug = null, customFormData = {}) =>
+    api.post('/requests/estimate', { hours, hasProducts, serviceTypeSlug, customFormData }),
   create: (data) => api.post('/requests', data),
   list: (scope = null) => api.get(`/requests${scope ? `?scope=${scope}` : ''}`),
   getById: (id) => api.get(`/requests/${id}`),

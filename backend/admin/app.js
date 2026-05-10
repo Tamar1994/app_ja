@@ -2407,6 +2407,7 @@ const renderServiceTypeCard = (t) => `
     <div class="service-type-info">
       <div class="service-type-name">${escHtml(t.name)}</div>
       <div class="service-type-desc">${escHtml(t.description || '')}</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Campos customizados: ${(Array.isArray(t.checkoutFields) ? t.checkoutFields.length : 0)}</div>
       <div class="service-type-toggle">
         <label class="toggle-switch" title="${t.status === 'enabled' ? 'Desativar' : 'Ativar'} profissão">
           <input type="checkbox" ${t.status === 'enabled' ? 'checked' : ''} onchange="toggleServiceType('${t._id}', this.checked)" />
@@ -2430,6 +2431,191 @@ const toggleServiceType = async (id, enabled) => {
   }
 };
 
+const buildOptionsString = (options) => {
+  if (!Array.isArray(options) || !options.length) return '';
+  return options
+    .map((opt) => {
+      const label = String(opt.label || '').trim();
+      const value = String(opt.value || '').trim();
+      const impact = Number(opt.priceImpact || 0);
+      if (!label || !value) return null;
+      return `${label}:${value}:${impact}`;
+    })
+    .filter(Boolean)
+    .join(', ');
+};
+
+const buildCheckoutFieldRows = (fields = []) => {
+  if (!Array.isArray(fields) || !fields.length) {
+    return `<div class="stf-empty" style="font-size:12px;color:#7A84A0;">Nenhum campo adicional. Clique em "Adicionar campo".</div>`;
+  }
+
+  return fields
+    .map((field, idx) => `
+      <div class="stf-row" style="border:1px solid #E8EAF0;border-radius:12px;padding:10px;margin-bottom:8px;background:#FAFBFF;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <input class="form-input stf-key" placeholder="chave (ex: dogs_count)" value="${escHtml(field.key || '')}" />
+          <input class="form-input stf-label" placeholder="rótulo (ex: Quantos cães?)" value="${escHtml(field.label || '')}" />
+          <select class="form-select stf-type">
+            <option value="number" ${(field.inputType || '') === 'number' ? 'selected' : ''}>Número</option>
+            <option value="boolean" ${(field.inputType || '') === 'boolean' ? 'selected' : ''}>Sim/Não</option>
+            <option value="text" ${(field.inputType || '') === 'text' ? 'selected' : ''}>Texto</option>
+            <option value="select" ${(field.inputType || '') === 'select' ? 'selected' : ''}>Seleção</option>
+          </select>
+          <input class="form-input stf-placeholder" placeholder="placeholder" value="${escHtml(field.placeholder || '')}" />
+          <input class="form-input stf-default" placeholder="valor padrão" value="${escHtml(field.defaultValue ?? '')}" />
+          <input class="form-input stf-min" type="number" placeholder="mín" value="${field.min ?? ''}" />
+          <input class="form-input stf-max" type="number" placeholder="máx" value="${field.max ?? ''}" />
+          <input class="form-input stf-step" type="number" placeholder="passo" value="${field.step ?? 1}" />
+          <input class="form-input stf-order" type="number" placeholder="ordem" value="${field.sortOrder ?? idx}" />
+          <input class="form-input stf-options" style="grid-column:1 / span 2" placeholder="opções select: label:valor:impacto, label2:valor2:impacto" value="${escHtml(buildOptionsString(field.options))}" />
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" class="stf-required" ${field.required ? 'checked' : ''}/> Obrigatório</label>
+          <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" class="stf-pricing-enabled" ${field.pricingEnabled ? 'checked' : ''}/> Afeta preço</label>
+          <select class="form-select stf-pricing-mode" style="max-width:170px;">
+            <option value="add_total" ${(field.pricingMode || 'add_total') === 'add_total' ? 'selected' : ''}>Soma no total</option>
+            <option value="add_per_hour" ${(field.pricingMode || '') === 'add_per_hour' ? 'selected' : ''}>Soma por hora</option>
+          </select>
+          <input class="form-input stf-pricing-amount" type="number" step="0.01" placeholder="valor impacto" style="max-width:140px;" value="${Number(field.pricingAmount || 0)}" />
+          <button class="btn btn-ghost btn-sm" type="button" onclick="this.closest('.stf-row').remove();refreshCheckoutFieldEmptyState()">Remover</button>
+        </div>
+      </div>`)
+    .join('');
+};
+
+const refreshCheckoutFieldEmptyState = () => {
+  document.querySelectorAll('.stf-fields-list').forEach((listEl) => {
+    const hasRows = listEl.querySelector('.stf-row');
+    const empty = listEl.querySelector('.stf-empty');
+    if (hasRows && empty) empty.remove();
+    if (!hasRows && !empty) {
+      const div = document.createElement('div');
+      div.className = 'stf-empty';
+      div.style.cssText = 'font-size:12px;color:#7A84A0;';
+      div.textContent = 'Nenhum campo adicional. Clique em "Adicionar campo".';
+      listEl.appendChild(div);
+    }
+  });
+};
+
+const addCheckoutFieldRow = (listId) => {
+  const listEl = document.getElementById(listId);
+  if (!listEl) return;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = buildCheckoutFieldRows([{ inputType: 'number', step: 1, pricingMode: 'add_total', pricingAmount: 0 }]);
+  const row = wrapper.querySelector('.stf-row');
+  if (!row) return;
+  listEl.appendChild(row);
+  refreshCheckoutFieldEmptyState();
+};
+
+const slugifyFieldKey = (raw) => String(raw || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+const parseOptionsInput = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return [];
+
+  return text
+    .split(',')
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map((chunk) => {
+      const parts = chunk.split(':').map((p) => p.trim());
+      const label = parts[0] || '';
+      const value = parts[1] || slugifyFieldKey(label);
+      const priceImpact = Number(parts[2] || 0);
+      return { label, value, priceImpact: Number.isFinite(priceImpact) ? priceImpact : 0 };
+    })
+    .filter((opt) => opt.label && opt.value);
+};
+
+const collectCheckoutFields = (listId) => {
+  const listEl = document.getElementById(listId);
+  if (!listEl) return [];
+  const rows = Array.from(listEl.querySelectorAll('.stf-row'));
+  const fields = [];
+
+  rows.forEach((row, idx) => {
+    const keyRaw = row.querySelector('.stf-key')?.value || '';
+    const key = slugifyFieldKey(keyRaw);
+    const label = (row.querySelector('.stf-label')?.value || '').trim();
+    const inputType = row.querySelector('.stf-type')?.value || 'text';
+    const required = !!row.querySelector('.stf-required')?.checked;
+    const placeholder = (row.querySelector('.stf-placeholder')?.value || '').trim();
+    const defaultRaw = (row.querySelector('.stf-default')?.value || '').trim();
+    const minRaw = (row.querySelector('.stf-min')?.value || '').trim();
+    const maxRaw = (row.querySelector('.stf-max')?.value || '').trim();
+    const stepRaw = (row.querySelector('.stf-step')?.value || '').trim();
+    const sortOrderRaw = (row.querySelector('.stf-order')?.value || '').trim();
+    const optionsRaw = (row.querySelector('.stf-options')?.value || '').trim();
+    const pricingEnabled = !!row.querySelector('.stf-pricing-enabled')?.checked;
+    const pricingMode = row.querySelector('.stf-pricing-mode')?.value || 'add_total';
+    const pricingAmountRaw = (row.querySelector('.stf-pricing-amount')?.value || '').trim();
+
+    if (!key && !label) return;
+    if (!key || !label) throw new Error('Cada campo customizado precisa de chave e rótulo.');
+
+    let defaultValue = defaultRaw;
+    if (inputType === 'number') {
+      defaultValue = defaultRaw === '' ? null : Number(defaultRaw);
+      if (defaultRaw !== '' && !Number.isFinite(defaultValue)) {
+        throw new Error(`Valor padrão inválido no campo ${label}`);
+      }
+    } else if (inputType === 'boolean') {
+      defaultValue = defaultRaw === 'true' || defaultRaw === '1' || defaultRaw.toLowerCase() === 'sim';
+    } else if (!defaultRaw) {
+      defaultValue = null;
+    }
+
+    const min = minRaw === '' ? null : Number(minRaw);
+    const max = maxRaw === '' ? null : Number(maxRaw);
+    const step = stepRaw === '' ? 1 : Number(stepRaw);
+    const sortOrder = sortOrderRaw === '' ? idx : Number(sortOrderRaw);
+    const pricingAmount = pricingAmountRaw === '' ? 0 : Number(pricingAmountRaw);
+
+    if ((minRaw !== '' && !Number.isFinite(min)) || (maxRaw !== '' && !Number.isFinite(max))) {
+      throw new Error(`Mín/Máx inválido no campo ${label}`);
+    }
+    if (!Number.isFinite(step) || step <= 0) {
+      throw new Error(`Passo inválido no campo ${label}`);
+    }
+    if (!Number.isFinite(pricingAmount)) {
+      throw new Error(`Impacto de preço inválido no campo ${label}`);
+    }
+
+    const options = inputType === 'select' ? parseOptionsInput(optionsRaw) : [];
+    if (inputType === 'select' && options.length === 0) {
+      throw new Error(`Campo ${label} precisa de opções (label:valor:impacto).`);
+    }
+
+    fields.push({
+      key,
+      label,
+      inputType,
+      required,
+      placeholder,
+      defaultValue,
+      min,
+      max,
+      step,
+      options,
+      pricingEnabled,
+      pricingMode,
+      pricingAmount,
+      sortOrder,
+    });
+  });
+
+  const keys = new Set();
+  fields.forEach((f) => {
+    if (keys.has(f.key)) throw new Error(`Chave duplicada: ${f.key}`);
+    keys.add(f.key);
+  });
+
+  return fields;
+};
+
 const openNewServiceTypeModal = () => {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -2446,6 +2632,11 @@ const openNewServiceTypeModal = () => {
           <option value="enabled">Ativo (aparece no app)</option>
           <option value="disabled" selected>Desativado</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Campos customizados do formulário</label>
+        <div class="stf-fields-list" id="st-fields-list">${buildCheckoutFieldRows([])}</div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('st-fields-list')">+ Adicionar campo</button>
       </div>
     </div>
     <div class="modal-footer">
@@ -2465,12 +2656,14 @@ const createServiceType = async () => {
   const imageFile = document.getElementById('st-image').files?.[0] || null;
   if (!name || !slug) { alert('Nome e slug são obrigatórios.'); return; }
   try {
+    const checkoutFields = collectCheckoutFields('st-fields-list');
     const formData = new FormData();
     formData.append('name', name);
     formData.append('slug', slug);
     formData.append('description', description);
     formData.append('icon', icon);
     formData.append('status', status);
+    formData.append('checkoutFields', JSON.stringify(checkoutFields));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('POST', '', formData);
     document.querySelector('.modal-overlay')?.remove();
@@ -2497,6 +2690,11 @@ const openEditServiceTypeModal = (t) => {
           <option value="disabled" ${t.status==='disabled'?'selected':''}>Desativado</option>
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label">Campos customizados do formulário</label>
+        <div class="stf-fields-list" id="ste-fields-list">${buildCheckoutFieldRows(t.checkoutFields || [])}</div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('ste-fields-list')">+ Adicionar campo</button>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
@@ -2515,12 +2713,14 @@ const updateServiceType = async (id) => {
   const status = document.getElementById('ste-status').value;
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
   try {
+    const checkoutFields = collectCheckoutFields('ste-fields-list');
     const formData = new FormData();
     formData.append('name', name);
     formData.append('description', description);
     formData.append('icon', icon);
     formData.append('sortOrder', sortOrder);
     formData.append('status', status);
+    formData.append('checkoutFields', JSON.stringify(checkoutFields));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('PATCH', `/${id}`, formData);
     document.querySelector('.modal-overlay')?.remove();
