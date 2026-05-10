@@ -2443,6 +2443,83 @@ const deletePauseType = async (id) => {
 
 // ── COVERAGE CITIES ────────────────────────────────────────────────────────
 
+const BR_STATE_OPTIONS = [
+  { uf: 'AC', name: 'Acre' },
+  { uf: 'AL', name: 'Alagoas' },
+  { uf: 'AP', name: 'Amapá' },
+  { uf: 'AM', name: 'Amazonas' },
+  { uf: 'BA', name: 'Bahia' },
+  { uf: 'CE', name: 'Ceará' },
+  { uf: 'DF', name: 'Distrito Federal' },
+  { uf: 'ES', name: 'Espírito Santo' },
+  { uf: 'GO', name: 'Goiás' },
+  { uf: 'MA', name: 'Maranhão' },
+  { uf: 'MT', name: 'Mato Grosso' },
+  { uf: 'MS', name: 'Mato Grosso do Sul' },
+  { uf: 'MG', name: 'Minas Gerais' },
+  { uf: 'PA', name: 'Pará' },
+  { uf: 'PB', name: 'Paraíba' },
+  { uf: 'PR', name: 'Paraná' },
+  { uf: 'PE', name: 'Pernambuco' },
+  { uf: 'PI', name: 'Piauí' },
+  { uf: 'RJ', name: 'Rio de Janeiro' },
+  { uf: 'RN', name: 'Rio Grande do Norte' },
+  { uf: 'RS', name: 'Rio Grande do Sul' },
+  { uf: 'RO', name: 'Rondônia' },
+  { uf: 'RR', name: 'Roraima' },
+  { uf: 'SC', name: 'Santa Catarina' },
+  { uf: 'SP', name: 'São Paulo' },
+  { uf: 'SE', name: 'Sergipe' },
+  { uf: 'TO', name: 'Tocantins' },
+];
+
+const normalizeBasicStateText = (value = '') => String(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase()
+  .replace(/\s+/g, ' ');
+
+const resolveStateToUF = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const upper = raw.toUpperCase();
+  if (BR_STATE_OPTIONS.some((opt) => opt.uf === upper)) return upper;
+  const normalized = normalizeBasicStateText(raw);
+  const found = BR_STATE_OPTIONS.find((opt) => normalizeBasicStateText(opt.name) === normalized);
+  return found ? found.uf : upper;
+};
+
+const renderStateSelectOptions = (selectedValue = '') => {
+  const selectedUF = resolveStateToUF(selectedValue);
+  return [`<option value="">Selecione</option>`]
+    .concat(BR_STATE_OPTIONS.map((opt) => `<option value="${opt.uf}" ${opt.uf === selectedUF ? 'selected' : ''}>${opt.uf} - ${escHtml(opt.name)}</option>`))
+    .join('');
+};
+
+const parseCoverageImportLine = (line = '', defaultState = '') => {
+  const text = String(line || '').trim();
+  if (!text) return null;
+
+  const candidates = [' / ', '/', ' - ', ',', ';', '\t', '|'];
+  let city = text;
+  let state = defaultState;
+
+  for (const sep of candidates) {
+    const idx = text.lastIndexOf(sep);
+    if (idx > 0 && idx < text.length - sep.length) {
+      city = text.slice(0, idx).trim();
+      state = text.slice(idx + sep.length).trim() || defaultState;
+      break;
+    }
+  }
+
+  city = city.replace(/\s+/g, ' ').trim();
+  state = resolveStateToUF(state || defaultState);
+  if (!city) return null;
+  return { city, state };
+};
+
 const renderCoverageCities = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
@@ -2452,7 +2529,10 @@ const renderCoverageCities = async () => {
     c.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;flex-wrap:wrap;">
         <p style="color:#5C6B7A;font-size:13px;max-width:760px;">Cadastre as cidades onde a solicitação de serviço pode ser iniciada. Quando uma cidade ficar inativa, o app mostra a mensagem de expansão da cobertura.</p>
-        <button class="btn btn-primary" onclick="openNewCoverageCityModal()">+ Nova Cidade</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" onclick="openImportCoverageCitiesModal()">Importar lista</button>
+          <button class="btn btn-primary" onclick="openNewCoverageCityModal()">+ Nova Cidade</button>
+        </div>
       </div>
       <div class="section-card">
         <div class="section-header"><h2>Cidades Atendidas (${cities.length})</h2></div>
@@ -2483,7 +2563,7 @@ const openNewCoverageCityModal = () => {
     <div class="modal-header"><h3>🗺️ Nova Cidade Atendida</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
     <div class="modal-body">
       <div class="form-group"><label class="form-label">Cidade</label><input id="ncc-city" class="form-input" placeholder="Ex: São José dos Campos" /></div>
-      <div class="form-group"><label class="form-label">Estado</label><input id="ncc-state" class="form-input" placeholder="Ex: SP" maxlength="2" /></div>
+      <div class="form-group"><label class="form-label">Estado</label><select id="ncc-state" class="form-select">${renderStateSelectOptions('')}</select></div>
       <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ncc-order" class="form-input" type="number" value="0" /></div>
       <div class="form-group" style="display:flex;align-items:center;gap:8px;">
         <input id="ncc-active" type="checkbox" checked />
@@ -2500,7 +2580,7 @@ const openNewCoverageCityModal = () => {
 
 const createCoverageCity = async () => {
   const city = document.getElementById('ncc-city').value.trim();
-  const state = document.getElementById('ncc-state').value.trim();
+  const state = resolveStateToUF(document.getElementById('ncc-state').value.trim());
   const order = Number(document.getElementById('ncc-order').value || 0);
   const isActive = !!document.getElementById('ncc-active').checked;
   if (!city) { showAlert('Informe a cidade.'); return; }
@@ -2512,6 +2592,79 @@ const createCoverageCity = async () => {
   } catch (err) { showAlert(err.message); }
 };
 
+const openImportCoverageCitiesModal = () => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h3>📥 Importar Cidades</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Cole uma cidade por linha</label>
+        <textarea id="ici-lines" class="form-input" rows="8" placeholder="Exemplos:\nSão José dos Campos/SP\nJacarei - SP\nTaubaté, São Paulo"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Estado padrão (opcional, quando a linha não tiver estado)</label>
+        <select id="ici-default-state" class="form-select">${renderStateSelectOptions('')}</select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="ici-active" type="checkbox" checked />
+        <label for="ici-active" class="form-label" style="margin:0;">Cadastrar como ativa</label>
+      </div>
+      <div class="form-group"><label class="form-label">Ordem inicial</label><input id="ici-order-start" class="form-input" type="number" value="0" /></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="importCoverageCitiesBulk()">Importar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const importCoverageCitiesBulk = async () => {
+  const linesRaw = document.getElementById('ici-lines').value || '';
+  const defaultState = resolveStateToUF(document.getElementById('ici-default-state').value || '');
+  const isActive = !!document.getElementById('ici-active').checked;
+  const startOrder = Number(document.getElementById('ici-order-start').value || 0);
+
+  const lines = linesRaw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) {
+    showAlert('Cole ao menos uma linha com cidade.');
+    return;
+  }
+
+  const entries = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const parsed = parseCoverageImportLine(lines[i], defaultState);
+    if (!parsed) continue;
+    entries.push({
+      city: parsed.city,
+      state: parsed.state,
+      isActive,
+      order: startOrder + i,
+    });
+  }
+
+  if (!entries.length) {
+    showAlert('Nenhuma cidade válida foi encontrada na lista.');
+    return;
+  }
+
+  try {
+    const result = await req('POST', '/coverage-cities/bulk', { entries });
+    const summary = result.summary || {};
+    let message = `Importação concluída: ${summary.created || 0} criada(s), ${summary.skipped || 0} ignorada(s), ${summary.invalid || 0} inválida(s).`;
+    if (Array.isArray(result.invalid) && result.invalid.length) {
+      const preview = result.invalid.slice(0, 3).map((item) => `linha ${Number(item.index) + 1}`).join(', ');
+      message += ` Problemas em ${preview}.`;
+    }
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert(message, 'success');
+    renderCoverageCities();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
 const openEditCoverageCityModal = (cityJson) => {
   const city = JSON.parse(cityJson);
   const overlay = document.createElement('div');
@@ -2520,7 +2673,7 @@ const openEditCoverageCityModal = (cityJson) => {
     <div class="modal-header"><h3>✏️ Editar Cidade Atendida</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
     <div class="modal-body">
       <div class="form-group"><label class="form-label">Cidade</label><input id="ecc-city" class="form-input" value="${escHtml(city.city || '')}" /></div>
-      <div class="form-group"><label class="form-label">Estado</label><input id="ecc-state" class="form-input" value="${escHtml(city.state || '')}" maxlength="2" /></div>
+      <div class="form-group"><label class="form-label">Estado</label><select id="ecc-state" class="form-select">${renderStateSelectOptions(city.state || '')}</select></div>
       <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ecc-order" class="form-input" type="number" value="${Number(city.order || 0)}" /></div>
       <div class="form-group" style="display:flex;align-items:center;gap:8px;">
         <input id="ecc-active" type="checkbox" ${city.isActive ? 'checked' : ''} />
@@ -2538,7 +2691,7 @@ const openEditCoverageCityModal = (cityJson) => {
 
 const saveCoverageCity = async (id) => {
   const city = document.getElementById('ecc-city').value.trim();
-  const state = document.getElementById('ecc-state').value.trim();
+  const state = resolveStateToUF(document.getElementById('ecc-state').value.trim());
   const order = Number(document.getElementById('ecc-order').value || 0);
   const isActive = !!document.getElementById('ecc-active').checked;
   if (!city) { showAlert('Informe a cidade.'); return; }

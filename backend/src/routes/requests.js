@@ -16,37 +16,115 @@ const router = express.Router();
 
 const SPECIALIST_PREMIUM_PERCENT = 30; // acrescimo percentual para pedidos especialista
 
-const normalizeCityKey = (value = '') => String(value)
+const normalizeBasicText = (value = '') => String(value)
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .trim()
   .toLowerCase()
   .replace(/\s+/g, ' ');
 
-const normalizeStateKey = (value = '') => String(value).trim().toLowerCase();
+const normalizeCompactText = (value = '') => normalizeBasicText(value).replace(/[^a-z0-9]/g, '');
+
+const legacyLowerText = (value = '') => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const BRAZIL_STATES = {
+  ac: 'acre',
+  al: 'alagoas',
+  ap: 'amapa',
+  am: 'amazonas',
+  ba: 'bahia',
+  ce: 'ceara',
+  df: 'distrito federal',
+  es: 'espirito santo',
+  go: 'goias',
+  ma: 'maranhao',
+  mt: 'mato grosso',
+  ms: 'mato grosso do sul',
+  mg: 'minas gerais',
+  pa: 'para',
+  pb: 'paraiba',
+  pr: 'parana',
+  pe: 'pernambuco',
+  pi: 'piaui',
+  rj: 'rio de janeiro',
+  rn: 'rio grande do norte',
+  rs: 'rio grande do sul',
+  ro: 'rondonia',
+  rr: 'roraima',
+  sc: 'santa catarina',
+  sp: 'sao paulo',
+  se: 'sergipe',
+  to: 'tocantins',
+};
+
+const BRAZIL_STATE_NAME_TO_UF = Object.entries(BRAZIL_STATES).reduce((acc, [uf, name]) => {
+  acc[normalizeCompactText(name)] = uf;
+  return acc;
+}, {});
+
+const normalizeCityKey = (value = '') => normalizeCompactText(value);
+
+const normalizeCityLegacyKey = (value = '') => normalizeBasicText(value);
+
+const normalizeStateKey = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const basic = normalizeBasicText(raw);
+  const compact = normalizeCompactText(raw);
+  if (/^[a-z]{2}$/.test(compact) && BRAZIL_STATES[compact]) return compact;
+  if (BRAZIL_STATE_NAME_TO_UF[compact]) return BRAZIL_STATE_NAME_TO_UF[compact];
+  return basic;
+};
+
+const buildStateCandidates = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const set = new Set();
+  const canonical = normalizeStateKey(raw);
+  const basic = normalizeBasicText(raw);
+  const compact = normalizeCompactText(raw);
+  const legacy = legacyLowerText(raw);
+  if (canonical) set.add(canonical);
+  if (basic) set.add(basic);
+  if (compact) set.add(compact);
+  if (legacy) set.add(legacy);
+  return Array.from(set);
+};
+
+const hasAnyCommonValue = (arrA = [], arrB = []) => {
+  const set = new Set(arrA);
+  return arrB.some((value) => set.has(value));
+};
 
 async function isCityCovered(city = '', state = '') {
-  const normalizedCity = normalizeCityKey(city);
-  const normalizedState = normalizeStateKey(state);
-  if (!normalizedCity) return { covered: false, coverageCity: null };
+  const cityCandidates = Array.from(new Set([
+    normalizeCityKey(city),
+    normalizeCityLegacyKey(city),
+    normalizeCompactText(city),
+    normalizeBasicText(city),
+  ].filter(Boolean)));
+  const requestedStateCandidates = buildStateCandidates(state);
 
-  const cityOnlyMatch = await ServiceCoverageCity.findOne({
-    normalizedCity,
+  if (!cityCandidates.length) return { covered: false, coverageCity: null };
+
+  const cityMatches = await ServiceCoverageCity.find({
+    normalizedCity: { $in: cityCandidates },
     isActive: true,
-  }).sort({ normalizedState: 1, order: 1, createdAt: 1 });
+  }).sort({ order: 1, city: 1, createdAt: 1 });
 
-  if (!cityOnlyMatch) return { covered: false, coverageCity: null };
-  if (!normalizedState) return { covered: true, coverageCity: cityOnlyMatch };
+  if (!cityMatches.length) return { covered: false, coverageCity: null };
+  if (!requestedStateCandidates.length) return { covered: true, coverageCity: cityMatches[0] };
 
-  const exactMatch = await ServiceCoverageCity.findOne({
-    normalizedCity,
-    normalizedState,
-    isActive: true,
+  const exactMatch = cityMatches.find((item) => {
+    const storedStateCandidates = buildStateCandidates(item.state)
+      .concat(buildStateCandidates(item.normalizedState));
+    if (!storedStateCandidates.length) return true;
+    return hasAnyCommonValue(storedStateCandidates, requestedStateCandidates);
   });
 
   if (exactMatch) return { covered: true, coverageCity: exactMatch };
 
-  return { covered: false, coverageCity: null, matchedCity: cityOnlyMatch };
+  return { covered: false, coverageCity: null, matchedCity: cityMatches[0] };
 }
 
 // GET /api/requests/coverage?city=...&state=...

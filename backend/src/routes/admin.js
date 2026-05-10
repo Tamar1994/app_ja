@@ -2054,14 +2054,61 @@ router.patch('/coupons/:id/toggle', adminAuth, async (req, res) => {
 
 const PauseType = require('../models/PauseType');
 
-const normalizeCityKey = (value = '') => String(value)
+const normalizeBasicText = (value = '') => String(value)
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .trim()
   .toLowerCase()
   .replace(/\s+/g, ' ');
 
-const normalizeStateKey = (value = '') => String(value).trim().toLowerCase();
+const normalizeCompactText = (value = '') => normalizeBasicText(value).replace(/[^a-z0-9]/g, '');
+
+const BRAZIL_STATES = {
+  ac: 'acre',
+  al: 'alagoas',
+  ap: 'amapa',
+  am: 'amazonas',
+  ba: 'bahia',
+  ce: 'ceara',
+  df: 'distrito federal',
+  es: 'espirito santo',
+  go: 'goias',
+  ma: 'maranhao',
+  mt: 'mato grosso',
+  ms: 'mato grosso do sul',
+  mg: 'minas gerais',
+  pa: 'para',
+  pb: 'paraiba',
+  pr: 'parana',
+  pe: 'pernambuco',
+  pi: 'piaui',
+  rj: 'rio de janeiro',
+  rn: 'rio grande do norte',
+  rs: 'rio grande do sul',
+  ro: 'rondonia',
+  rr: 'roraima',
+  sc: 'santa catarina',
+  sp: 'sao paulo',
+  se: 'sergipe',
+  to: 'tocantins',
+};
+
+const BRAZIL_STATE_NAME_TO_UF = Object.entries(BRAZIL_STATES).reduce((acc, [uf, name]) => {
+  acc[normalizeCompactText(name)] = uf;
+  return acc;
+}, {});
+
+const normalizeCityKey = (value = '') => normalizeCompactText(value);
+
+const normalizeStateKey = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const basic = normalizeBasicText(raw);
+  const compact = normalizeCompactText(raw);
+  if (/^[a-z]{2}$/.test(compact) && BRAZIL_STATES[compact]) return compact;
+  if (BRAZIL_STATE_NAME_TO_UF[compact]) return BRAZIL_STATE_NAME_TO_UF[compact];
+  return basic;
+};
 
 // ─── Cities Coverage ───────────────────────────────────────────────────────
 
@@ -2101,6 +2148,79 @@ router.post('/coverage-cities', adminAuth, requirePermission(ADMIN_PERMISSIONS.S
       return res.status(409).json({ message: 'Essa cidade já está cadastrada' });
     }
     res.status(500).json({ message: 'Erro ao criar cidade atendida' });
+  }
+});
+
+// POST /api/admin/coverage-cities/bulk
+router.post('/coverage-cities/bulk', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const { entries } = req.body;
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ message: 'Envie uma lista de cidades para importar' });
+    }
+
+    const created = [];
+    const skipped = [];
+    const invalid = [];
+
+    for (let i = 0; i < entries.length; i += 1) {
+      const raw = entries[i] || {};
+      const cityName = String(raw.city || '').trim();
+      const stateName = String(raw.state || '').trim();
+      const order = Number.isFinite(Number(raw.order)) ? Number(raw.order) : i;
+      const isActive = raw.isActive !== false;
+
+      if (!cityName) {
+        invalid.push({ index: i, reason: 'Cidade vazia' });
+        continue;
+      }
+
+      const normalizedCity = normalizeCityKey(cityName);
+      const normalizedState = normalizeStateKey(stateName);
+      if (!normalizedCity) {
+        invalid.push({ index: i, city: cityName, reason: 'Cidade inválida' });
+        continue;
+      }
+
+      const existing = await ServiceCoverageCity.findOne({ normalizedCity, normalizedState });
+      if (existing) {
+        skipped.push({
+          index: i,
+          city: existing.city,
+          state: existing.state || '',
+          reason: 'Já cadastrada',
+        });
+        continue;
+      }
+
+      const newCity = await ServiceCoverageCity.create({
+        city: cityName,
+        state: stateName,
+        normalizedCity,
+        normalizedState,
+        isActive,
+        order,
+      });
+      created.push(newCity);
+    }
+
+    res.json({
+      message: 'Importação concluída',
+      summary: {
+        total: entries.length,
+        created: created.length,
+        skipped: skipped.length,
+        invalid: invalid.length,
+      },
+      created,
+      skipped,
+      invalid,
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ message: 'Conflito de cidades duplicadas durante a importação' });
+    }
+    res.status(500).json({ message: 'Erro ao importar cidades atendidas' });
   }
 });
 
