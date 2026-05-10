@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Clipboard,
   Image,
   SafeAreaView,
   ScrollView,
@@ -13,6 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { paymentAPI } from '../../services/api';
 import { colors } from '../../theme';
+
+// Obtem a URL base da API
+function getApiBaseUrl() {
+  // Expo/React Native: usa var de ambiente ou padrão local
+  return process.env.REACT_APP_API_URL || 'http://localhost:4000';
+}
 
 function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -84,13 +91,18 @@ export default function PixCheckoutScreen({ navigation, route }) {
     };
   }, [isFinished]);
 
-  const handleCopyPix = () => {
+  const handleCopyPix = async () => {
     if (!charge.emv) {
       Alert.alert('PIX copia e cola indisponivel', 'Este QR nao retornou codigo copia e cola.');
       return;
     }
 
-    Alert.alert('Codigo PIX', 'Copie manualmente o codigo exibido na tela e cole no app do banco.');
+    try {
+      await Clipboard.setString(charge.emv);
+      Alert.alert('✓ Codigo copiado!', 'Cole no app do seu banco para pagar.');
+    } catch (e) {
+      Alert.alert('Erro', 'Nao consegui copiar. Copie manualmente da tela.');
+    }
   };
 
   return (
@@ -108,26 +120,32 @@ export default function PixCheckoutScreen({ navigation, route }) {
           <Text style={styles.label}>Valor</Text>
           <Text style={styles.value}>{formatCurrency(charge.amount)}</Text>
           <Text style={styles.timer}>Expira em {formatRemaining(remainingSeconds)}</Text>
-          <Text style={styles.status}>Status: {status.toUpperCase()}</Text>
         </View>
 
-        {charge.qrCodeUrl ? (
+        {charge.id ? (
           <View style={styles.qrWrap}>
-            <Image source={{ uri: charge.qrCodeUrl }} style={styles.qrImage} resizeMode="contain" />
+            <Image 
+              source={{ uri: `${getApiBaseUrl()}/api/payments/cora/pix/${charge.id}/qr` }} 
+              style={styles.qrImage} 
+              resizeMode="contain" 
+            />
           </View>
         ) : (
           <View style={styles.noticeBox}>
-            <Text style={styles.noticeText}>QR image nao disponivel. Utilize o PIX copia e cola abaixo.</Text>
+            <Text style={styles.noticeText}>QR code nao disponivel.</Text>
           </View>
         )}
 
-        <View style={styles.card}>
-          <Text style={styles.label}>PIX copia e cola</Text>
-          <Text selectable style={styles.emvText}>{charge.emv || 'Nao informado pela Cora.'}</Text>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={handleCopyPix}>
-            <Text style={styles.secondaryBtnText}>Entendi</Text>
-          </TouchableOpacity>
-        </View>
+        {charge.emv && (
+          <View style={styles.card}>
+            <Text style={styles.label}>PIX copia e cola</Text>
+            <Text selectable style={styles.emvText}>{charge.emv}</Text>
+            <TouchableOpacity style={styles.copyBtn} onPress={handleCopyPix}>
+              <Ionicons name="copy" size={16} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.copyBtnText}>Copiar codigo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <TouchableOpacity style={styles.primaryBtn} disabled={checking} onPress={refreshStatus}>
           <Text style={styles.primaryBtnText}>{checking ? 'Atualizando...' : 'Ja paguei, atualizar status'}</Text>
@@ -194,11 +212,6 @@ const styles = StyleSheet.create({
     color: '#B45309',
     fontWeight: '700',
   },
-  status: {
-    marginTop: 4,
-    color: '#374151',
-    fontWeight: '600',
-  },
   qrWrap: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -242,18 +255,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  secondaryBtn: {
+  copyBtn: {
     marginTop: 10,
     alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  secondaryBtnText: {
-    color: '#374151',
+  copyBtnText: {
+    color: '#FFFFFF',
     fontWeight: '600',
+    fontSize: 13,
   },
   warning: {
     marginTop: 10,

@@ -1,4 +1,5 @@
 const express = require('express');
+const QRCode = require('qrcode');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
@@ -607,6 +608,39 @@ router.get('/cora/pix/:chargeId/status', auth, async (req, res) => {
     return res.json(response);
   } catch {
     return res.status(500).json({ message: 'Erro ao consultar cobranca Pix' });
+  }
+});
+
+// GET /api/payments/cora/pix/:chargeId/qr
+// Gera um QR code puro (sem branding Cora) em formato SVG a partir do EMV
+router.get('/cora/pix/:chargeId/qr', async (req, res) => {
+  try {
+    const charge = await CoraPixCharge.findById(req.params.chargeId);
+    if (!charge) {
+      return res.status(404).json({ message: 'Cobranca nao encontrada' });
+    }
+
+    if (!charge.emv) {
+      return res.status(400).json({ message: 'Cobranca sem codigo EMV disponivel' });
+    }
+
+    // Gera QR code em formato SVG a partir do EMV
+    const qrSvg = await QRCode.toString(charge.emv, {
+      type: 'image/svg+xml',
+      width: 300,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF',
+      },
+    });
+
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.send(qrSvg);
+  } catch (err) {
+    console.error('Erro ao gerar QR code:', err);
+    return res.status(500).json({ message: 'Erro ao gerar QR code' });
   }
 });
 
