@@ -2353,6 +2353,25 @@ const applyRolePresetChecks = (roleSelectId, lockRole = false) => {
   });
 };
 
+const supportSupervisorsOptionsHtml = (selectedId = '') => {
+  const admins = Object.values(window.__adminsById || {});
+  const supervisors = admins.filter((a) => a.role === 'support' && a.supportRole === 'supervisor' && a.isActive);
+  const options = supervisors.map((s) => `<option value="${s._id}" ${String(selectedId || '') === String(s._id) ? 'selected' : ''}>${escHtml(s.name)} (${escHtml(s.email)})</option>`).join('');
+  return `<option value="">Selecione um supervisor</option>${options}`;
+};
+
+const toggleSupportFieldsVisibility = (roleSelectId, supportRoleSelectId, supervisorWrapperId) => {
+  const role = document.getElementById(roleSelectId)?.value;
+  const supportRole = document.getElementById(supportRoleSelectId)?.value;
+  const wrapper = document.getElementById(supervisorWrapperId);
+  const supportRoleWrap = document.getElementById(`${supportRoleSelectId}-wrap`);
+
+  if (supportRoleWrap) supportRoleWrap.style.display = role === 'support' ? 'block' : 'none';
+  if (wrapper) {
+    wrapper.style.display = role === 'support' && supportRole === 'operator' ? 'block' : 'none';
+  }
+};
+
 const renderAdmins = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
@@ -2375,7 +2394,7 @@ const renderAdmins = async () => {
           <tbody>${admins.map(a => `<tr>
             <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar-sm">${a.name[0]}</div><strong>${escHtml(a.name)}</strong></div></td>
             <td>${escHtml(a.email)}</td>
-            <td><span class="badge ${a.role==='super_admin'?'badge-approved':a.role==='admin'?'badge-pending':'badge-docs'}">${a.role}</span></td>
+            <td><span class="badge ${a.role==='super_admin'?'badge-approved':a.role==='admin'?'badge-pending':'badge-docs'}">${a.role}${a.role==='support' ? `/${a.supportRole || 'operator'}` : ''}</span></td>
             <td style="max-width:260px;font-size:12px;color:#7A84A0;">${(a.effectivePermissions || a.permissions || []).includes('*') ? 'Acesso total' : (a.effectivePermissions || a.permissions || []).map(adminPermissionLabel).join(', ') || 'Sem permissões'}</td>
             <td><span class="badge ${a.isActive?'badge-approved':'badge-rejected'}">${a.isActive?'Ativo':'Inativo'}</span></td>
             <td>${fmtDate(a.createdAt)}</td>
@@ -2401,11 +2420,20 @@ const openNewAdminModal = () => {
       <div class="form-group"><label class="form-label">E-mail</label><input id="na-email" class="form-input" type="email" placeholder="email@ja.app" /></div>
       <div class="form-group"><label class="form-label">Senha</label><input id="na-pass" class="form-input" type="password" placeholder="Mínimo 8 caracteres" /></div>
       <div class="form-group"><label class="form-label">Perfil</label>
-        <select id="na-role" class="form-select" onchange="applyRolePresetChecks('na-role')">
+        <select id="na-role" class="form-select" onchange="applyRolePresetChecks('na-role');toggleSupportFieldsVisibility('na-role','na-support-role','na-supervisor-wrap')">
           <option value="support">Suporte</option>
           <option value="admin">Admin</option>
           <option value="super_admin">Super Admin</option>
         </select>
+      </div>
+      <div class="form-group" id="na-support-role-wrap"><label class="form-label">Tipo de usuário de suporte</label>
+        <select id="na-support-role" class="form-select" onchange="toggleSupportFieldsVisibility('na-role','na-support-role','na-supervisor-wrap')">
+          <option value="operator" selected>Operador</option>
+          <option value="supervisor">Supervisor</option>
+        </select>
+      </div>
+      <div class="form-group" id="na-supervisor-wrap"><label class="form-label">Supervisor responsável</label>
+        <select id="na-support-supervisor" class="form-select">${supportSupervisorsOptionsHtml('')}</select>
       </div>
       <div class="form-group" style="display:flex;align-items:center;gap:8px;">
         <input id="na-apply-preset" type="checkbox" checked />
@@ -2423,6 +2451,7 @@ const openNewAdminModal = () => {
   </div>`;
   document.body.appendChild(overlay);
   applyRolePresetChecks('na-role');
+  toggleSupportFieldsVisibility('na-role', 'na-support-role', 'na-supervisor-wrap');
 };
 
 const createAdmin = async () => {
@@ -2432,9 +2461,24 @@ const createAdmin = async () => {
   const role = document.getElementById('na-role').value;
   const permissions = readSelectedPermissions();
   const applyRolePreset = !!document.getElementById('na-apply-preset')?.checked;
+  const supportRole = document.getElementById('na-support-role')?.value || 'operator';
+  const supportSupervisor = document.getElementById('na-support-supervisor')?.value || '';
   if (!name || !email || !password) { alert('Preencha todos os campos.'); return; }
+  if (role === 'support' && supportRole === 'operator' && !supportSupervisor) {
+    alert('Para operador é obrigatório selecionar um supervisor.');
+    return;
+  }
   try {
-    await req('POST', '/admins', { name, email, password, role, permissions, applyRolePreset });
+    await req('POST', '/admins', {
+      name,
+      email,
+      password,
+      role,
+      permissions,
+      applyRolePreset,
+      supportRole,
+      supportSupervisor: supportSupervisor || null,
+    });
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Membro criado com sucesso!', 'success');
     renderAdmins();
@@ -2449,7 +2493,7 @@ const openEditAdminAccessModal = (admin) => {
     <div class="modal-header"><h3>🛡️ Acessos de ${escHtml(admin.name)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
     <div class="modal-body">
       <div class="form-group"><label class="form-label">Perfil</label>
-        <select id="ea-role" class="form-select" onchange="applyRolePresetChecks('ea-role')">
+        <select id="ea-role" class="form-select" onchange="applyRolePresetChecks('ea-role');toggleSupportFieldsVisibility('ea-role','ea-support-role','ea-supervisor-wrap')">
           <option value="support" ${admin.role === 'support' ? 'selected' : ''}>Suporte</option>
           <option value="admin" ${admin.role === 'admin' ? 'selected' : ''}>Admin</option>
           <option value="super_admin" ${admin.role === 'super_admin' ? 'selected' : ''}>Super Admin</option>
@@ -2458,6 +2502,15 @@ const openEditAdminAccessModal = (admin) => {
       <div class="form-group" style="display:flex;align-items:center;gap:8px;">
         <input id="ea-active" type="checkbox" ${admin.isActive ? 'checked' : ''} />
         <label for="ea-active" class="form-label" style="margin:0;">Usuário ativo</label>
+      </div>
+      <div class="form-group" id="ea-support-role-wrap"><label class="form-label">Tipo de usuário de suporte</label>
+        <select id="ea-support-role" class="form-select" onchange="toggleSupportFieldsVisibility('ea-role','ea-support-role','ea-supervisor-wrap')">
+          <option value="operator" ${admin.supportRole === 'operator' ? 'selected' : ''}>Operador</option>
+          <option value="supervisor" ${admin.supportRole === 'supervisor' ? 'selected' : ''}>Supervisor</option>
+        </select>
+      </div>
+      <div class="form-group" id="ea-supervisor-wrap"><label class="form-label">Supervisor responsável</label>
+        <select id="ea-support-supervisor" class="form-select">${supportSupervisorsOptionsHtml(admin.supportSupervisor || '')}</select>
       </div>
       <div class="form-group">
         <label class="form-label">Permissões</label>
@@ -2474,6 +2527,7 @@ const openEditAdminAccessModal = (admin) => {
   </div>`;
   document.body.appendChild(overlay);
   applyRolePresetChecks('ea-role', admin.role === 'super_admin');
+  toggleSupportFieldsVisibility('ea-role', 'ea-support-role', 'ea-supervisor-wrap');
 };
 
 const openEditAdminAccessModalById = (id) => {
@@ -2489,8 +2543,20 @@ const saveAdminAccess = async (id) => {
   const role = document.getElementById('ea-role').value;
   const isActive = !!document.getElementById('ea-active').checked;
   const permissions = readSelectedPermissions();
+  const supportRole = document.getElementById('ea-support-role')?.value || 'operator';
+  const supportSupervisor = document.getElementById('ea-support-supervisor')?.value || '';
+  if (role === 'support' && supportRole === 'operator' && !supportSupervisor) {
+    showAlert('Operador deve ter supervisor vinculado.');
+    return;
+  }
   try {
-    await req('PATCH', `/admins/${id}/access`, { role, isActive, permissions });
+    await req('PATCH', `/admins/${id}/access`, {
+      role,
+      isActive,
+      permissions,
+      supportRole,
+      supportSupervisor: supportSupervisor || null,
+    });
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Acessos atualizados com sucesso!', 'success');
     renderAdmins();

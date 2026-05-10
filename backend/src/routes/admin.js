@@ -814,12 +814,42 @@ router.get('/access/permissions', adminAuth, requirePermission(ADMIN_PERMISSIONS
 
 // POST /api/admin/admins
 router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
-  const { name, email, password, role, permissions, applyRolePreset } = req.body;
+  const {
+    name,
+    email,
+    password,
+    role,
+    permissions,
+    applyRolePreset,
+    supportRole,
+    supportSupervisor,
+  } = req.body;
   if (!name || !email || !password) return res.status(400).json({ message: 'Campos obrigatórios faltando' });
   try {
     const existing = await AdminUser.findOne({ email });
     if (existing) return res.status(400).json({ message: 'E-mail já cadastrado' });
     const finalRole = role || 'support';
+    const finalSupportRole = finalRole === 'support'
+      ? (supportRole === 'supervisor' ? 'supervisor' : 'operator')
+      : 'operator';
+
+    let supervisorId = null;
+    if (finalRole === 'support' && finalSupportRole === 'operator') {
+      if (!supportSupervisor) {
+        return res.status(400).json({ message: 'Operador deve ser vinculado a um supervisor' });
+      }
+      const supervisor = await AdminUser.findOne({
+        _id: supportSupervisor,
+        role: 'support',
+        supportRole: 'supervisor',
+        isActive: true,
+      });
+      if (!supervisor) {
+        return res.status(400).json({ message: 'Supervisor informado é inválido' });
+      }
+      supervisorId = supervisor._id;
+    }
+
     const resolvedPermissions = resolvePermissionsForRole({
       role: finalRole,
       permissions,
@@ -830,6 +860,8 @@ router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MAN
       email,
       password,
       role: finalRole,
+      supportRole: finalSupportRole,
+      supportSupervisor: supervisorId,
       permissions: resolvedPermissions,
     });
     await logAudit({
@@ -842,6 +874,8 @@ router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MAN
       message: `Admin ${admin.email} criado com role ${admin.role}`,
       metadata: {
         role: admin.role,
+        supportRole: admin.supportRole,
+        supportSupervisor: admin.supportSupervisor || null,
         permissions: sanitizePermissions(admin.permissions),
         presetApplied: applyRolePreset === true || (sanitizePermissions(permissions).length === 0),
       },
@@ -854,7 +888,7 @@ router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MAN
 
 router.patch('/admins/:id/access', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
   try {
-    const { role, isActive, permissions, applyRolePreset } = req.body;
+    const { role, isActive, permissions, applyRolePreset, supportRole, supportSupervisor } = req.body;
     const admin = await AdminUser.findById(req.params.id);
     if (!admin) return res.status(404).json({ message: 'Admin não encontrado' });
 
@@ -869,6 +903,35 @@ router.patch('/admins/:id/access', adminAuth, requirePermission(ADMIN_PERMISSION
       }
       admin.isActive = isActive;
     }
+    if (nextRole === 'support') {
+      if (supportRole === 'supervisor' || supportRole === 'operator') {
+        admin.supportRole = supportRole;
+      } else if (!admin.supportRole) {
+        admin.supportRole = 'operator';
+      }
+
+      if (admin.supportRole === 'operator') {
+        const supervisorIdCandidate = supportSupervisor !== undefined ? supportSupervisor : admin.supportSupervisor;
+        if (!supervisorIdCandidate) {
+          return res.status(400).json({ message: 'Operador deve ter supervisor vinculado' });
+        }
+        const supervisor = await AdminUser.findOne({
+          _id: supervisorIdCandidate,
+          role: 'support',
+          supportRole: 'supervisor',
+          isActive: true,
+        });
+        if (!supervisor) {
+          return res.status(400).json({ message: 'Supervisor informado é inválido' });
+        }
+        admin.supportSupervisor = supervisor._id;
+      } else {
+        admin.supportSupervisor = null;
+      }
+    } else {
+      admin.supportSupervisor = null;
+    }
+
     if (permissions !== undefined || applyRolePreset === true || role) {
       admin.permissions = resolvePermissionsForRole({
         role: nextRole,
@@ -888,6 +951,8 @@ router.patch('/admins/:id/access', adminAuth, requirePermission(ADMIN_PERMISSION
       message: `Acesso do admin ${admin.email} atualizado`,
       metadata: {
         role: admin.role,
+        supportRole: admin.supportRole,
+        supportSupervisor: admin.supportSupervisor || null,
         isActive: admin.isActive,
         permissions: sanitizePermissions(admin.permissions),
       },
@@ -1135,8 +1200,13 @@ router.patch('/support/chats/:id/close', adminAuth, requirePermission(ADMIN_PERM
 // GET /api/admin/support/operators — operadores online
 router.get('/support/operators', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
-    const operators = await AdminUser.find({ supportStatus: 'online', isActive: true })
-      .select('name role activeSupportChats onlineAt')
+    const operators = await AdminUser.find({
+      role: 'support',
+      supportRole: 'operator',
+      supportStatus: 'online',
+      isActive: true,
+    })
+      .select('name role supportRole activeSupportChats onlineAt')
       .sort({ activeSupportChats: 1, onlineAt: 1 });
     res.json({ operators });
   } catch {

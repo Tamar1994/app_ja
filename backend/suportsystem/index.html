@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Support System</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #0d9488;
+      --warn: #d97706;
+      --danger: #dc2626;
+      --border: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #ecfeff 0%, #f8fafc 60%, #eef2ff 100%);
+      color: var(--text);
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .grid { display: grid; gap: 14px; }
+    .grid.two { grid-template-columns: 1fr 1fr; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .between { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 15px; }
+    input, select, textarea, button {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 9px 11px;
+      font-size: 14px;
+    }
+    textarea { min-height: 80px; width: 100%; }
+    button { cursor: pointer; background: #fff; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.warn { background: var(--warn); border-color: var(--warn); color: #fff; }
+    button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .badge { border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 600; }
+    .badge.online { background: #dcfce7; color: #166534; }
+    .badge.offline { background: #e5e7eb; color: #374151; }
+    .badge.paused { background: #fef3c7; color: #92400e; }
+    .badge.p1 { background: #fee2e2; color: #991b1b; }
+    .list { display: grid; gap: 8px; max-height: 360px; overflow: auto; }
+    .item { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: #fff; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .hidden { display: none !important; }
+    #alert { position: fixed; right: 16px; bottom: 16px; background: #111827; color: #fff; padding: 10px 12px; border-radius: 10px; display: none; }
+    @media (max-width: 900px) { .grid.two { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="loginView" class="card" style="max-width:420px;margin:40px auto;">
+      <h1>Support System</h1>
+      <p class="muted">Acesso restrito de operação de suporte.</p>
+      <div class="grid">
+        <input id="email" type="email" placeholder="E-mail" />
+        <input id="password" type="password" placeholder="Senha" />
+        <button class="primary" id="loginBtn">Entrar</button>
+      </div>
+    </div>
+
+    <div id="appView" class="hidden grid">
+      <div class="card between">
+        <div>
+          <h2 id="welcome">Operação</h2>
+          <div class="muted" id="meInfo"></div>
+        </div>
+        <div class="row">
+          <span id="statusBadge" class="badge offline">offline</span>
+          <button id="logoutBtn">Sair</button>
+        </div>
+      </div>
+
+      <div id="operatorView" class="grid hidden">
+        <div class="grid two">
+          <div class="card">
+            <h3>Status Operador</h3>
+            <div class="row" style="margin-top:8px;">
+              <button class="primary" id="goOnlineBtn">Ficar Online</button>
+              <input id="pauseMinutes" type="number" min="1" max="180" value="10" style="width:100px;" />
+              <button class="warn" id="pauseBtn">Programar Pausa</button>
+              <button id="cancelPauseBtn">Cancelar Pausa</button>
+              <button id="endPauseBtn">Encerrar Pausa</button>
+            </div>
+            <div class="muted" id="operatorStats" style="margin-top:8px;"></div>
+          </div>
+          <div class="card">
+            <h3>Fila Global</h3>
+            <div id="queueList" class="list" style="margin-top:8px;"></div>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <h3>Meus Atendimentos</h3>
+            <div id="myChatsList" class="list" style="margin-top:8px;"></div>
+          </div>
+          <div class="card">
+            <h3>Chat Selecionado</h3>
+            <div id="chatDetail" class="muted">Selecione um chat para ver detalhes.</div>
+            <textarea id="msgText" placeholder="Digite a resposta..."></textarea>
+            <div class="row" style="margin-top:8px;">
+              <button class="primary" id="sendMsgBtn">Enviar</button>
+              <button class="danger" id="closeChatBtn">Encerrar Chat</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <h3>Consulta de Serviços</h3>
+            <div class="row" style="margin-top:8px;">
+              <input id="reqSearch" placeholder="ID, nome, e-mail, telefone..." style="flex:1;" />
+              <select id="reqStatus">
+                <option value="all">Todos</option>
+                <option value="searching">Searching</option>
+                <option value="accepted">Accepted</option>
+                <option value="in_progress">In progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <button id="reqSearchBtn">Buscar</button>
+            </div>
+            <div id="reqList" class="list" style="margin-top:8px;"></div>
+          </div>
+          <div class="card">
+            <h3>Cupom Operacional (com aprovação)</h3>
+            <div class="grid" style="margin-top:8px;">
+              <select id="couponSelect"></select>
+              <input id="targetUserId" placeholder="ID do cliente/profissional" />
+              <textarea id="couponReason" placeholder="Motivo da liberação"></textarea>
+              <button class="primary" id="requestCouponBtn">Solicitar Liberação</button>
+            </div>
+            <h3 style="margin-top:12px;">Minhas Solicitações</h3>
+            <div id="myReleaseList" class="list" style="margin-top:8px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="supervisorView" class="grid hidden">
+        <div class="grid two">
+          <div class="card">
+            <h3>Operadores do Time</h3>
+            <div id="operatorsList" class="list" style="margin-top:8px;"></div>
+          </div>
+          <div class="card">
+            <h3>Solicitações de Cupom Operacional</h3>
+            <div class="row" style="margin:8px 0;">
+              <select id="releaseStatusFilter">
+                <option value="pending">Pendentes</option>
+                <option value="approved">Aprovadas</option>
+                <option value="rejected">Recusadas</option>
+                <option value="all">Todas</option>
+              </select>
+              <button id="reloadReleasesBtn">Atualizar</button>
+            </div>
+            <div id="supervisorReleaseList" class="list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="alert"></div>
+  <script src="./app.js"></script>
+</body>
+</html>

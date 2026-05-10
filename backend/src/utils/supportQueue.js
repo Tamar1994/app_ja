@@ -9,6 +9,8 @@ const AdminUser = require('../models/AdminUser');
  */
 async function findBestOperator() {
   const operator = await AdminUser.findOne({
+    role: 'support',
+    supportRole: 'operator',
     supportStatus: 'online',
     isActive: true,
     activeSupportChats: { $lt: 5 },
@@ -70,7 +72,18 @@ async function onChatClosed(operatorId, io) {
   );
 
   const operator = await AdminUser.findById(operatorId);
-  if (!operator || operator.supportStatus !== 'online' || operator.activeSupportChats >= 5) return;
+  if (!operator) return;
+
+  if (operator.supportStatus === 'pause_scheduled' && operator.activeSupportChats === 0) {
+    const durationMinutes = Math.max(1, Math.min(180, Number(operator.pauseDurationMinutes || 10)));
+    operator.supportStatus = 'paused';
+    operator.pauseStartAt = new Date();
+    operator.pauseEndsAt = new Date(Date.now() + durationMinutes * 60000);
+    await operator.save();
+    return;
+  }
+
+  if (operator.supportStatus !== 'online' || operator.activeSupportChats >= 5) return;
 
   // Puxar próximo da fila priorizando P1 e depois mais antigo
   const nextChat = await SupportChat.findOne({ status: 'waiting' }).sort({ priorityLevel: -1, queuedAt: 1 });

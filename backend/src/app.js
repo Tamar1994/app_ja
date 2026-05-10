@@ -11,6 +11,7 @@ const walletRoutes = require('./routes/wallet');
 const serviceTypesRoutes = require('./routes/serviceTypes');
 const helpTopicsRoutes = require('./routes/helpTopics');
 const supportRoutes = require('./routes/support');
+const supportSystemRoutes = require('./routes/supportSystem');
 const serviceChatRoutes = require('./routes/serviceChats');
 const paymentRoutes = require('./routes/payments');
 const couponRoutes = require('./routes/coupons');
@@ -31,6 +32,9 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // Servir painel admin
 app.use('/admin', express.static(path.join(__dirname, '../admin')));
 
+// Servir painel dedicado de suporte
+app.use('/suportsystem', express.static(path.join(__dirname, '../suportsystem')));
+
 // Rotas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -41,6 +45,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/service-types', serviceTypesRoutes);
 app.use('/api/help', helpTopicsRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/support-system', supportSystemRoutes);
 app.use('/api/service-chats', serviceChatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/coupons', couponRoutes);

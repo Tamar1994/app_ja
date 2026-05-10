@@ -10,15 +10,29 @@ const adminUserSchema = new mongoose.Schema({
     enum: ['super_admin', 'admin', 'support'],
     default: 'support',
   },
+  supportRole: {
+    type: String,
+    enum: ['operator', 'supervisor'],
+    default: 'operator',
+  },
+  supportSupervisor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AdminUser',
+    default: null,
+  },
   isActive: { type: Boolean, default: true },
   permissions: {
     type: [String],
     default: [],
   },
   // Suporte ao vivo
-  supportStatus: { type: String, enum: ['online', 'offline'], default: 'offline' },
+  supportStatus: { type: String, enum: ['online', 'offline', 'pause_scheduled', 'paused'], default: 'offline' },
   onlineAt: { type: Date, default: null },
   activeSupportChats: { type: Number, default: 0 },
+  pauseRequestedAt: { type: Date, default: null },
+  pauseStartAt: { type: Date, default: null },
+  pauseEndsAt: { type: Date, default: null },
+  pauseDurationMinutes: { type: Number, default: null },
 }, { timestamps: true });
 
 adminUserSchema.pre('save', async function (next) {
