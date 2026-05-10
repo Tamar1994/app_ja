@@ -191,13 +191,45 @@ export default function RequestServiceScreen({ navigation, route }) {
           return;
         }
 
-        const requestData = {
-          hours, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
-          address, scheduledDate: getFinalScheduledDate(),
-          serviceTypeSlug: serviceType?.slug || null,
-          customFormData,
+        const geocodeAddressText = [
+          address.street,
+          address.neighborhood,
+          address.city,
+          address.state,
+          address.zipCode,
+          'Brasil',
+        ]
+          .map((chunk) => String(chunk || '').trim())
+          .filter(Boolean)
+          .join(', ');
+
+        const finalizeNavigation = (coords = null) => {
+          const requestAddress = {
+            ...address,
+            coordinates: coords || address.coordinates,
+          };
+
+          const requestData = {
+            hours, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
+            address: requestAddress, scheduledDate: getFinalScheduledDate(),
+            serviceTypeSlug: serviceType?.slug || null,
+            customFormData,
+          };
+          navigation.navigate('Payment', { requestData, estimate, serviceType });
         };
-        navigation.navigate('Payment', { requestData, estimate, serviceType });
+
+        Location.geocodeAsync(geocodeAddressText)
+          .then((results) => {
+            const first = Array.isArray(results) && results.length ? results[0] : null;
+            if (first && Number.isFinite(first.longitude) && Number.isFinite(first.latitude)) {
+              finalizeNavigation([first.longitude, first.latitude]);
+              return;
+            }
+            finalizeNavigation();
+          })
+          .catch(() => {
+            finalizeNavigation();
+          });
       })
       .catch((err) => {
         const message = err?.response?.data?.message || 'Não foi possível validar sua cidade no momento.';

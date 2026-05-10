@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+  ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -139,7 +139,7 @@ export default function TrackingScreen({ navigation, route }) {
   };
 
   const currentStepIndex = Math.max(0, STEPS.findIndex((s) => s.status === request?.status));
-  const currentStep = STEPS[Math.max(currentStepIndex, 0)];
+  const currentStep = STEPS[Math.max(currentStepIndex, 0)] || STEPS[0];
 
   const clientCoords = useMemo(() => {
     return toValidCoordinatePair(request?.address?.coordinates);
@@ -189,6 +189,14 @@ export default function TrackingScreen({ navigation, route }) {
     const minutes = Math.ceil((adjustedKm / AVG_SPEED_KMH) * 60);
     return Math.max(1, minutes);
   }, [clientCoords, professionalCoords]);
+
+  const canRenderMap = request?.status === 'on_the_way' && (clientCoords || professionalCoords);
+  const requestHours = Number.isFinite(toFiniteNumber(request?.details?.hours)) ? Number(request.details.hours) : null;
+  const requestStreet = request?.address?.street || 'Endereço não informado';
+  const requestCity = request?.address?.city || 'Cidade não informada';
+  const estimatedValue = Number.isFinite(toFiniteNumber(request?.pricing?.estimated))
+    ? Number(request.pricing.estimated)
+    : 0;
 
   if (loading) {
     return (
@@ -299,15 +307,22 @@ export default function TrackingScreen({ navigation, route }) {
               </Text>
             </View>
 
-            <MapView style={styles.map} initialRegion={mapRegion}>
-              {clientCoords && (
-                <Marker coordinate={clientCoords} title="Sua casa" description="Endereço do atendimento" pinColor={colors.primary} />
-              )}
+            {canRenderMap ? (
+              <MapView style={styles.map} initialRegion={mapRegion} liteMode={Platform.OS === 'android'}>
+                {clientCoords && (
+                  <Marker coordinate={clientCoords} title="Sua casa" description="Endereço do atendimento" pinColor={colors.primary} />
+                )}
 
-              {professionalCoords && (
-                <Marker coordinate={professionalCoords} title={request?.professional?.name || 'Profissional'} description="Profissional a caminho" pinColor={colors.secondary} />
-              )}
-            </MapView>
+                {professionalCoords && (
+                  <Marker coordinate={professionalCoords} title={request?.professional?.name || 'Profissional'} description="Profissional a caminho" pinColor={colors.secondary} />
+                )}
+              </MapView>
+            ) : (
+              <View style={styles.mapFallback}>
+                <Ionicons name="map-outline" size={22} color={colors.textLight} />
+                <Text style={styles.mapFallbackText}>Aguardando coordenadas válidas para abrir o mapa.</Text>
+              </View>
+            )}
 
             <View style={styles.etaRow}>
               <View style={styles.etaChip}>
@@ -326,9 +341,9 @@ export default function TrackingScreen({ navigation, route }) {
           <View style={styles.detailsCard}>
             <Text style={styles.cardLabel}>Detalhes</Text>
             {[
-              { label: 'Duração', value: `${request.details.hours}h`, icon: 'time-outline' },
-              { label: 'Endereço', value: `${request.address.street}, ${request.address.city}`, icon: 'location-outline' },
-              { label: 'Total estimado', value: `R$ ${request.pricing.estimated.toFixed(2)}`, icon: 'cash-outline', highlight: true },
+              { label: 'Duração', value: requestHours ? `${requestHours}h` : '-', icon: 'time-outline' },
+              { label: 'Endereço', value: `${requestStreet}, ${requestCity}`, icon: 'location-outline' },
+              { label: 'Total estimado', value: `R$ ${estimatedValue.toFixed(2)}`, icon: 'cash-outline', highlight: true },
             ].map((row, i) => (
               <View key={i} style={[styles.detailRow, i < 2 && styles.detailRowBorder]}>
                 <View style={styles.detailIcon}>
@@ -505,6 +520,23 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
     borderRadius: borderRadius.lg,
+  },
+  mapFallback: {
+    width: '100%',
+    height: 160,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+  },
+  mapFallbackText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   etaRow: {
     marginTop: 10,
