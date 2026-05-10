@@ -60,9 +60,13 @@ const serviceRequestSchema = new mongoose.Schema({
     notes: { type: String, default: '' },
     scheduledDate: { type: Date, required: true },
   },
+  // true quando o cliente solicitou um Profissional Especialista
+  isSpecialist: { type: Boolean, default: false },
+
   pricing: {
     pricePerHour: { type: Number, required: true },
     estimated: { type: Number, required: true }, // valor bruto do servico (base para repasse do profissional)
+    specialistPremium: { type: Number, default: 0 }, // acrescimo por ser pedido especialista
     discountTotal: { type: Number, default: 0 },
     appliedCoupons: [{ type: String }],
     customerTotal: { type: Number, default: null }, // total apos cupons

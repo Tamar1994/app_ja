@@ -75,6 +75,16 @@ const userSchema = new mongoose.Schema({
     pricePerHour: { type: Number, default: 35 },
     documentsVerified: { type: Boolean, default: false },
     totalServicesCompleted: { type: Number, default: 0 },
+    // Especialista — true quando possui ao menos 1 certificado aprovado pelo admin
+    isSpecialist: { type: Boolean, default: false },
+    // Especializações aprovadas (títulos visíveis ao cliente)
+    specializations: [
+      {
+        title: { type: String, trim: true },         // Texto atribuído pelo admin
+        certificateId: { type: mongoose.Schema.Types.ObjectId, ref: 'SpecialistCertificate' },
+        grantedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   isActive: {
     type: Boolean,

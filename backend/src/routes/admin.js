@@ -21,6 +21,7 @@ const Coupon = require('../models/Coupon');
 const CouponClaim = require('../models/CouponClaim');
 const CouponRedemption = require('../models/CouponRedemption');
 const AuditLog = require('../models/AuditLog');
+const SpecialistCertificate = require('../models/SpecialistCertificate');
 const {
   adminAuth,
   requireRole,
@@ -638,8 +639,124 @@ router.patch('/approvals/:id/reject', adminAuth, async (req, res) => {
   }
 });
 
+// ── ESPECIALISTAS ─────────────────────────────────────────────────
+// GET /api/admin/specialist-certificates?status=pending
+router.get('/specialist-certificates', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const { status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    const certs = await SpecialistCertificate.find(filter)
+      .populate('professional', 'name email phone professional.rating professional.totalServicesCompleted professional.specializations professional.isSpecialist')
+      .populate('reviewedBy', 'name')
+      .sort({ createdAt: -1 });
+    res.json({ certificates: certs });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao buscar certificados' });
+  }
+});
+
+// PATCH /api/admin/specialist-certificates/:id/approve
+// Body: { adminNote: "Especialista em Limpeza de Piscinas" }
+router.patch('/specialist-certificates/:id/approve', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const { adminNote } = req.body;
+    if (!adminNote || !adminNote.trim()) {
+      return res.status(400).json({ message: 'Informe o título de especialização que será exibido ao cliente.' });
+    }
+
+    const cert = await SpecialistCertificate.findById(req.params.id).populate('professional');
+    if (!cert) return res.status(404).json({ message: 'Certificado não encontrado.' });
+
+    cert.status = 'approved';
+    cert.adminNote = adminNote.trim();
+    cert.reviewedAt = new Date();
+    cert.reviewedBy = req.admin._id;
+    await cert.save();
+
+    // Adicionar especialização ao perfil do profissional e marcar como especialista
+    await User.findByIdAndUpdate(cert.professional._id, {
+      $set: { 'professional.isSpecialist': true },
+      $push: {
+        'professional.specializations': {
+          title: adminNote.trim(),
+          certificateId: cert._id,
+          grantedAt: new Date(),
+        },
+      },
+    });
+
+    await logAudit({
+      module: 'financial',
+      action: 'specialist_certificate_approved',
+      severity: 'medium',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'user',
+      targetId: cert.professional._id,
+      message: `Certificado aprovado: "${adminNote.trim()}"`,
+      metadata: { certificateId: cert._id, professionalId: cert.professional._id },
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${cert.professional._id}`).emit('specialist_certificate_approved', {
+        certificateId: cert._id,
+        title: adminNote.trim(),
+      });
+    }
+
+    res.json({ message: 'Certificado aprovado. Profissional agora é Especialista.', certificate: cert });
+  } catch (err) {
+    console.error('Erro ao aprovar certificado:', err);
+    res.status(500).json({ message: 'Erro ao aprovar certificado.' });
+  }
+});
+
+// PATCH /api/admin/specialist-certificates/:id/reject
+router.patch('/specialist-certificates/:id/reject', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ message: 'Informe o motivo da rejeição.' });
+    }
+
+    const cert = await SpecialistCertificate.findById(req.params.id);
+    if (!cert) return res.status(404).json({ message: 'Certificado não encontrado.' });
+
+    cert.status = 'rejected';
+    cert.rejectionReason = reason.trim();
+    cert.reviewedAt = new Date();
+    cert.reviewedBy = req.admin._id;
+    await cert.save();
+
+    await logAudit({
+      module: 'financial',
+      action: 'specialist_certificate_rejected',
+      severity: 'low',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'user',
+      targetId: cert.professional,
+      message: `Certificado rejeitado: "${reason.trim()}"`,
+      metadata: { certificateId: cert._id },
+    });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${cert.professional}`).emit('specialist_certificate_rejected', {
+        certificateId: cert._id,
+        reason: reason.trim(),
+      });
+    }
+
+    res.json({ message: 'Certificado rejeitado.', certificate: cert });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao rejeitar certificado.' });
+  }
+});
+
 // ── USUÁRIOS ──────────────────────────────────────────────────────
-// GET /api/admin/users?search=&type=&status=&page=1
 router.get('/users', adminAuth, async (req, res) => {
   const { search, type, status, page = 1, limit = 20 } = req.query;
   const query = {};

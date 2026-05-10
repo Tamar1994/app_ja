@@ -870,7 +870,7 @@ const loadServiceChats = async () => {
       return;
     }
     el.innerHTML = chats.map(ch => `
-      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''}" onclick="openServiceChatAudit('${ch._id}')">
+      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''} ${ch.priority === 'p1' ? 'priority-p1' : ''}" onclick="openServiceChatAudit('${ch._id}')">
         <div class="queue-item-name">${escHtml(ch.clientId?.name || 'Cliente')} → ${escHtml(ch.professionalId?.name || 'Profissional')}</div>
         <div class="queue-item-subject">Pedido ${escHtml(ch.requestId?._id || '')}</div>
         <div class="queue-item-meta">
@@ -2933,7 +2933,7 @@ const renderServiceTypes = async () => {
         <button class="btn btn-primary" onclick="openNewServiceTypeModal()">+ Nova Profissão</button>
       </div>
       <div class="service-type-grid" id="st-grid">
-        ${types.length ? types.map(t => renderServiceTypeCard(t)).join('') : '<p style="color:#5C6B7A;">Nenhuma profissão cadastrada. Use o botão acima ou <b>Inicializar seed</b> no dashboard.</p>'}
+        ${types.length ? types.map(t => renderServiceTypeCard(t)).join('') : '<p style="color:#5C6B7A;">Nenhum profissão cadastrada. Use o botão acima ou <b>Inicializar seed</b> no dashboard.</p>'}
       </div>`;
   } catch (err) {
     c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;

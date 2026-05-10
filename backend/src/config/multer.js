@@ -22,10 +22,24 @@ const fileFilter = (req, file, cb) => {
   else cb(new Error('Apenas imagens são permitidas (jpg, jpeg, png, webp)'));
 };
 
+const fileFilterWithPdf = (req, file, cb) => {
+  const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowed.includes(ext)) cb(null, true);
+  else cb(new Error('Arquivo inválido. Envie imagens (jpg, png) ou PDF.'));
+};
+
 const upload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
+const uploadWithPdf = multer({
+  storage,
+  fileFilter: fileFilterWithPdf,
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
+});
+
 module.exports = upload;
+module.exports.uploadWithPdf = uploadWithPdf;

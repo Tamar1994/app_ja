@@ -65,6 +65,8 @@ function sendExpoPush(pushToken, title, body, data = {}) {
 
 /**
  * Encontra o próximo profissional disponível do mais próximo ao mais distante.
+ * Para pedidos especialista: filtra apenas profissionais com isSpecialist=true.
+ * Especialistas também podem receber pedidos normais (sem filtro adicional).
  */
 async function findNextProfessional(request) {
   const User = require('../models/User');
@@ -84,6 +86,11 @@ async function findNextProfessional(request) {
     'professional.isAvailable': true,
     _id: { $nin: excluded },
   };
+
+  // Pedido especialista: apenas especialistas certificados recebem
+  if (request.isSpecialist) {
+    baseFilter['professional.isSpecialist'] = true;
+  }
 
   if (hasValidCoordinates) {
     const nearest = await User.find({
@@ -120,9 +127,13 @@ async function dispatchToNextProfessional(requestId, io) {
 
   if (!professional) {
     // Nenhum profissional disponível no momento
+    const message = request.isSpecialist
+      ? 'Nenhum Profissional Especialista disponível agora. Tente novamente em alguns minutos.'
+      : 'Nenhum profissional disponível agora. Tente novamente em alguns minutos.';
     io.to(`user_${request.client._id}`).emit('no_professionals_available', {
       requestId,
-      message: 'Nenhum profissional disponível agora. Tente novamente em alguns minutos.',
+      isSpecialist: !!request.isSpecialist,
+      message,
     });
     return;
   }
@@ -137,11 +148,12 @@ async function dispatchToNextProfessional(requestId, io) {
   // Emitir APENAS para este profissional
   io.to(`user_${professional._id}`).emit('new_request', {
     requestId: request._id,
+    isSpecialist: !!request.isSpecialist,
     client: { name: request.client?.name || 'Cliente' },
     details: request.details,
     address: request.address,
     pricing: request.pricing,
-    timeoutAt, // cliente/profissional exibem countdown
+    timeoutAt,
   });
 
   console.log(`📢 Pedido ${requestId} → ${professional.name} (${professional._id}) | timeout: 2min`);

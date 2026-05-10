@@ -13,9 +13,11 @@ const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService
 
 const router = express.Router();
 
+const SPECIALIST_PREMIUM_PERCENT = 30; // acrescimo percentual para pedidos especialista
+
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
-  const { hours, hasProducts, serviceTypeSlug, customFormData } = req.body;
+  const { hours, hasProducts, serviceTypeSlug, customFormData, isSpecialist } = req.body;
   try {
     const pricing = await calculateCheckoutPricing({
       hours,
@@ -24,12 +26,19 @@ router.post('/estimate', auth, async (req, res) => {
       customFormData: customFormData || {},
     });
 
+    const specialistPremium = isSpecialist
+      ? Math.round(pricing.estimated * SPECIALIST_PREMIUM_PERCENT) / 100
+      : 0;
+    const totalEstimated = pricing.estimated + specialistPremium;
+
     res.json({
       pricePerHour: pricing.pricePerHour,
       hours,
-      estimated: pricing.estimated,
+      estimated: totalEstimated,
+      specialistPremium,
+      isSpecialist: !!isSpecialist,
       platformFee: pricing.platformFee,
-      total: pricing.estimated,
+      total: totalEstimated,
       serviceTypeSlug: serviceTypeSlug || null,
       usedServiceBasePrice: pricing.usedServiceBasePrice,
       customFormData: pricing.normalizedCustomFormData,
@@ -69,9 +78,10 @@ router.post('/', auth, [
     scheduledDate,
     serviceTypeSlug,
     customFormData,
+    isSpecialist,
   } = req.body;
 
-  let pricePerHour, estimated, platformFee;
+  let pricePerHour, estimated, platformFee, specialistPremium = 0;
   let normalizedCustomFormData = {};
   let customFormSummary = [];
   try {
@@ -86,6 +96,10 @@ router.post('/', auth, [
     platformFee = pricing.platformFee;
     normalizedCustomFormData = pricing.normalizedCustomFormData;
     customFormSummary = pricing.customFormSummary;
+    if (isSpecialist) {
+      specialistPremium = Math.round(estimated * SPECIALIST_PREMIUM_PERCENT) / 100;
+      estimated = estimated + specialistPremium;
+    }
   } catch (err) {
     if (err.status === 400) {
       return res.status(400).json({ message: err.message });
@@ -93,6 +107,10 @@ router.post('/', auth, [
     pricePerHour = 35;
     if (!hasProducts) pricePerHour += 5;
     estimated = pricePerHour * hours;
+    if (isSpecialist) {
+      specialistPremium = Math.round(estimated * SPECIALIST_PREMIUM_PERCENT) / 100;
+      estimated = estimated + specialistPremium;
+    }
     platformFee = (estimated * 15) / 100;
     normalizedCustomFormData = customFormData && typeof customFormData === 'object' ? customFormData : {};
     customFormSummary = [];
@@ -101,6 +119,7 @@ router.post('/', auth, [
   try {
     const request = await ServiceRequest.create({
       client: req.user._id,
+      isSpecialist: !!isSpecialist,
       serviceTypeSlug: serviceTypeSlug || null,
       details: {
         hours,
@@ -116,6 +135,7 @@ router.post('/', auth, [
       pricing: {
         pricePerHour,
         estimated,
+        specialistPremium,
         platformFee,
       },
     });
