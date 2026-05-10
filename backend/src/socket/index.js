@@ -1,6 +1,8 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const AdminUser = require('../models/AdminUser');
+const { hasPermission, ADMIN_PERMISSIONS } = require('../middleware/adminAuth');
 
 const initSocket = (server) => {
   const io = new Server(server, {
@@ -13,9 +15,17 @@ const initSocket = (server) => {
     if (!token) return next(new Error('Token não fornecido'));
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id);
-      if (!user) return next(new Error('Usuário não encontrado'));
-      socket.user = user;
+      if (decoded?.isAdmin) {
+        const admin = await AdminUser.findById(decoded.id);
+        if (!admin || !admin.isActive) return next(new Error('Admin não encontrado'));
+        socket.admin = admin;
+        socket.actorType = 'admin';
+      } else {
+        const user = await User.findById(decoded.id);
+        if (!user) return next(new Error('Usuário não encontrado'));
+        socket.user = user;
+        socket.actorType = 'user';
+      }
       next();
     } catch {
       next(new Error('Token inválido'));
@@ -23,6 +33,21 @@ const initSocket = (server) => {
   });
 
   io.on('connection', (socket) => {
+    if (socket.actorType === 'admin' && socket.admin) {
+      const adminId = socket.admin._id.toString();
+      socket.join(`admin_${adminId}`);
+      socket.join('admins');
+      if (hasPermission(socket.admin, ADMIN_PERMISSIONS.SUPPORT_CHAT)) {
+        socket.join('support_ops');
+      }
+      console.log(`🛡️ Admin conectado: ${socket.admin.name} (${socket.admin.role})`);
+
+      socket.on('disconnect', () => {
+        console.log(`🛡️ Admin desconectado: ${socket.admin.name}`);
+      });
+      return;
+    }
+
     const userId = socket.user._id.toString();
     // Cada usuário entra em sua sala privada
     socket.join(`user_${userId}`);

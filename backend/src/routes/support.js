@@ -2,8 +2,22 @@ const express = require('express');
 const SupportChat = require('../models/SupportChat');
 const auth = require('../middleware/auth');
 const { tryAssignChat } = require('../utils/supportQueue');
+const { logAudit } = require('../utils/auditLog');
 
 const router = express.Router();
+
+function emitP1Alert(io, chat, user) {
+  if (!io || !chat || chat.priority !== 'p1') return;
+  io.to('support_ops').emit('support_p1_alert', {
+    type: 'support_p1_alert',
+    chatId: chat._id,
+    userName: user?.name || 'Profissional',
+    subject: chat.subject,
+    emergencyContext: chat.emergencyContext || '',
+    relatedServiceRequestId: chat.relatedServiceRequestId || null,
+    queuedAt: chat.queuedAt || new Date(),
+  });
+}
 
 function resolvePriorityPayload(user, body = {}) {
   const isProfessional = user?.userType === 'professional';
@@ -57,6 +71,22 @@ router.post('/chats', auth, async (req, res) => {
           text: `⚠️ Prioridade 1 acionada pelo profissional. ${priorityPayload.emergencyContext || ''}`.trim(),
         });
         await existing.save();
+        const io = req.app.get('io');
+        emitP1Alert(io, existing, req.user);
+        await logAudit({
+          module: 'support',
+          action: 'support_p1_escalated',
+          severity: 'critical',
+          actorType: 'user',
+          actorUserId: req.user._id,
+          targetType: 'support_chat',
+          targetId: existing._id,
+          message: `Chamado escalado para P1 por ${req.user.name || 'usuário'}`,
+          metadata: {
+            emergencyContext: existing.emergencyContext,
+            relatedServiceRequestId: existing.relatedServiceRequestId || null,
+          },
+        });
         return res.status(200).json({
           chatId: existing._id,
           status: existing.status,
@@ -87,6 +117,25 @@ router.post('/chats', auth, async (req, res) => {
 
     const io = req.app.get('io');
     const operator = await tryAssignChat(chat._id, io);
+    emitP1Alert(io, chat, req.user);
+
+    if (chat.priority === 'p1') {
+      await logAudit({
+        module: 'support',
+        action: 'support_p1_created',
+        severity: 'critical',
+        actorType: 'user',
+        actorUserId: req.user._id,
+        targetType: 'support_chat',
+        targetId: chat._id,
+        message: `Chamado P1 criado por ${req.user.name || 'usuário'}`,
+        metadata: {
+          emergencyContext: chat.emergencyContext,
+          relatedServiceRequestId: chat.relatedServiceRequestId || null,
+          assignedImmediately: !!operator,
+        },
+      });
+    }
 
     const updated = await SupportChat.findById(chat._id);
     res.status(201).json({

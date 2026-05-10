@@ -7,6 +7,10 @@ let adminData = JSON.parse(localStorage.getItem('adminData') || 'null');
 let currentPage = 'dashboard';
 let pendingBadge = 0;
 let activeChatId = null;
+let adminSocket = null;
+let p1AlertCount = 0;
+let p1AudioContext = null;
+let permissionCatalog = [];
 let withdrawalQueueState = {
   status: 'all',
   search: '',
@@ -16,6 +20,132 @@ let withdrawalQueueState = {
   maxAmount: '',
   page: 1,
   limit: 20,
+};
+
+const PERMISSIONS = {
+  DASHBOARD: 'dashboard_view',
+  SUPPORT_CHAT: 'support_chat',
+  FINANCIAL: 'financial',
+  USER_MANAGEMENT: 'user_management',
+  SERVICE_MANAGEMENT: 'service_management',
+  CONTENT_MANAGEMENT: 'content_management',
+  COUPON_MANAGEMENT: 'coupon_management',
+  PAYMENT_MANAGEMENT: 'payment_management',
+  ACCESS_MANAGEMENT: 'access_management',
+};
+
+const roleFallbackPermissions = (role) => {
+  if (role === 'super_admin') return ['*'];
+  if (role === 'admin') {
+    return [
+      PERMISSIONS.DASHBOARD,
+      PERMISSIONS.SUPPORT_CHAT,
+      PERMISSIONS.FINANCIAL,
+      PERMISSIONS.USER_MANAGEMENT,
+      PERMISSIONS.SERVICE_MANAGEMENT,
+      PERMISSIONS.CONTENT_MANAGEMENT,
+      PERMISSIONS.COUPON_MANAGEMENT,
+      PERMISSIONS.PAYMENT_MANAGEMENT,
+    ];
+  }
+  return [PERMISSIONS.DASHBOARD, PERMISSIONS.SUPPORT_CHAT];
+};
+
+const effectivePermissions = () => {
+  const fromToken = adminData?.effectivePermissions;
+  if (Array.isArray(fromToken) && fromToken.length) return fromToken;
+  const fromCustom = adminData?.permissions;
+  if (Array.isArray(fromCustom) && fromCustom.length) return fromCustom;
+  return roleFallbackPermissions(adminData?.role);
+};
+
+const hasPermission = (...perms) => {
+  const permsNow = effectivePermissions();
+  if (permsNow.includes('*')) return true;
+  return perms.some((perm) => permsNow.includes(perm));
+};
+
+const disconnectAdminSocket = () => {
+  if (adminSocket) {
+    adminSocket.disconnect();
+    adminSocket = null;
+  }
+};
+
+const playP1AlertSound = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!p1AudioContext) p1AudioContext = new AudioCtx();
+    const now = p1AudioContext.currentTime;
+    [0, 0.22, 0.44].forEach((offset) => {
+      const osc = p1AudioContext.createOscillator();
+      const gain = p1AudioContext.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(950, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.2, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.17);
+      osc.connect(gain);
+      gain.connect(p1AudioContext.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.18);
+    });
+  } catch {}
+};
+
+const bumpSupportNavP1Badge = () => {
+  const supportItem = document.querySelector(`.nav-item[onclick="navTo('suporte')"]`);
+  if (!supportItem) return;
+  let badge = supportItem.querySelector('.nav-badge-p1');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'nav-badge nav-badge-p1';
+    supportItem.appendChild(badge);
+  }
+  badge.textContent = `P1 ${p1AlertCount}`;
+};
+
+const clearSupportNavP1Badge = () => {
+  p1AlertCount = 0;
+  const supportItem = document.querySelector(`.nav-item[onclick="navTo('suporte')"]`);
+  if (!supportItem) return;
+  const badge = supportItem.querySelector('.nav-badge-p1');
+  if (badge) badge.remove();
+};
+
+const notifyP1Alert = (payload = {}) => {
+  p1AlertCount += 1;
+  bumpSupportNavP1Badge();
+  playP1AlertSound();
+  const who = payload.userName || 'Profissional';
+  const subject = payload.subject || 'Sem assunto';
+  showAlert(`🚨 P1: ${who} abriu chamado urgente (${subject})`);
+
+  if (typeof Notification !== 'undefined') {
+    if (Notification.permission === 'granted') {
+      new Notification('🚨 Suporte Prioridade 1', {
+        body: `${who}: ${subject}`,
+      });
+    } else if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
+
+  if (currentPage === 'suporte') {
+    loadSupportQueue();
+    loadOperatorStatus();
+    if (typeof loadSupportAuditLogs === 'function') loadSupportAuditLogs();
+  }
+};
+
+const connectAdminSocket = () => {
+  if (!adminToken || typeof io !== 'function' || adminSocket) return;
+  adminSocket = io({ auth: { token: adminToken } });
+  adminSocket.on('support_p1_alert', notifyP1Alert);
+  adminSocket.on('connect_error', (err) => {
+    console.warn('Socket admin indisponível:', err?.message || err);
+  });
 };
 
 // ── UTILS ──────────────────────────────────────────────────────────
@@ -122,6 +252,7 @@ const showAlert = (msg, type = 'error') => {
 // ── RENDER ENTRY ───────────────────────────────────────────────────
 const render = () => {
   if (!adminToken) return renderLogin();
+  connectAdminSocket();
   renderLayout();
 };
 
@@ -160,6 +291,7 @@ const doLogin = async () => {
     adminData = data.admin;
     localStorage.setItem('adminToken', adminToken);
     localStorage.setItem('adminData', JSON.stringify(adminData));
+    connectAdminSocket();
     render();
   } catch (err) {
     const el = document.getElementById('login-alert');
@@ -178,46 +310,57 @@ const renderLayout = async () => {
         </div>
         <nav class="sidebar-nav">
           <div class="nav-group-label">Principal</div>
+          ${hasPermission(PERMISSIONS.DASHBOARD) ? `
           <div class="nav-item ${currentPage==='dashboard'?'active':''}" onclick="navTo('dashboard')">
             <span class="icon">📊</span> Dashboard
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.USER_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='approvals'?'active':''}" onclick="navTo('approvals')">
             <span class="icon">🔍</span> Aprovações
             ${pendingBadge > 0 ? `<span class="nav-badge">${pendingBadge}</span>` : ''}
-          </div>
+          </div>` : ''}
           <div class="nav-group-label">Gestão</div>
+          ${hasPermission(PERMISSIONS.USER_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='users'?'active':''}" onclick="navTo('users')">
             <span class="icon">👥</span> Usuários
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.SUPPORT_CHAT) ? `
           <div class="nav-item ${currentPage==='suporte'?'active':''}" onclick="navTo('suporte')">
             <span class="icon">🏎️</span> Suporte Operador
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.CONTENT_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='ajuda'?'active':''}" onclick="navTo('ajuda')">
             <span class="icon">📚</span> Central de Ajuda
           </div>
           <div class="nav-item ${currentPage==='termos'?'active':''}" onclick="navTo('termos')">
             <span class="icon">📄</span> Termos de Uso
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.FINANCIAL) ? `
           <div class="nav-item ${currentPage==='precos'?'active':''}" onclick="navTo('precos')">
             <span class="icon">💰</span> Configurar Preços
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.COUPON_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='cupons'?'active':''}" onclick="navTo('cupons')">
             <span class="icon">🎟️</span> Cupons
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.PAYMENT_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='pagamentos'?'active':''}" onclick="navTo('pagamentos')">
             <span class="icon">💳</span> Pagamentos
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.FINANCIAL) ? `
           <div class="nav-item ${currentPage==='saques'?'active':''}" onclick="navTo('saques')">
             <span class="icon">🏦</span> Saques PIX
-          </div>
-          ${adminData?.role === 'super_admin' ? `
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.SERVICE_MANAGEMENT) || hasPermission(PERMISSIONS.ACCESS_MANAGEMENT) ? `
           <div class="nav-group-label">Configurações</div>
+          ${hasPermission(PERMISSIONS.SERVICE_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='service-types'?'active':''}" onclick="navTo('service-types')">
             <span class="icon">📋</span> Profissões
-          </div>
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.ACCESS_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='admins'?'active':''}" onclick="navTo('admins')">
             <span class="icon">🛡️</span> Equipe Admin
-          </div>` : ''}
+          </div>` : ''}` : ''}
         </nav>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -249,7 +392,7 @@ const renderLayout = async () => {
     pendingBadge = stats.verification?.pendingReview || 0;
     const sidebar = document.querySelector('.sidebar-nav');
     if (sidebar) {
-      const approvalItem = sidebar.querySelectorAll('.nav-item')[1];
+      const approvalItem = sidebar.querySelector(`.nav-item[onclick="navTo('approvals')"]`);
       if (approvalItem && pendingBadge > 0) {
         const existing = approvalItem.querySelector('.nav-badge');
         if (!existing) approvalItem.innerHTML += `<span class="nav-badge">${pendingBadge}</span>`;
@@ -261,7 +404,28 @@ const renderLayout = async () => {
 };
 
 const navTo = (page) => {
+  const pagePermissionMap = {
+    dashboard: [PERMISSIONS.DASHBOARD],
+    approvals: [PERMISSIONS.USER_MANAGEMENT],
+    users: [PERMISSIONS.USER_MANAGEMENT],
+    suporte: [PERMISSIONS.SUPPORT_CHAT],
+    ajuda: [PERMISSIONS.CONTENT_MANAGEMENT],
+    termos: [PERMISSIONS.CONTENT_MANAGEMENT],
+    precos: [PERMISSIONS.FINANCIAL],
+    cupons: [PERMISSIONS.COUPON_MANAGEMENT],
+    pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
+    saques: [PERMISSIONS.FINANCIAL],
+    'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
+    admins: [PERMISSIONS.ACCESS_MANAGEMENT],
+  };
+  const required = pagePermissionMap[page] || [PERMISSIONS.DASHBOARD];
+  if (!hasPermission(...required)) {
+    showAlert('Você não tem acesso a este módulo');
+    return;
+  }
+
   currentPage = page;
+  if (page === 'suporte') clearSupportNavP1Badge();
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   const selectedItem = document.querySelector(`.nav-item[onclick="navTo('${page}')"]`);
   if (selectedItem) selectedItem.classList.add('active');
@@ -283,6 +447,24 @@ const navTo = (page) => {
 };
 
 const renderPage = () => {
+  const pagePermissionMap = {
+    dashboard: [PERMISSIONS.DASHBOARD],
+    approvals: [PERMISSIONS.USER_MANAGEMENT],
+    users: [PERMISSIONS.USER_MANAGEMENT],
+    suporte: [PERMISSIONS.SUPPORT_CHAT],
+    ajuda: [PERMISSIONS.CONTENT_MANAGEMENT],
+    termos: [PERMISSIONS.CONTENT_MANAGEMENT],
+    precos: [PERMISSIONS.FINANCIAL],
+    cupons: [PERMISSIONS.COUPON_MANAGEMENT],
+    pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
+    saques: [PERMISSIONS.FINANCIAL],
+    'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
+    admins: [PERMISSIONS.ACCESS_MANAGEMENT],
+  };
+  const required = pagePermissionMap[currentPage] || [PERMISSIONS.DASHBOARD];
+  if (!hasPermission(...required)) {
+    currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
+  }
   const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
@@ -290,6 +472,7 @@ const renderPage = () => {
 const doLogout = () => {
   localStorage.removeItem('adminToken');
   localStorage.removeItem('adminData');
+  disconnectAdminSocket();
   adminToken = null;
   adminData = null;
   render();
@@ -621,6 +804,11 @@ const renderSupporte = async () => {
           </div>
         </div>
         <div id="support-request-list"><div style="padding:20px 16px;color:#3D4460;font-size:12px;text-align:center;">Nenhuma busca realizada</div></div>
+        <div class="support-panel-header" style="margin-top:8px;">
+          <span class="support-panel-title">Auditoria (recente)</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadSupportAuditLogs()">↻</button>
+        </div>
+        <div id="support-audit-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
       <div id="support-chat-main" style="display:flex;align-items:center;justify-content:center;color:#3D4460;font-size:14px;">
         <div style="text-align:center;">
@@ -634,6 +822,7 @@ const renderSupporte = async () => {
   await loadMyChats();
   await loadServiceChats();
   await runSupportRequestSearch();
+  await loadSupportAuditLogs();
   // Polling a cada 8s
   if (supportPollingTimer) clearInterval(supportPollingTimer);
   supportPollingTimer = setInterval(async () => {
@@ -641,6 +830,7 @@ const renderSupporte = async () => {
     await loadSupportQueue();
     await loadMyChats();
     await loadServiceChats();
+    await loadSupportAuditLogs();
     await loadOperatorStatus();
   }, 8000);
 };
@@ -666,6 +856,31 @@ const loadServiceChats = async () => {
       </div>`).join('');
   } catch {
     el.innerHTML = `<div style="padding:20px 16px;color:#3D4460;font-size:12px;text-align:center;">Erro ao carregar</div>`;
+  }
+};
+
+const loadSupportAuditLogs = async () => {
+  const el = document.getElementById('support-audit-list');
+  if (!el) return;
+  try {
+    const data = await req('GET', '/audit-logs?module=support&limit=20');
+    const logs = data.logs || [];
+    if (!logs.length) {
+      el.innerHTML = `<div style="padding:16px;color:#3D4460;font-size:12px;text-align:center;">Sem eventos recentes</div>`;
+      return;
+    }
+    el.innerHTML = logs.map((log) => `
+      <div class="queue-item" style="cursor:default;">
+        <div class="queue-item-name">${escHtml(log.message || log.action)}</div>
+        <div class="queue-item-subject">${escHtml(log.actorAdminId?.name || log.actorUserId?.name || log.actorType || 'sistema')}</div>
+        <div class="queue-item-meta">
+          <span class="queue-badge ${log.severity === 'critical' ? 'queue-badge-p1' : 'queue-badge-active'}">${escHtml(log.severity || 'normal')}</span>
+          <span>${fmtDatetime(log.createdAt)}</span>
+        </div>
+      </div>
+    `).join('');
+  } catch {
+    el.innerHTML = `<div style="padding:16px;color:#FF8A80;font-size:12px;text-align:center;">Erro ao carregar auditoria</div>`;
   }
 };
 
@@ -2022,11 +2237,33 @@ const toggleCoupon = async (id) => {
 };
 
 // ── ADMINS ─────────────────────────────────────────────────────────
+const adminPermissionLabel = (key) => {
+  const found = permissionCatalog.find((p) => p.key === key);
+  return found?.label || key;
+};
+
+const renderPermissionChecks = (selected = []) => {
+  const set = new Set(selected || []);
+  return permissionCatalog.map((perm) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;color:#B0B8D0;">
+      <input type="checkbox" class="perm-check" value="${perm.key}" ${set.has(perm.key) ? 'checked' : ''} />
+      <span>${escHtml(perm.label)}</span>
+    </label>
+  `).join('');
+};
+
+const readSelectedPermissions = () => Array.from(document.querySelectorAll('.perm-check:checked')).map((el) => el.value);
+
 const renderAdmins = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
   try {
-    const admins = await req('GET', '/admins');
+    const [admins, permsData] = await Promise.all([
+      req('GET', '/admins'),
+      req('GET', '/access/permissions'),
+    ]);
+    permissionCatalog = permsData.permissions || [];
+    window.__adminsById = Object.fromEntries((admins || []).map((a) => [a._id, a]));
     c.innerHTML = `
       <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
         <button class="btn btn-primary" onclick="openNewAdminModal()">+ Novo Admin</button>
@@ -2034,14 +2271,18 @@ const renderAdmins = async () => {
       <div class="section-card">
         <div class="section-header"><h2>Equipe Administrativa (${admins.length})</h2></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Criado em</th><th>Ação</th></tr></thead>
+          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Acessos</th><th>Status</th><th>Criado em</th><th>Ação</th></tr></thead>
           <tbody>${admins.map(a => `<tr>
             <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar-sm">${a.name[0]}</div><strong>${escHtml(a.name)}</strong></div></td>
             <td>${escHtml(a.email)}</td>
             <td><span class="badge ${a.role==='super_admin'?'badge-approved':a.role==='admin'?'badge-pending':'badge-docs'}">${a.role}</span></td>
+            <td style="max-width:260px;font-size:12px;color:#7A84A0;">${(a.effectivePermissions || a.permissions || []).includes('*') ? 'Acesso total' : (a.effectivePermissions || a.permissions || []).map(adminPermissionLabel).join(', ') || 'Sem permissões'}</td>
             <td><span class="badge ${a.isActive?'badge-approved':'badge-rejected'}">${a.isActive?'Ativo':'Inativo'}</span></td>
             <td>${fmtDate(a.createdAt)}</td>
-            <td>${a._id !== adminData?.id ? `<button class="btn btn-danger btn-sm" onclick="deleteAdmin('${a._id}')">Remover</button>` : '<span style="color:#3D4460;font-size:12px;">Você</span>'}</td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm" onclick="openEditAdminAccessModalById('${a._id}')">Acessos</button>
+              ${a._id !== adminData?.id ? `<button class="btn btn-danger btn-sm" onclick="deleteAdmin('${a._id}')">Remover</button>` : '<span style="color:#3D4460;font-size:12px;">Você</span>'}
+            </td>
           </tr>`).join('')}</tbody>
         </table></div>
       </div>`;
@@ -2066,6 +2307,10 @@ const openNewAdminModal = () => {
           <option value="super_admin">Super Admin</option>
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label">Permissões</label>
+        <div style="max-height:180px;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px;">${renderPermissionChecks()}</div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
@@ -2080,13 +2325,68 @@ const createAdmin = async () => {
   const email = document.getElementById('na-email').value.trim();
   const password = document.getElementById('na-pass').value;
   const role = document.getElementById('na-role').value;
+  const permissions = readSelectedPermissions();
   if (!name || !email || !password) { alert('Preencha todos os campos.'); return; }
   try {
-    await req('POST', '/admins', { name, email, password, role });
+    await req('POST', '/admins', { name, email, password, role, permissions });
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Membro criado com sucesso!', 'success');
     renderAdmins();
   } catch (err) { showAlert(err.message); }
+};
+
+const openEditAdminAccessModal = (admin) => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const selected = admin.permissions || [];
+  overlay.innerHTML = `<div class="modal" style="max-width:620px;">
+    <div class="modal-header"><h3>🛡️ Acessos de ${escHtml(admin.name)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Perfil</label>
+        <select id="ea-role" class="form-select">
+          <option value="support" ${admin.role === 'support' ? 'selected' : ''}>Suporte</option>
+          <option value="admin" ${admin.role === 'admin' ? 'selected' : ''}>Admin</option>
+          <option value="super_admin" ${admin.role === 'super_admin' ? 'selected' : ''}>Super Admin</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="ea-active" type="checkbox" ${admin.isActive ? 'checked' : ''} />
+        <label for="ea-active" class="form-label" style="margin:0;">Usuário ativo</label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Permissões</label>
+        <div style="max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px;">${renderPermissionChecks(selected)}</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveAdminAccess('${admin._id}')">Salvar acessos</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const openEditAdminAccessModalById = (id) => {
+  const admin = window.__adminsById?.[id];
+  if (!admin) {
+    showAlert('Admin não encontrado para edição');
+    return;
+  }
+  openEditAdminAccessModal(admin);
+};
+
+const saveAdminAccess = async (id) => {
+  const role = document.getElementById('ea-role').value;
+  const isActive = !!document.getElementById('ea-active').checked;
+  const permissions = readSelectedPermissions();
+  try {
+    await req('PATCH', `/admins/${id}/access`, { role, isActive, permissions });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Acessos atualizados com sucesso!', 'success');
+    renderAdmins();
+  } catch (err) {
+    showAlert(err.message);
+  }
 };
 
 const deleteAdmin = async (id) => {

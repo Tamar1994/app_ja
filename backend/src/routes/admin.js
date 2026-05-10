@@ -20,12 +20,22 @@ const TermsOfUse = require('../models/TermsOfUse');
 const Coupon = require('../models/Coupon');
 const CouponClaim = require('../models/CouponClaim');
 const CouponRedemption = require('../models/CouponRedemption');
-const { adminAuth, requireRole } = require('../middleware/adminAuth');
+const AuditLog = require('../models/AuditLog');
+const {
+  adminAuth,
+  requireRole,
+  requirePermission,
+  getEffectivePermissions,
+  sanitizePermissions,
+  ADMIN_PERMISSIONS,
+  ALL_PERMISSION_VALUES,
+} = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
 const { clearRequestTimer } = require('../utils/requestQueue');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
 const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadCleanup');
+const { logAudit } = require('../utils/auditLog');
 
 const router = express.Router();
 
@@ -40,6 +50,26 @@ async function getStripeClientForAdmin() {
   }
   return new Stripe(secretKey);
 }
+
+const permissionCatalog = [
+  { key: ADMIN_PERMISSIONS.DASHBOARD, label: 'Dashboard', module: 'general' },
+  { key: ADMIN_PERMISSIONS.SUPPORT_CHAT, label: 'Suporte / Chat', module: 'support' },
+  { key: ADMIN_PERMISSIONS.FINANCIAL, label: 'Financeiro (saques/estornos)', module: 'financial' },
+  { key: ADMIN_PERMISSIONS.USER_MANAGEMENT, label: 'Gestão de usuários', module: 'users' },
+  { key: ADMIN_PERMISSIONS.SERVICE_MANAGEMENT, label: 'Profissões e serviços', module: 'service' },
+  { key: ADMIN_PERMISSIONS.CONTENT_MANAGEMENT, label: 'Ajuda / Termos', module: 'content' },
+  { key: ADMIN_PERMISSIONS.COUPON_MANAGEMENT, label: 'Cupons', module: 'coupon' },
+  { key: ADMIN_PERMISSIONS.PAYMENT_MANAGEMENT, label: 'Pagamentos / Stripe', module: 'payment' },
+  { key: ADMIN_PERMISSIONS.ACCESS_MANAGEMENT, label: 'Equipe admin / acessos', module: 'access' },
+];
+
+const withEffectivePermissions = (adminDoc) => {
+  const raw = adminDoc.toObject ? adminDoc.toObject() : adminDoc;
+  return {
+    ...raw,
+    effectivePermissions: getEffectivePermissions(raw),
+  };
+};
 
 const uploadsRoot = path.join(__dirname, '../../uploads');
 const withdrawalProofDir = path.join(uploadsRoot, 'withdrawal-proofs');
@@ -86,7 +116,17 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Credenciais inválidas' });
     }
     const token = generateAdminToken(admin._id);
-    res.json({ token, admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role } });
+    res.json({
+      token,
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.role,
+        permissions: sanitizePermissions(admin.permissions),
+        effectivePermissions: getEffectivePermissions(admin),
+      },
+    });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao fazer login' });
   }
@@ -156,7 +196,7 @@ router.post('/seed', async (req, res) => {
 
 // ── DASHBOARD ─────────────────────────────────────────────────────
 // GET /api/admin/stats
-router.get('/stats', adminAuth, async (req, res) => {
+router.get('/stats', adminAuth, requirePermission(ADMIN_PERMISSIONS.DASHBOARD), async (req, res) => {
   try {
     const [
       totalUsers, totalClients, totalProfessionals,
@@ -189,7 +229,7 @@ router.get('/stats', adminAuth, async (req, res) => {
 
 // ── FILA DE SAQUES (PIX MANUAL) ───────────────────────────────────
 // GET /api/admin/withdrawals?status=pending&page=1&limit=20
-router.get('/withdrawals', adminAuth, async (req, res) => {
+router.get('/withdrawals', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   const {
     status = 'pending',
     search = '',
@@ -286,7 +326,7 @@ router.get('/withdrawals', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/withdrawals/:id
-router.get('/withdrawals/:id', adminAuth, async (req, res) => {
+router.get('/withdrawals/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   try {
     const withdrawal = await WithdrawalRequest.findById(req.params.id)
       .populate('professional', 'name email phone cpf wallet')
@@ -302,7 +342,7 @@ router.get('/withdrawals/:id', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/withdrawals/:id/status
-router.patch('/withdrawals/:id/status', adminAuth, async (req, res) => {
+router.patch('/withdrawals/:id/status', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   const { status, internalNote } = req.body;
   if (!['pending', 'processing', 'completed', 'cancelled'].includes(status)) {
     return res.status(400).json({ message: 'Status inválido' });
@@ -352,6 +392,21 @@ router.patch('/withdrawals/:id/status', adminAuth, async (req, res) => {
       } finally {
         await session.endSession();
       }
+      await logAudit({
+        module: 'financial',
+        action: 'withdrawal_cancelled',
+        severity: 'high',
+        actorType: 'admin',
+        actorAdminId: req.admin._id,
+        targetType: 'withdrawal_request',
+        targetId: withdrawal._id,
+        message: 'Saque cancelado e estornado pelo financeiro',
+        metadata: {
+          amount: Number(withdrawal.amount || 0),
+          professionalId: String(withdrawal.professional),
+          internalNote: internalNote || '',
+        },
+      });
       res.json({ message: 'Saque cancelado e valor estornado', withdrawal: cancelledWithdrawal });
       return;
     }
@@ -370,6 +425,21 @@ router.patch('/withdrawals/:id/status', adminAuth, async (req, res) => {
       { new: true }
     );
 
+    await logAudit({
+      module: 'financial',
+      action: 'withdrawal_status_updated',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'withdrawal_request',
+      targetId: withdrawal._id,
+      message: `Status de saque alterado para ${status}`,
+      metadata: {
+        fromStatus: withdrawal.status,
+        toStatus: status,
+        internalNote: internalNote || '',
+      },
+    });
+
     res.json({ message: 'Status do saque atualizado', withdrawal: updated });
   } catch {
     res.status(500).json({ message: 'Erro ao atualizar saque' });
@@ -377,7 +447,7 @@ router.patch('/withdrawals/:id/status', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/withdrawals/:id/proof
-router.post('/withdrawals/:id/proof', adminAuth, withdrawalProofUpload.single('proof'), async (req, res) => {
+router.post('/withdrawals/:id/proof', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), withdrawalProofUpload.single('proof'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Arquivo de comprovante é obrigatório' });
 
   try {
@@ -398,6 +468,19 @@ router.post('/withdrawals/:id/proof', adminAuth, withdrawalProofUpload.single('p
     if (oldProofUrl && oldProofUrl !== newProofUrl) {
       await deleteUploadFile(oldProofUrl);
     }
+
+    await logAudit({
+      module: 'financial',
+      action: 'withdrawal_proof_uploaded',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'withdrawal_request',
+      targetId: withdrawal._id,
+      message: 'Comprovante de saque anexado',
+      metadata: {
+        proofUrl: newProofUrl,
+      },
+    });
 
     res.json({
       message: 'Comprovante anexado ao saque',
@@ -516,37 +599,114 @@ router.patch('/users/:id/toggle-active', adminAuth, requireRole('super_admin', '
 
 // ── ADMINS ────────────────────────────────────────────────────────
 // GET /api/admin/admins
-router.get('/admins', adminAuth, requireRole('super_admin'), async (req, res) => {
+router.get('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
   const admins = await AdminUser.find().select('-password').sort({ createdAt: -1 });
-  res.json(admins);
+  res.json(admins.map(withEffectivePermissions));
+});
+
+router.get('/access/permissions', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
+  res.json({
+    permissions: permissionCatalog,
+    allPermissionKeys: ALL_PERMISSION_VALUES,
+  });
 });
 
 // POST /api/admin/admins
-router.post('/admins', adminAuth, requireRole('super_admin'), async (req, res) => {
-  const { name, email, password, role } = req.body;
+router.post('/admins', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
+  const { name, email, password, role, permissions } = req.body;
   if (!name || !email || !password) return res.status(400).json({ message: 'Campos obrigatórios faltando' });
   try {
     const existing = await AdminUser.findOne({ email });
     if (existing) return res.status(400).json({ message: 'E-mail já cadastrado' });
-    const admin = await AdminUser.create({ name, email, password, role: role || 'support' });
-    res.status(201).json({ message: 'Admin criado', admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role } });
+    const admin = await AdminUser.create({
+      name,
+      email,
+      password,
+      role: role || 'support',
+      permissions: sanitizePermissions(permissions),
+    });
+    await logAudit({
+      module: 'access',
+      action: 'admin_created',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'admin_user',
+      targetId: admin._id,
+      message: `Admin ${admin.email} criado com role ${admin.role}`,
+      metadata: {
+        role: admin.role,
+        permissions: sanitizePermissions(admin.permissions),
+      },
+    });
+    res.status(201).json({ message: 'Admin criado', admin: withEffectivePermissions(admin) });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao criar admin' });
   }
 });
 
+router.patch('/admins/:id/access', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
+  try {
+    const { role, isActive, permissions } = req.body;
+    const admin = await AdminUser.findById(req.params.id);
+    if (!admin) return res.status(404).json({ message: 'Admin não encontrado' });
+
+    if (role && ['super_admin', 'admin', 'support'].includes(role)) {
+      admin.role = role;
+    }
+    if (typeof isActive === 'boolean') {
+      if (req.params.id === req.admin._id.toString() && !isActive) {
+        return res.status(400).json({ message: 'Você não pode desativar sua própria conta' });
+      }
+      admin.isActive = isActive;
+    }
+    if (permissions !== undefined) {
+      admin.permissions = sanitizePermissions(permissions);
+    }
+
+    await admin.save();
+    await logAudit({
+      module: 'access',
+      action: 'admin_access_updated',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'admin_user',
+      targetId: admin._id,
+      message: `Acesso do admin ${admin.email} atualizado`,
+      metadata: {
+        role: admin.role,
+        isActive: admin.isActive,
+        permissions: sanitizePermissions(admin.permissions),
+      },
+    });
+    res.json({ message: 'Acesso atualizado', admin: withEffectivePermissions(admin) });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao atualizar acesso do admin' });
+  }
+});
+
 // DELETE /api/admin/admins/:id
-router.delete('/admins/:id', adminAuth, requireRole('super_admin'), async (req, res) => {
+router.delete('/admins/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.ACCESS_MANAGEMENT), async (req, res) => {
   if (req.params.id === req.admin._id.toString()) {
     return res.status(400).json({ message: 'Não é possível remover a si mesmo' });
   }
+  const toDelete = await AdminUser.findById(req.params.id);
   await AdminUser.findByIdAndDelete(req.params.id);
+  await logAudit({
+    module: 'access',
+    action: 'admin_deleted',
+    actorType: 'admin',
+    actorAdminId: req.admin._id,
+    targetType: 'admin_user',
+    targetId: req.params.id,
+    severity: 'high',
+    message: `Admin removido: ${toDelete?.email || req.params.id}`,
+  });
   res.json({ message: 'Admin removido' });
 });
 
 // ── SUPORTE / CHAT ────────────────────────────────────────────────
 // GET /api/admin/chats?status=open
-router.get('/chats', adminAuth, async (req, res) => {
+router.get('/chats', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   const { status } = req.query;
   const query = status ? { status } : {};
   try {
@@ -561,7 +721,7 @@ router.get('/chats', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/chats/:id
-router.get('/chats/:id', adminAuth, async (req, res) => {
+router.get('/chats/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chat = await SupportChat.findById(req.params.id)
       .populate('userId', 'name email userType')
@@ -574,7 +734,7 @@ router.get('/chats/:id', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/chats/:id/message
-router.post('/chats/:id/message', adminAuth, async (req, res) => {
+router.post('/chats/:id/message', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ message: 'Mensagem vazia' });
   try {
@@ -606,7 +766,7 @@ router.post('/chats/:id/message', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/chats/:id/close
-router.patch('/chats/:id/close', adminAuth, async (req, res) => {
+router.patch('/chats/:id/close', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chat = await SupportChat.findById(req.params.id);
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
@@ -624,7 +784,7 @@ router.patch('/chats/:id/close', adminAuth, async (req, res) => {
 
 // ── SUPORTE OPERADOR ──────────────────────────────────────────────
 // PATCH /api/admin/support/toggle-status — ir online/offline
-router.patch('/support/toggle-status', adminAuth, async (req, res) => {
+router.patch('/support/toggle-status', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const admin = await AdminUser.findById(req.admin._id);
     if (admin.supportStatus === 'offline') {
@@ -661,7 +821,7 @@ router.patch('/support/toggle-status', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/support/status — status atual do operador
-router.get('/support/status', adminAuth, async (req, res) => {
+router.get('/support/status', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const admin = await AdminUser.findById(req.admin._id).select('supportStatus onlineAt activeSupportChats');
     const waitingCount = await SupportChat.countDocuments({ status: 'waiting' });
@@ -673,7 +833,7 @@ router.get('/support/status', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/support/queue — fila de espera global
-router.get('/support/queue', adminAuth, async (req, res) => {
+router.get('/support/queue', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chats = await SupportChat.find({ status: 'waiting' })
       .populate('userId', 'name email avatar')
@@ -686,7 +846,7 @@ router.get('/support/queue', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/support/my-chats — chats atribuídos ao operador logado
-router.get('/support/my-chats', adminAuth, async (req, res) => {
+router.get('/support/my-chats', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chats = await SupportChat.find({
       assignedTo: req.admin._id,
@@ -699,7 +859,7 @@ router.get('/support/my-chats', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/support/chats/:id — detalhes de um chat
-router.get('/support/chats/:id', adminAuth, async (req, res) => {
+router.get('/support/chats/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chat = await SupportChat.findById(req.params.id)
       .populate('userId', 'name email avatar')
@@ -712,7 +872,7 @@ router.get('/support/chats/:id', adminAuth, async (req, res) => {
 });
 
 // POST /api/admin/support/chats/:id/message — operador envia mensagem
-router.post('/support/chats/:id/message', adminAuth, async (req, res) => {
+router.post('/support/chats/:id/message', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ message: 'Mensagem vazia' });
   try {
@@ -743,7 +903,7 @@ router.post('/support/chats/:id/message', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/support/chats/:id/close — encerrar chat (operador)
-router.patch('/support/chats/:id/close', adminAuth, async (req, res) => {
+router.patch('/support/chats/:id/close', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chat = await SupportChat.findById(req.params.id);
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
@@ -759,7 +919,7 @@ router.patch('/support/chats/:id/close', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/support/operators — operadores online
-router.get('/support/operators', adminAuth, async (req, res) => {
+router.get('/support/operators', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const operators = await AdminUser.find({ supportStatus: 'online', isActive: true })
       .select('name role activeSupportChats onlineAt')
@@ -771,7 +931,7 @@ router.get('/support/operators', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/service-chats — auditoria de chats entre cliente e profissional
-router.get('/service-chats', adminAuth, async (req, res) => {
+router.get('/service-chats', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const { status = 'all' } = req.query;
     const query = status === 'all' ? {} : { status };
@@ -788,7 +948,7 @@ router.get('/service-chats', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/service-chats/:id — detalhe de um chat de serviço
-router.get('/service-chats/:id', adminAuth, async (req, res) => {
+router.get('/service-chats/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const chat = await ServiceChat.findById(req.params.id)
       .populate('requestId', 'status createdAt completedAt cancelReason address details pricing')
@@ -802,7 +962,7 @@ router.get('/service-chats/:id', adminAuth, async (req, res) => {
 });
 
 // GET /api/admin/support/requests/search?q=...&status=...
-router.get('/support/requests/search', adminAuth, async (req, res) => {
+router.get('/support/requests/search', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     const status = String(req.query.status || 'all').trim();
@@ -858,7 +1018,7 @@ router.get('/support/requests/search', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/support/requests/:id/cancel
-router.patch('/support/requests/:id/cancel', adminAuth, async (req, res) => {
+router.patch('/support/requests/:id/cancel', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const reason = String(req.body.reason || '').trim();
     const request = await ServiceRequest.findById(req.params.id)
@@ -883,6 +1043,21 @@ router.patch('/support/requests/:id/cancel', adminAuth, async (req, res) => {
     request.cancelReason = reason || `Cancelado pelo suporte (${req.admin.name})`;
     await request.save();
 
+    await logAudit({
+      module: 'support',
+      action: 'support_request_cancelled',
+      severity: 'high',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'service_request',
+      targetId: request._id,
+      message: `Serviço cancelado pelo suporte por ${req.admin.name}`,
+      metadata: {
+        reason: request.cancelReason,
+        paymentStatus: request?.payment?.status || null,
+      },
+    });
+
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${request.client._id}`).emit('request_cancelled_by_support', {
@@ -905,7 +1080,7 @@ router.patch('/support/requests/:id/cancel', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/support/requests/:id/refund
-router.patch('/support/requests/:id/refund', adminAuth, async (req, res) => {
+router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   try {
     const reason = String(req.body.reason || '').trim();
     const request = await ServiceRequest.findById(req.params.id)
@@ -924,6 +1099,21 @@ router.patch('/support/requests/:id/refund', adminAuth, async (req, res) => {
       request.payment.refundRequestedAt = new Date();
       request.payment.refundReason = reason || `Solicitado via suporte por ${req.admin.name}`;
       await request.save();
+      await logAudit({
+        module: 'financial',
+        action: 'support_refund_requested_manual',
+        severity: 'high',
+        actorType: 'admin',
+        actorAdminId: req.admin._id,
+        targetType: 'service_request',
+        targetId: request._id,
+        message: 'Estorno PIX/Cora solicitado para análise manual',
+        metadata: {
+          transactionId: tx,
+          method,
+          reason: request.payment.refundReason,
+        },
+      });
       return res.json({
         message: 'Solicitação de estorno registrada para análise financeira (PIX/Cora)',
         request,
@@ -947,6 +1137,22 @@ router.patch('/support/requests/:id/refund', adminAuth, async (req, res) => {
     request.payment.refundReference = refund.id;
     await request.save();
 
+    await logAudit({
+      module: 'financial',
+      action: 'support_refund_processed',
+      severity: 'high',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      targetType: 'service_request',
+      targetId: request._id,
+      message: 'Estorno processado automaticamente no Stripe',
+      metadata: {
+        refundId: refund.id,
+        transactionId: tx,
+        method,
+      },
+    });
+
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${request.client._id}`).emit('request_refunded_by_support', {
@@ -960,6 +1166,24 @@ router.patch('/support/requests/:id/refund', adminAuth, async (req, res) => {
     console.error('Support refund request error:', err);
     const detail = err?.raw?.message || err.message || 'Erro ao processar estorno';
     res.status(500).json({ message: detail });
+  }
+});
+
+router.get('/audit-logs', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT, ADMIN_PERMISSIONS.ACCESS_MANAGEMENT, ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const moduleFilter = String(req.query.module || '').trim();
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 40)));
+    const query = moduleFilter ? { module: moduleFilter } : {};
+
+    const logs = await AuditLog.find(query)
+      .populate('actorAdminId', 'name email role')
+      .populate('actorUserId', 'name email userType')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    res.json({ logs });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao buscar auditoria' });
   }
 });
 
@@ -1069,7 +1293,7 @@ router.delete('/help/:id/items/:itemId', adminAuth, async (req, res) => {
 
 // ── CONFIGURAÇÃO DE PREÇOS ──────────────────────────────────────────────────
 // GET /api/admin/pricing
-router.get('/pricing', adminAuth, async (req, res) => {
+router.get('/pricing', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   try {
     const config = await PricingConfig.getSingleton();
     res.json({ config });
@@ -1079,7 +1303,7 @@ router.get('/pricing', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/pricing
-router.patch('/pricing', adminAuth, async (req, res) => {
+router.patch('/pricing', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
   const {
     basePricePerHour,
     serviceBasePrices,
@@ -1114,7 +1338,7 @@ router.patch('/pricing', adminAuth, async (req, res) => {
 
 // ── STRIPE CONFIG ────────────────────────────────────────────────
 // GET /api/admin/stripe-config
-router.get('/stripe-config', adminAuth, async (req, res) => {
+router.get('/stripe-config', adminAuth, requirePermission(ADMIN_PERMISSIONS.PAYMENT_MANAGEMENT), async (req, res) => {
   try {
     const config = await StripeConfig.getSingleton();
     const hasTestKeys = !!(process.env.STRIPE_SECRET_KEY_TEST && process.env.STRIPE_PUBLISHABLE_KEY_TEST);
@@ -1132,7 +1356,7 @@ router.get('/stripe-config', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/stripe-config
-router.patch('/stripe-config', adminAuth, requireRole('super_admin'), async (req, res) => {
+router.patch('/stripe-config', adminAuth, requirePermission(ADMIN_PERMISSIONS.PAYMENT_MANAGEMENT), requireRole('super_admin'), async (req, res) => {
   const { mode } = req.body;
   if (!['test', 'production'].includes(mode)) {
     return res.status(400).json({ message: 'Modo inválido. Use "test" ou "production"' });

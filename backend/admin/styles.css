@@ -83,6 +83,10 @@ body { font-family: 'Inter', sans-serif; background: #0F1117; color: #E8EAF0; mi
   min-width: 20px;
   text-align: center;
 }
+.nav-badge-p1 {
+  background: #C62828;
+  box-shadow: 0 0 0 1px rgba(255, 122, 122, 0.35);
+}
 .sidebar-footer {
   padding: 16px 20px;
   border-top: 1px solid rgba(255,255,255,0.06);

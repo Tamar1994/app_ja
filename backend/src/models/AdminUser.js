@@ -11,6 +11,10 @@ const adminUserSchema = new mongoose.Schema({
     default: 'support',
   },
   isActive: { type: Boolean, default: true },
+  permissions: {
+    type: [String],
+    default: [],
+  },
   // Suporte ao vivo
   supportStatus: { type: String, enum: ['online', 'offline'], default: 'offline' },
   onlineAt: { type: Date, default: null },
