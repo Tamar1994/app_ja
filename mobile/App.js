@@ -6,7 +6,6 @@ import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StripeProvider } from '@stripe/stripe-react-native';
-import { enableLatestRenderer } from 'react-native-maps';
 import { AuthProvider } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
 import RootNavigator from './src/navigation';
@@ -30,14 +29,6 @@ Notifications.setNotificationHandler({
 function App() {
   const notificationResponseSub = useRef(null);
   const [stripeKey, setStripeKey] = useState(STRIPE_KEY_FALLBACK);
-
-  useEffect(() => {
-    try {
-      enableLatestRenderer();
-    } catch {
-      // noop
-    }
-  }, []);
 
   useEffect(() => {
     // Busca a chave publicável atual do backend (pode ser test ou production)

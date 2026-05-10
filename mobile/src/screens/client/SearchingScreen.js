@@ -59,7 +59,7 @@ export default function SearchingScreen({ navigation, route }) {
     const pollInterval = setInterval(async () => {
       try {
         const { data } = await requestAPI.getById(requestId);
-        if (['accepted', 'preparing', 'on_the_way', 'in_progress'].includes(data.request?.status)) {
+        if (data.request?.status === 'accepted' || data.request?.status === 'in_progress') {
           a1.stop(); a2.stop(); a3.stop();
           clearInterval(pollInterval);
           // Go to ProfessionalFound if accepted but professional info not yet confirmed

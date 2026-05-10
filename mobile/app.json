@@ -61,7 +61,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "./app.plugin.js"
     ],
     "extra": {
       "eas": {
