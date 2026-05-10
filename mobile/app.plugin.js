@@ -2,6 +2,16 @@ const { withAndroidManifest } = require("@expo/config-plugins");
 
 module.exports = function (config) {
   return withAndroidManifest(config, async (config) => {
+    const googleMapsApiKey =
+      process.env.GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+    if (!googleMapsApiKey) {
+      console.warn(
+        "Google Maps API key not found in env. Set GOOGLE_MAPS_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) for build environments."
+      );
+      return config;
+    }
+
     const manifest = config.modResults;
     const application = manifest.application?.[0];
 
@@ -23,7 +33,7 @@ module.exports = function (config) {
     const apiKeyMetaData = {
       $: {
         "android:name": "com.google.android.geo.API_KEY",
-        "android:value": "AIzaSyBCu-yQ9NW-Ednfv0iMW82nSpN7OuaOj28",
+        "android:value": googleMapsApiKey,
       },
     };
 
