@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceTypeAPI } from '../../services/api';
@@ -41,8 +40,6 @@ const STATUS_ICONS = {
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const { on } = useSocket();
-  const insets = useSafeAreaInsets();
-  const fabBottom = Math.max(insets.bottom, 8) + 18;
   const [activeRequest, setActiveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -279,18 +276,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       </ScrollView>
 
-      {/* FAB */}
-      {!activeRequest && !loading && (
-        <TouchableOpacity
-          style={[styles.fab, { bottom: fabBottom }]}
-          onPress={() => navigation.navigate('RequestService')}
-          activeOpacity={0.85}
-        >
-          <LinearGradient colors={colors.gradientPrimary} style={styles.fabGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-            <Ionicons name="add" size={28} color={colors.white} />
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
     </SafeAreaView>
   );
 }
@@ -439,18 +424,4 @@ const styles = StyleSheet.create({
   howText: { flex: 1 },
   howLabel: { fontSize: typography.fontSizes.md, fontWeight: '700', color: colors.textPrimary },
   howDesc: { fontSize: typography.fontSizes.sm, color: colors.textSecondary, marginTop: 2 },
-  // FAB
-  fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    borderRadius: 28,
-    overflow: 'hidden',
-    ...shadows.primary,
-  },
-  fabGradient: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });
