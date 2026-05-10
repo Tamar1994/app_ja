@@ -1432,8 +1432,18 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
       return res.status(400).json({ message: 'Transação inválida para estorno' });
     }
 
+    // Aceita apenas IDs válidos do Stripe para estorno automático.
+    // Evita enviar identificadores internos (wallet:, cora:, service:, etc.) para a API do Stripe.
+    const isStripePaymentIntent = tx.startsWith('pi_');
+    const isStripeCharge = tx.startsWith('ch_');
+    if (!isStripePaymentIntent && !isStripeCharge) {
+      return res.status(400).json({
+        message: 'Transação não suportada para estorno automático no Stripe. Use estorno em carteira ou fluxo manual.',
+      });
+    }
+
     const stripe = await getStripeClientForAdmin();
-    const refundPayload = tx.startsWith('pi_')
+    const refundPayload = isStripePaymentIntent
       ? { payment_intent: tx }
       : { charge: tx };
     const refund = await stripe.refunds.create(refundPayload);
