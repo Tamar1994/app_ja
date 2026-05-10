@@ -82,6 +82,38 @@ function parseCheckoutFields(rawValue) {
   return normalized;
 }
 
+function parseOptionalNumber(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return undefined;
+  const n = Number(rawValue);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function parseHoursOptions(rawValue) {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return undefined;
+
+  let parsed = rawValue;
+  if (typeof rawValue === 'string') {
+    try {
+      parsed = JSON.parse(rawValue);
+    } catch {
+      parsed = rawValue
+        .split(',')
+        .map((chunk) => Number(chunk.trim()))
+        .filter((n) => Number.isFinite(n));
+    }
+  }
+
+  if (!Array.isArray(parsed)) return undefined;
+
+  const normalized = Array.from(new Set(parsed
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .map((n) => Math.trunc(n))
+  )).sort((a, b) => a - b);
+
+  return normalized;
+}
+
 const serviceTypeUploadsDir = path.join(__dirname, '../../uploads/service-types');
 if (!fs.existsSync(serviceTypeUploadsDir)) fs.mkdirSync(serviceTypeUploadsDir, { recursive: true });
 
@@ -116,13 +148,47 @@ router.get('/', async (req, res) => {
 
 // POST /api/service-types — criar tipo
 router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, res) => {
-  const { slug, name, description, icon, status, sortOrder } = req.body;
+  const {
+    slug,
+    name,
+    description,
+    icon,
+    status,
+    sortOrder,
+    minHours,
+    maxHours,
+    hoursOptions,
+    pricePerMinute,
+    platformFeePercent,
+  } = req.body;
   if (!slug || !name) {
     await cleanupRequestUploads(req);
     return res.status(400).json({ message: 'slug e name são obrigatórios' });
   }
   try {
     const checkoutFields = parseCheckoutFields(req.body.checkoutFields);
+    const parsedMinHours = parseOptionalNumber(minHours);
+    const parsedMaxHours = parseOptionalNumber(maxHours);
+    const parsedHoursOptions = parseHoursOptions(hoursOptions);
+    const parsedPricePerMinute = parseOptionalNumber(pricePerMinute);
+    const parsedPlatformFeePercent = parseOptionalNumber(platformFeePercent);
+
+    if (parsedMinHours !== undefined && parsedMinHours < 1) {
+      return res.status(400).json({ message: 'minHours deve ser maior ou igual a 1' });
+    }
+    if (parsedMaxHours !== undefined && parsedMaxHours < 1) {
+      return res.status(400).json({ message: 'maxHours deve ser maior ou igual a 1' });
+    }
+    if (parsedMinHours !== undefined && parsedMaxHours !== undefined && parsedMinHours > parsedMaxHours) {
+      return res.status(400).json({ message: 'minHours nao pode ser maior que maxHours' });
+    }
+    if (parsedPricePerMinute !== undefined && parsedPricePerMinute <= 0) {
+      return res.status(400).json({ message: 'pricePerMinute deve ser maior que zero' });
+    }
+    if (parsedPlatformFeePercent !== undefined && (parsedPlatformFeePercent < 0 || parsedPlatformFeePercent > 100)) {
+      return res.status(400).json({ message: 'platformFeePercent deve estar entre 0 e 100' });
+    }
+
     const st = await ServiceType.create({
       slug,
       name,
@@ -131,6 +197,11 @@ router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, re
       imageUrl: req.file ? `/uploads/service-types/${req.file.filename}` : null,
       status: status || 'disabled',
       sortOrder: sortOrder ?? 99,
+      ...(parsedMinHours !== undefined ? { minHours: parsedMinHours } : {}),
+      ...(parsedMaxHours !== undefined ? { maxHours: parsedMaxHours } : {}),
+      ...(parsedHoursOptions !== undefined ? { hoursOptions: parsedHoursOptions } : {}),
+      ...(parsedPricePerMinute !== undefined ? { pricePerMinute: parsedPricePerMinute } : {}),
+      ...(parsedPlatformFeePercent !== undefined ? { platformFeePercent: parsedPlatformFeePercent } : {}),
       ...(checkoutFields !== undefined ? { checkoutFields } : {}),
     });
     res.status(201).json({ serviceType: st });
@@ -153,7 +224,34 @@ router.patch('/:id', adminAuth, serviceTypeUpload.single('iconFile'), async (req
 
     const updates = { ...req.body };
     const checkoutFields = parseCheckoutFields(req.body.checkoutFields);
+    const parsedMinHours = parseOptionalNumber(req.body.minHours);
+    const parsedMaxHours = parseOptionalNumber(req.body.maxHours);
+    const parsedHoursOptions = parseHoursOptions(req.body.hoursOptions);
+    const parsedPricePerMinute = parseOptionalNumber(req.body.pricePerMinute);
+    const parsedPlatformFeePercent = parseOptionalNumber(req.body.platformFeePercent);
+
+    if (parsedMinHours !== undefined && parsedMinHours < 1) {
+      return res.status(400).json({ message: 'minHours deve ser maior ou igual a 1' });
+    }
+    if (parsedMaxHours !== undefined && parsedMaxHours < 1) {
+      return res.status(400).json({ message: 'maxHours deve ser maior ou igual a 1' });
+    }
+    if (parsedMinHours !== undefined && parsedMaxHours !== undefined && parsedMinHours > parsedMaxHours) {
+      return res.status(400).json({ message: 'minHours nao pode ser maior que maxHours' });
+    }
+    if (parsedPricePerMinute !== undefined && parsedPricePerMinute <= 0) {
+      return res.status(400).json({ message: 'pricePerMinute deve ser maior que zero' });
+    }
+    if (parsedPlatformFeePercent !== undefined && (parsedPlatformFeePercent < 0 || parsedPlatformFeePercent > 100)) {
+      return res.status(400).json({ message: 'platformFeePercent deve estar entre 0 e 100' });
+    }
+
     if (checkoutFields !== undefined) updates.checkoutFields = checkoutFields;
+    if (parsedMinHours !== undefined) updates.minHours = parsedMinHours;
+    if (parsedMaxHours !== undefined) updates.maxHours = parsedMaxHours;
+    if (parsedHoursOptions !== undefined) updates.hoursOptions = parsedHoursOptions;
+    if (parsedPricePerMinute !== undefined) updates.pricePerMinute = parsedPricePerMinute;
+    if (parsedPlatformFeePercent !== undefined) updates.platformFeePercent = parsedPlatformFeePercent;
     if (req.file) updates.imageUrl = `/uploads/service-types/${req.file.filename}`;
     const st = await ServiceType.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (req.file && existingServiceType.imageUrl && existingServiceType.imageUrl !== st.imageUrl) {

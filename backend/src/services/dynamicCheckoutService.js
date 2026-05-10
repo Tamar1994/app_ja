@@ -129,9 +129,19 @@ function formatSummaryValue(field, value) {
 
 async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = null, customFormData = {} }) {
   const cfg = await PricingConfig.getSingleton();
+  const serviceType = serviceTypeSlug
+    ? await ServiceType.findOne({ slug: serviceTypeSlug }).select('slug name checkoutFields status minHours maxHours hoursOptions pricePerMinute platformFeePercent')
+    : null;
+
+  const resolvedMinHours = Number.isFinite(Number(serviceType?.minHours))
+    ? Number(serviceType.minHours)
+    : Number(cfg.minHours);
+  const resolvedMaxHours = Number.isFinite(Number(serviceType?.maxHours))
+    ? Number(serviceType.maxHours)
+    : Number(cfg.maxHours);
   const safeHours = normalizeNumber(hours, 0);
-  if (!safeHours || safeHours < cfg.minHours || safeHours > cfg.maxHours) {
-    throw new Error(`Horas devem ser entre ${cfg.minHours} e ${cfg.maxHours}`);
+  if (!safeHours || safeHours < resolvedMinHours || safeHours > resolvedMaxHours) {
+    throw new Error(`Horas devem ser entre ${resolvedMinHours} e ${resolvedMaxHours}`);
   }
 
   const serviceBasePrices = cfg.serviceBasePrices instanceof Map
@@ -141,13 +151,13 @@ async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = 
     ? Number(serviceBasePrices[serviceTypeSlug])
     : null;
 
-  let pricePerHour = Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour;
+  const servicePricePerMinute = Number(serviceType?.pricePerMinute);
+  let pricePerHour = Number.isFinite(servicePricePerMinute) && servicePricePerMinute > 0
+    ? servicePricePerMinute * 60
+    : (Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour);
   const supportsProducts = !serviceTypeSlug || serviceTypeSlug === 'diarista';
   if (supportsProducts && !hasProducts) pricePerHour += cfg.productsSurcharge;
 
-  const serviceType = serviceTypeSlug
-    ? await ServiceType.findOne({ slug: serviceTypeSlug }).select('slug name checkoutFields status')
-    : null;
   const fields = Array.isArray(serviceType?.checkoutFields)
     ? [...serviceType.checkoutFields].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
     : [];
@@ -179,7 +189,10 @@ async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = 
 
   const adjustedPricePerHour = pricePerHour + dynamic.extraPerHour;
   const estimated = (adjustedPricePerHour * safeHours) + dynamic.extraTotal;
-  const platformFee = (estimated * cfg.platformFeePercent) / 100;
+  const resolvedPlatformFeePercent = Number.isFinite(Number(serviceType?.platformFeePercent))
+    ? Number(serviceType.platformFeePercent)
+    : Number(cfg.platformFeePercent);
+  const platformFee = (estimated * resolvedPlatformFeePercent) / 100;
 
   return {
     config: cfg,
@@ -196,6 +209,10 @@ async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = 
     platformFee,
     amountCents: Math.round(estimated * 100),
     usedServiceBasePrice: Number.isFinite(serviceBase),
+    usedServiceMinutePrice: Number.isFinite(servicePricePerMinute) && servicePricePerMinute > 0,
+    platformFeePercent: resolvedPlatformFeePercent,
+    minHours: resolvedMinHours,
+    maxHours: resolvedMaxHours,
     supportsProducts,
   };
 }

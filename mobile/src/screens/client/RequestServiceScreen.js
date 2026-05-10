@@ -10,7 +10,7 @@ import * as Location from 'expo-location';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
-const HOURS_OPTIONS = [2, 3, 4, 5, 6, 8];
+const DEFAULT_HOURS_OPTIONS = [2, 3, 4, 5, 6, 8];
 const TIME_OPTIONS = ['07:00', '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
 
 function getDateLabel(date) {
@@ -51,13 +51,16 @@ function formatCustomFieldValue(field, value) {
 
 export default function RequestServiceScreen({ navigation, route }) {
   const serviceType = route?.params?.serviceType || null;
+  const hoursOptions = Array.isArray(serviceType?.hoursOptions) && serviceType.hoursOptions.length
+    ? [...new Set(serviceType.hoursOptions.map((h) => Number(h)).filter((h) => Number.isFinite(h) && h > 0))].sort((a, b) => a - b)
+    : DEFAULT_HOURS_OPTIONS;
   const checkoutFields = Array.isArray(serviceType?.checkoutFields)
     ? [...serviceType.checkoutFields].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
     : [];
   const hasDynamicFields = checkoutFields.length > 0;
   const supportsProducts = !serviceType?.slug || serviceType.slug === 'diarista';
   const [step, setStep] = useState(1); // 1: detalhes, 2: endereço, 3: confirmação
-  const [hours, setHours] = useState(4);
+  const [hours, setHours] = useState(hoursOptions[0] || 2);
   const [rooms, setRooms] = useState(2);
   const [bathrooms, setBathrooms] = useState(1);
   const [hasProducts, setHasProducts] = useState(false);
@@ -109,6 +112,13 @@ export default function RequestServiceScreen({ navigation, route }) {
   useEffect(() => {
     setCustomFormData(buildInitialCustomFormData(checkoutFields));
   }, [serviceType?.slug]);
+
+  useEffect(() => {
+    if (!hoursOptions.length) return;
+    if (!hoursOptions.includes(hours)) {
+      setHours(hoursOptions[0]);
+    }
+  }, [serviceType?.slug, hoursOptions.join(','), hours]);
 
   useEffect(() => {
     fetchEstimate();
@@ -260,7 +270,7 @@ export default function RequestServiceScreen({ navigation, route }) {
 
             <Text style={styles.label}>Duração da limpeza</Text>
             <View style={styles.optionsRow}>
-              {HOURS_OPTIONS.map((h) => (
+              {hoursOptions.map((h) => (
                 <TouchableOpacity
                   key={h}
                   style={[styles.optionBtn, hours === h && styles.optionBtnActive]}

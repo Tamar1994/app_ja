@@ -104,6 +104,26 @@ const serviceTypeSchema = new mongoose.Schema({
     type: Number,
     default: 99,
   },
+  minHours: {
+    type: Number,
+    default: null,
+  },
+  maxHours: {
+    type: Number,
+    default: null,
+  },
+  hoursOptions: {
+    type: [Number],
+    default: [],
+  },
+  pricePerMinute: {
+    type: Number,
+    default: null,
+  },
+  platformFeePercent: {
+    type: Number,
+    default: null,
+  },
   checkoutFields: {
     type: [checkoutFieldSchema],
     default: [],

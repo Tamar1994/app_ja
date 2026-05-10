@@ -2949,6 +2949,9 @@ const renderServiceTypeCard = (t) => `
       <div class="service-type-name">${escHtml(t.name)}</div>
       <div class="service-type-desc">${escHtml(t.description || '')}</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Campos customizados: ${(Array.isArray(t.checkoutFields) ? t.checkoutFields.length : 0)}</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Faixa de horas: ${Number.isFinite(Number(t.minHours)) ? Number(t.minHours) : 2}h - ${Number.isFinite(Number(t.maxHours)) ? Number(t.maxHours) : 12}h</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Opções: ${Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(', ') : '2, 3, 4, 5, 6, 8'}h</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Valor/min: ${Number.isFinite(Number(t.pricePerMinute)) && Number(t.pricePerMinute) > 0 ? `R$ ${Number(t.pricePerMinute).toFixed(2)}` : 'padrão global'} · Taxa plataforma: ${Number.isFinite(Number(t.platformFeePercent)) ? `${Number(t.platformFeePercent)}%` : 'padrão global'}</div>
       <div class="service-type-toggle">
         <label class="toggle-switch" title="${t.status === 'enabled' ? 'Desativar' : 'Ativar'} profissão">
           <input type="checkbox" ${t.status === 'enabled' ? 'checked' : ''} onchange="toggleServiceType('${t._id}', this.checked)" />
@@ -3174,6 +3177,11 @@ const openNewServiceTypeModal = () => {
           <option value="disabled" selected>Desativado</option>
         </select>
       </div>
+      <div class="form-group"><label class="form-label">Faixa mínima de horas</label><input id="st-min-hours" class="form-input" type="number" min="1" step="1" value="2" /></div>
+      <div class="form-group"><label class="form-label">Faixa máxima de horas</label><input id="st-max-hours" class="form-input" type="number" min="1" step="1" value="12" /></div>
+      <div class="form-group"><label class="form-label">Opções de duração (horas)</label><input id="st-hours-options" class="form-input" placeholder="2,3,4" value="2,3,4,5,6,8" /></div>
+      <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="st-price-minute" class="form-input" type="number" min="0.01" step="0.01" placeholder="Ex: 0.90" /></div>
+      <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="st-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="Ex: 15" /></div>
       <div class="form-group">
         <label class="form-label">Campos customizados do formulário</label>
         <div class="stf-fields-list" id="st-fields-list">${buildCheckoutFieldRows([])}</div>
@@ -3194,8 +3202,39 @@ const createServiceType = async () => {
   const description = document.getElementById('st-desc').value.trim();
   const icon = document.getElementById('st-icon').value.trim();
   const status = document.getElementById('st-status').value;
+  const minHours = parseInt(document.getElementById('st-min-hours').value || '2', 10);
+  const maxHours = parseInt(document.getElementById('st-max-hours').value || '12', 10);
+  const hoursOptionsRaw = (document.getElementById('st-hours-options').value || '').trim();
+  const pricePerMinuteRaw = (document.getElementById('st-price-minute').value || '').trim();
+  const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
   const imageFile = document.getElementById('st-image').files?.[0] || null;
   if (!name || !slug) { alert('Nome e slug são obrigatórios.'); return; }
+  if (!Number.isFinite(minHours) || !Number.isFinite(maxHours) || minHours < 1 || maxHours < minHours) {
+    showAlert('Faixa de horas inválida.');
+    return;
+  }
+
+  const hoursOptions = hoursOptionsRaw
+    .split(',')
+    .map((chunk) => parseInt(chunk.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n >= minHours && n <= maxHours);
+  if (!hoursOptions.length) {
+    showAlert('Informe ao menos uma opção de duração dentro da faixa de horas.');
+    return;
+  }
+
+  const pricePerMinute = pricePerMinuteRaw === '' ? null : Number(pricePerMinuteRaw);
+  if (pricePerMinuteRaw !== '' && (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0)) {
+    showAlert('Valor por minuto inválido.');
+    return;
+  }
+
+  const platformFeePercent = platformFeeRaw === '' ? null : Number(platformFeeRaw);
+  if (platformFeeRaw !== '' && (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100)) {
+    showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.');
+    return;
+  }
+
   try {
     const checkoutFields = collectCheckoutFields('st-fields-list');
     const formData = new FormData();
@@ -3204,6 +3243,11 @@ const createServiceType = async () => {
     formData.append('description', description);
     formData.append('icon', icon);
     formData.append('status', status);
+    formData.append('minHours', String(minHours));
+    formData.append('maxHours', String(maxHours));
+    formData.append('hoursOptions', JSON.stringify(Array.from(new Set(hoursOptions)).sort((a, b) => a - b)));
+    if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
+    if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('checkoutFields', JSON.stringify(checkoutFields));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('POST', '', formData);
@@ -3231,6 +3275,11 @@ const openEditServiceTypeModal = (t) => {
           <option value="disabled" ${t.status==='disabled'?'selected':''}>Desativado</option>
         </select>
       </div>
+      <div class="form-group"><label class="form-label">Faixa mínima de horas</label><input id="ste-min-hours" class="form-input" type="number" min="1" step="1" value="${Number.isFinite(Number(t.minHours)) ? Number(t.minHours) : 2}" /></div>
+      <div class="form-group"><label class="form-label">Faixa máxima de horas</label><input id="ste-max-hours" class="form-input" type="number" min="1" step="1" value="${Number.isFinite(Number(t.maxHours)) ? Number(t.maxHours) : 12}" /></div>
+      <div class="form-group"><label class="form-label">Opções de duração (horas)</label><input id="ste-hours-options" class="form-input" value="${escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '2,3,4,5,6,8')}" /></div>
+      <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="ste-price-minute" class="form-input" type="number" min="0.01" step="0.01" value="${Number.isFinite(Number(t.pricePerMinute)) ? Number(t.pricePerMinute) : ''}" placeholder="padrão global" /></div>
+      <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : ''}" placeholder="padrão global" /></div>
       <div class="form-group">
         <label class="form-label">Campos customizados do formulário</label>
         <div class="stf-fields-list" id="ste-fields-list">${buildCheckoutFieldRows(t.checkoutFields || [])}</div>
@@ -3252,7 +3301,38 @@ const updateServiceType = async (id) => {
   const icon = document.getElementById('ste-icon').value.trim();
   const sortOrder = parseInt(document.getElementById('ste-order').value) || 0;
   const status = document.getElementById('ste-status').value;
+  const minHours = parseInt(document.getElementById('ste-min-hours').value || '2', 10);
+  const maxHours = parseInt(document.getElementById('ste-max-hours').value || '12', 10);
+  const hoursOptionsRaw = (document.getElementById('ste-hours-options').value || '').trim();
+  const pricePerMinuteRaw = (document.getElementById('ste-price-minute').value || '').trim();
+  const platformFeeRaw = (document.getElementById('ste-platform-fee').value || '').trim();
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
+  if (!Number.isFinite(minHours) || !Number.isFinite(maxHours) || minHours < 1 || maxHours < minHours) {
+    showAlert('Faixa de horas inválida.');
+    return;
+  }
+
+  const hoursOptions = hoursOptionsRaw
+    .split(',')
+    .map((chunk) => parseInt(chunk.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n >= minHours && n <= maxHours);
+  if (!hoursOptions.length) {
+    showAlert('Informe ao menos uma opção de duração dentro da faixa de horas.');
+    return;
+  }
+
+  const pricePerMinute = pricePerMinuteRaw === '' ? null : Number(pricePerMinuteRaw);
+  if (pricePerMinuteRaw !== '' && (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0)) {
+    showAlert('Valor por minuto inválido.');
+    return;
+  }
+
+  const platformFeePercent = platformFeeRaw === '' ? null : Number(platformFeeRaw);
+  if (platformFeeRaw !== '' && (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100)) {
+    showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.');
+    return;
+  }
+
   try {
     const checkoutFields = collectCheckoutFields('ste-fields-list');
     const formData = new FormData();
@@ -3261,6 +3341,11 @@ const updateServiceType = async (id) => {
     formData.append('icon', icon);
     formData.append('sortOrder', sortOrder);
     formData.append('status', status);
+    formData.append('minHours', String(minHours));
+    formData.append('maxHours', String(maxHours));
+    formData.append('hoursOptions', JSON.stringify(Array.from(new Set(hoursOptions)).sort((a, b) => a - b)));
+    if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
+    if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('checkoutFields', JSON.stringify(checkoutFields));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('PATCH', `/${id}`, formData);
