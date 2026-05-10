@@ -59,6 +59,14 @@ router.get('/config', async (req, res) => {
 async function getOrCreateCustomer(user) {
   const stripe = await getStripe();
 
+  const isMissingCustomerError = (err) => {
+    const message = String(err?.message || err?.raw?.message || '').toLowerCase();
+    return err?.code === 'resource_missing'
+      && (err?.param === 'customer'
+        || err?.param === 'id'
+        || message.includes('no such customer'));
+  };
+
   if (user.stripeCustomerId) {
     try {
       const existing = await stripe.customers.retrieve(user.stripeCustomerId);
@@ -66,7 +74,7 @@ async function getOrCreateCustomer(user) {
         return user.stripeCustomerId;
       }
     } catch (err) {
-      const missingCustomer = err?.code === 'resource_missing' && err?.param === 'customer';
+      const missingCustomer = isMissingCustomerError(err);
       if (!missingCustomer) throw err;
       // Se o customer salvo for de outro ambiente (test/live), cria um novo no ambiente atual.
     }
