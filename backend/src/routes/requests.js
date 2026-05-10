@@ -221,6 +221,12 @@ router.patch('/:id/accept', auth, async (req, res) => {
           totalReviews: professional.professional?.totalReviews || 0,
         },
       });
+
+      // Garante fechamento do estado de "chamando" no app do profissional.
+      io.to(`user_${req.user._id}`).emit('request_taken', {
+        requestId: request._id,
+        status: request.status,
+      });
     }
 
     res.json({ request });

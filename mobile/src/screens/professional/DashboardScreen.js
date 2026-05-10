@@ -63,9 +63,24 @@ export default function DashboardScreen({ navigation }) {
       });
       loadRequests();
     });
+    const unsubTaken = on('request_taken', ({ requestId }) => {
+      setIncomingJob(prev => {
+        if (prev?.requestId?.toString() === requestId?.toString()) {
+          return null;
+        }
+        return prev;
+      });
+      setSelectedRequest(prev => {
+        if (prev?._id?.toString() === requestId?.toString()) return null;
+        return prev;
+      });
+      clearPendingNotification();
+      loadRequests();
+    });
     return () => {
       unsub && unsub();
       unsubExpired && unsubExpired();
+      unsubTaken && unsubTaken();
     };
   }, []);
 
@@ -126,6 +141,8 @@ export default function DashboardScreen({ navigation }) {
     setActionLoading(true);
     try {
       await requestAPI.accept(requestId);
+      clearPendingNotification();
+      setIncomingJob(null);
       setSelectedRequest(null);
       navigation.navigate('ActiveJob', { requestId });
     } catch (err) {

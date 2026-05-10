@@ -20,7 +20,7 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
   const pulse = useRef(new Animated.Value(1)).current;
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
-  const [countdown, setCountdown] = useState(300); // 5 min em segundos
+  const [countdown, setCountdown] = useState(120); // 2 min em segundos
   const countdownRef = useRef(null);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
     // Calcular countdown baseado no timeoutAt do servidor (se disponível)
     const totalSecs = request?.timeoutAt
       ? Math.max(0, Math.round((request.timeoutAt - Date.now()) / 1000))
-      : 300;
+      : 120;
     setCountdown(totalSecs);
 
     // Timer de countdown

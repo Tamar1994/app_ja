@@ -1,12 +1,12 @@
 /**
  * requestQueue.js — Sistema de despacho inteligente de solicitações
- * Funciona como Uber/iFood: notifica 1 profissional por vez, 5 min de timeout.
+ * Funciona como Uber/iFood: notifica 1 profissional por vez, 2 min de timeout.
  * Se expirar ou recusar → próximo profissional disponível.
  */
 
 const https = require('https');
 
-const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+const TIMEOUT_MS = 2 * 60 * 1000; // 2 minutos
 
 // Mapa de timers ativos: requestId → timeoutHandle
 const activeTimers = new Map();
@@ -15,7 +15,9 @@ const activeTimers = new Map();
  * Envia push notification via Expo Push API (funciona com app em background/fechado)
  */
 function sendExpoPush(pushToken, title, body, data = {}) {
-  if (!pushToken || !pushToken.startsWith('ExponentPushToken')) return;
+  const isExpoToken = String(pushToken || '').startsWith('ExponentPushToken')
+    || String(pushToken || '').startsWith('ExpoPushToken');
+  if (!isExpoToken) return;
 
   const payload = JSON.stringify({
     to: pushToken,
@@ -25,7 +27,7 @@ function sendExpoPush(pushToken, title, body, data = {}) {
     channelId: 'job-alerts',   // canal de alta prioridade configurado no app
     priority: 'high',
     sound: 'default',
-    ttl: 300,                  // expira em 5 min (mesmo que o timeout)
+    ttl: 120,                  // expira em 2 min (mesmo que o timeout)
     android: {
       channelId: 'job-alerts',
       priority: 'max',
@@ -142,7 +144,7 @@ async function dispatchToNextProfessional(requestId, io) {
     timeoutAt, // cliente/profissional exibem countdown
   });
 
-  console.log(`📢 Pedido ${requestId} → ${professional.name} (${professional._id}) | timeout: 5min`);
+  console.log(`📢 Pedido ${requestId} → ${professional.name} (${professional._id}) | timeout: 2min`);
 
   // Enviar push notification (funciona mesmo com app fechado/tela desligada)
   if (professional.pushToken) {
@@ -151,7 +153,7 @@ async function dispatchToNextProfessional(requestId, io) {
     sendExpoPush(
       professional.pushToken,
       '🧹 Nova solicitação de serviço!',
-      `Cliente em ${city} • R$ ${earnings} • Responda em 5 min`,
+      `Cliente em ${city} • R$ ${earnings} • Responda em 2 min`,
       {
         type: 'new_request',
         requestId: request._id.toString(),
@@ -164,7 +166,7 @@ async function dispatchToNextProfessional(requestId, io) {
     );
   }
 
-  // Timer de 5 min — se expirar, passa para o próximo
+  // Timer de 2 min — se expirar, passa para o próximo
   const timer = setTimeout(async () => {
     activeTimers.delete(requestId.toString());
     try {
