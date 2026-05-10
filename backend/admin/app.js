@@ -566,6 +566,7 @@ const toggleUserActive = async (id, btn) => {
 // ── SUPORTE OPERADOR ───────────────────────────────────────────────
 let activeSupportChatId = null;
 let supportPollingTimer = null;
+let supportRequestSearchResults = [];
 
 const renderSupporte = async () => {
   const c = document.getElementById('page-content');
@@ -601,6 +602,25 @@ const renderSupporte = async () => {
           <button class="btn btn-ghost btn-sm" onclick="loadServiceChats()">↻</button>
         </div>
         <div id="service-chat-list"><div class="loading-center"><div class="spinner"></div></div></div>
+        <div class="support-panel-header" style="margin-top:8px;">
+          <span class="support-panel-title">Buscar Serviço Contratado</span>
+          <button class="btn btn-ghost btn-sm" onclick="runSupportRequestSearch()">↻</button>
+        </div>
+        <div style="padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;gap:8px;">
+          <input id="support-request-q" class="form-input" placeholder="Nome, email, telefone ou ID do serviço" onkeydown="if(event.key==='Enter')runSupportRequestSearch()" />
+          <div style="display:flex;gap:8px;">
+            <select id="support-request-status" class="form-select" style="flex:1;">
+              <option value="all">Todos status</option>
+              <option value="searching">Buscando profissional</option>
+              <option value="accepted">Aceito</option>
+              <option value="in_progress">Em andamento</option>
+              <option value="completed">Concluído</option>
+              <option value="cancelled">Cancelado</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="runSupportRequestSearch()">Buscar</button>
+          </div>
+        </div>
+        <div id="support-request-list"><div style="padding:20px 16px;color:#3D4460;font-size:12px;text-align:center;">Nenhuma busca realizada</div></div>
       </div>
       <div id="support-chat-main" style="display:flex;align-items:center;justify-content:center;color:#3D4460;font-size:14px;">
         <div style="text-align:center;">
@@ -613,6 +633,7 @@ const renderSupporte = async () => {
   await loadSupportQueue();
   await loadMyChats();
   await loadServiceChats();
+  await runSupportRequestSearch();
   // Polling a cada 8s
   if (supportPollingTimer) clearInterval(supportPollingTimer);
   supportPollingTimer = setInterval(async () => {
@@ -664,7 +685,8 @@ const loadOperatorStatus = async () => {
     btn.textContent = isOnline ? '⚫ Ficar Offline' : '🟢 Ficar Online';
     btn.className = `btn-toggle-online ${isOnline ? 'go-offline' : 'go-online'}`;
     if (data.waitingCount > 0) {
-      queueCount.textContent = `${data.waitingCount} na fila`;
+      const p1Label = data.waitingP1Count > 0 ? ` · ${data.waitingP1Count} P1` : '';
+      queueCount.textContent = `${data.waitingCount} na fila${p1Label}`;
     } else {
       queueCount.textContent = '';
     }
@@ -698,11 +720,11 @@ const loadSupportQueue = async () => {
       return;
     }
     el.innerHTML = queue.map(ch => `
-      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''}" onclick="openSupportChat('${ch._id}','queue')">
+      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''} ${ch.priority === 'p1' ? 'priority-p1' : ''}" onclick="openSupportChat('${ch._id}','queue')">
         <div class="queue-item-name">${escHtml(ch.userId?.name || 'Usuário')}</div>
         <div class="queue-item-subject">${escHtml(ch.subject || 'Sem assunto')}</div>
         <div class="queue-item-meta">
-          <span class="queue-badge queue-badge-wait">⏳ Aguardando</span>
+          <span class="queue-badge ${ch.priority === 'p1' ? 'queue-badge-p1' : 'queue-badge-wait'}">${ch.priority === 'p1' ? '🚨 P1' : '⏳ Aguardando'}</span>
           <span>${fmtDatetime(ch.queuedAt)}</span>
         </div>
       </div>`).join('');
@@ -720,11 +742,11 @@ const loadMyChats = async () => {
       return;
     }
     el.innerHTML = chats.map(ch => `
-      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''}" onclick="openSupportChat('${ch._id}','my')">
+      <div class="queue-item ${ch._id === activeSupportChatId ? 'active' : ''} ${ch.priority === 'p1' ? 'priority-p1' : ''}" onclick="openSupportChat('${ch._id}','my')">
         <div class="queue-item-name">${escHtml(ch.userId?.name || 'Usuário')}</div>
         <div class="queue-item-subject">${escHtml(ch.subject || 'Sem assunto')}</div>
         <div class="queue-item-meta">
-          <span class="queue-badge queue-badge-active">💬 Em andamento</span>
+          <span class="queue-badge ${ch.priority === 'p1' ? 'queue-badge-p1' : 'queue-badge-active'}">${ch.priority === 'p1' ? '🚨 P1 em andamento' : '💬 Em andamento'}</span>
           <span>${fmtDatetime(ch.assignedAt)}</span>
         </div>
       </div>`).join('');
@@ -744,6 +766,7 @@ const openSupportChat = async (id, context) => {
     const chat = data.chat;
     const isWaiting = chat.status === 'waiting';
     const isClosed = chat.status === 'closed';
+    const isP1 = chat.priority === 'p1';
     main.style.display = 'flex';
     main.style.flexDirection = 'column';
     main.innerHTML = `
@@ -751,8 +774,11 @@ const openSupportChat = async (id, context) => {
         <div>
           <div style="font-weight:700;font-size:15px;">${escHtml(chat.userId?.name || 'Usuário')}</div>
           <div style="font-size:12px;color:#5C6B7A;">${escHtml(chat.userId?.email || '')} · <strong>Assunto:</strong> ${escHtml(chat.subject || '—')}</div>
+          ${isP1 ? `<div style="font-size:12px;color:#FF8A80;margin-top:6px;"><strong>Emergência:</strong> ${escHtml(chat.emergencyContext || 'Sem contexto adicional')}</div>` : ''}
+          ${chat.relatedServiceRequestId ? `<div style="font-size:12px;color:#FFB199;margin-top:4px;"><strong>Serviço vinculado:</strong> ${escHtml(chat.relatedServiceRequestId)}</div>` : ''}
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
+          ${isP1 ? `<span class="badge queue-badge-p1">🚨 Prioridade 1</span>` : ''}
           ${isWaiting ? `<span class="badge" style="background:rgba(255,165,0,0.15);color:#FFA500;">⏳ Na Fila</span>` : ''}
           ${!isClosed ? `<button class="btn btn-danger btn-sm" onclick="closeSupportChat('${id}')">🔒 Encerrar</button>` : `<span class="badge badge-closed">Encerrado</span>`}
         </div>
@@ -841,6 +867,111 @@ const openServiceChatAudit = async (id) => {
     if (msgs) msgs.scrollTop = msgs.scrollHeight;
   } catch (err) {
     main.innerHTML = `<div class="alert alert-error" style="margin:16px;">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+const supportRequestStatusLabel = (status) => {
+  const map = {
+    searching: 'Buscando profissional',
+    accepted: 'Aceito',
+    in_progress: 'Em andamento',
+    completed: 'Concluído',
+    cancelled: 'Cancelado',
+  };
+  return map[status] || status || '—';
+};
+
+const runSupportRequestSearch = async () => {
+  const listEl = document.getElementById('support-request-list');
+  if (!listEl) return;
+  const q = document.getElementById('support-request-q')?.value?.trim() || '';
+  const status = document.getElementById('support-request-status')?.value || 'all';
+  listEl.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const query = `/support/requests/search?q=${encodeURIComponent(q)}&status=${encodeURIComponent(status)}&limit=30`;
+    const data = await req('GET', query);
+    supportRequestSearchResults = data.items || [];
+    if (!supportRequestSearchResults.length) {
+      listEl.innerHTML = `<div style="padding:20px 16px;color:#3D4460;font-size:12px;text-align:center;">Nenhum serviço encontrado</div>`;
+      return;
+    }
+    listEl.innerHTML = supportRequestSearchResults.map((item) => `
+      <div class="queue-item" onclick="openSupportRequestDetails('${item._id}')">
+        <div class="queue-item-name">#${escHtml(String(item._id).slice(-8))} · ${escHtml(item.client?.name || 'Cliente')}</div>
+        <div class="queue-item-subject">${escHtml(item.client?.email || 'Sem e-mail')} ${item.client?.phone ? `· ${escHtml(item.client.phone)}` : ''}</div>
+        <div class="queue-item-meta">
+          <span class="queue-badge ${item.status === 'cancelled' ? 'badge-closed' : 'queue-badge-active'}">${escHtml(supportRequestStatusLabel(item.status))}</span>
+          <span>${fmtDatetime(item.createdAt)}</span>
+        </div>
+      </div>`).join('');
+  } catch (err) {
+    listEl.innerHTML = `<div style="padding:20px 16px;color:#FF8A80;font-size:12px;text-align:center;">${escHtml(err.message)}</div>`;
+  }
+};
+
+const openSupportRequestDetails = async (id) => {
+  const main = document.getElementById('support-chat-main');
+  if (!main) return;
+  let item = supportRequestSearchResults.find((r) => r._id === id);
+  if (!item) {
+    try {
+      const data = await req('GET', `/support/requests/search?q=${encodeURIComponent(id)}&status=all&limit=1`);
+      item = (data.items || [])[0];
+    } catch {}
+  }
+  if (!item) {
+    showAlert('Serviço não encontrado');
+    return;
+  }
+  const canCancel = !!item?.supportActions?.canCancel;
+  const canRefund = !!item?.supportActions?.canRefund;
+  main.style.display = 'flex';
+  main.style.flexDirection = 'column';
+  main.innerHTML = `
+    <div class="chat-header">
+      <div>
+        <div style="font-weight:700;font-size:15px;">Serviço #${escHtml(String(item._id))}</div>
+        <div style="font-size:12px;color:#5C6B7A;">Cliente: ${escHtml(item.client?.name || '—')} · Profissional: ${escHtml(item.professional?.name || 'Não atribuído')}</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="badge ${item.status === 'cancelled' ? 'badge-closed' : 'badge-approved'}">${escHtml(supportRequestStatusLabel(item.status))}</span>
+      </div>
+    </div>
+    <div style="padding:16px 20px;overflow:auto;display:flex;flex-direction:column;gap:10px;">
+      <div style="font-size:13px;color:#B0B8D0;"><strong>Contato cliente:</strong> ${escHtml(item.client?.email || '—')} ${item.client?.phone ? `· ${escHtml(item.client.phone)}` : ''}</div>
+      <div style="font-size:13px;color:#B0B8D0;"><strong>Contato profissional:</strong> ${escHtml(item.professional?.email || '—')} ${item.professional?.phone ? `· ${escHtml(item.professional.phone)}` : ''}</div>
+      <div style="font-size:13px;color:#B0B8D0;"><strong>Pagamento:</strong> ${escHtml(item.payment?.status || '—')} · ${escHtml(item.payment?.method || '—')} ${item.payment?.transactionId ? `· TX ${escHtml(item.payment.transactionId)}` : ''}</div>
+      <div style="font-size:13px;color:#B0B8D0;"><strong>Valor:</strong> ${fmtMoney(item.pricing?.final ?? item.pricing?.estimated ?? 0)}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+        <button class="btn btn-danger" ${canCancel ? '' : 'disabled'} onclick="supportCancelRequest('${item._id}')">Cancelar serviço</button>
+        <button class="btn btn-warning" ${canRefund ? '' : 'disabled'} onclick="supportRefundRequest('${item._id}')">Solicitar estorno</button>
+      </div>
+      <div style="font-size:11px;color:#5C6B7A;">Use cancelamento para interromper o serviço. Use estorno para devolver pagamento (automático em Stripe cartão quando possível).</div>
+    </div>`;
+};
+
+const supportCancelRequest = async (id) => {
+  const reason = prompt('Motivo do cancelamento (opcional):', 'Cancelado pelo suporte');
+  if (reason === null) return;
+  try {
+    await req('PATCH', `/support/requests/${id}/cancel`, { reason });
+    showAlert('Serviço cancelado com sucesso', 'success');
+    await runSupportRequestSearch();
+    await loadSupportQueue();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const supportRefundRequest = async (id) => {
+  const reason = prompt('Motivo do estorno (opcional):', 'Solicitação de estorno via suporte');
+  if (reason === null) return;
+  try {
+    const res = await req('PATCH', `/support/requests/${id}/refund`, { reason });
+    showAlert(res.message || 'Estorno processado', 'success');
+    await runSupportRequestSearch();
+  } catch (err) {
+    showAlert(err.message);
   }
 };
 

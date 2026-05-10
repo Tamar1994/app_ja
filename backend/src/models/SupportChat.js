@@ -10,6 +10,11 @@ const messageSchema = new mongoose.Schema({
 const supportChatSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   subject: { type: String, default: '' },
+  priority: { type: String, enum: ['normal', 'p1'], default: 'normal' },
+  priorityLevel: { type: Number, default: 0, index: true },
+  category: { type: String, default: 'general' },
+  emergencyContext: { type: String, default: '' },
+  relatedServiceRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceRequest', default: null },
   messages: [messageSchema],
   // waiting = na fila | assigned = com operador | closed = encerrado
   status: { type: String, enum: ['waiting', 'assigned', 'closed'], default: 'waiting' },

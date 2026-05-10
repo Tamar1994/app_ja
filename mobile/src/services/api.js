@@ -78,7 +78,7 @@ export const helpAPI = {
 
 // Chat de Suporte
 export const supportChatAPI = {
-  create: (subject) => api.post('/support/chats', { subject }),
+  create: (subject, extra = {}) => api.post('/support/chats', { subject, ...extra }),
   getMy: () => api.get('/support/chats/my'),
   getById: (id) => api.get(`/support/chats/${id}`),
   sendMessage: (id, text) => api.post(`/support/chats/${id}/message`, { text }),

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
+const Stripe = require('stripe');
 const jwt = require('jsonwebtoken');
 const AdminUser = require('../models/AdminUser');
 const User = require('../models/User');
@@ -22,10 +23,23 @@ const CouponRedemption = require('../models/CouponRedemption');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
+const { clearRequestTimer } = require('../utils/requestQueue');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
 const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadCleanup');
 
 const router = express.Router();
+
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function getStripeClientForAdmin() {
+  const config = await StripeConfig.getSingleton();
+  const isProd = config.mode === 'production';
+  const secretKey = isProd ? process.env.STRIPE_SECRET_KEY_PROD : process.env.STRIPE_SECRET_KEY_TEST;
+  if (!secretKey) {
+    throw new Error(`Stripe ${isProd ? 'produção' : 'teste'} não configurado no servidor`);
+  }
+  return new Stripe(secretKey);
+}
 
 const uploadsRoot = path.join(__dirname, '../../uploads');
 const withdrawalProofDir = path.join(uploadsRoot, 'withdrawal-proofs');
@@ -627,7 +641,7 @@ router.patch('/support/toggle-status', adminAuth, async (req, res) => {
       // Puxar da fila até completar 5 chats
       const io = req.app.get('io');
       while (admin.activeSupportChats < 5) {
-        const next = await SupportChat.findOne({ status: 'waiting' }).sort({ queuedAt: 1 });
+        const next = await SupportChat.findOne({ status: 'waiting' }).sort({ priorityLevel: -1, queuedAt: 1 });
         if (!next) break;
         const result = await tryAssignChat(next._id, io);
         if (!result) break;
@@ -651,7 +665,8 @@ router.get('/support/status', adminAuth, async (req, res) => {
   try {
     const admin = await AdminUser.findById(req.admin._id).select('supportStatus onlineAt activeSupportChats');
     const waitingCount = await SupportChat.countDocuments({ status: 'waiting' });
-    res.json({ ...admin.toObject(), waitingCount });
+    const waitingP1Count = await SupportChat.countDocuments({ status: 'waiting', priority: 'p1' });
+    res.json({ ...admin.toObject(), waitingCount, waitingP1Count });
   } catch {
     res.status(500).json({ message: 'Erro' });
   }
@@ -662,7 +677,7 @@ router.get('/support/queue', adminAuth, async (req, res) => {
   try {
     const chats = await SupportChat.find({ status: 'waiting' })
       .populate('userId', 'name email avatar')
-      .sort({ queuedAt: 1 })
+      .sort({ priorityLevel: -1, queuedAt: 1 })
       .limit(50);
     res.json({ queue: chats });
   } catch {
@@ -676,7 +691,7 @@ router.get('/support/my-chats', adminAuth, async (req, res) => {
     const chats = await SupportChat.find({
       assignedTo: req.admin._id,
       status: 'assigned',
-    }).populate('userId', 'name email avatar').sort({ assignedAt: -1 });
+    }).populate('userId', 'name email avatar').sort({ priorityLevel: -1, assignedAt: -1 });
     res.json({ chats });
   } catch {
     res.status(500).json({ message: 'Erro ao buscar meus chats' });
@@ -783,6 +798,168 @@ router.get('/service-chats/:id', adminAuth, async (req, res) => {
     res.json({ chat });
   } catch {
     res.status(500).json({ message: 'Erro ao buscar chat de serviço' });
+  }
+});
+
+// GET /api/admin/support/requests/search?q=...&status=...
+router.get('/support/requests/search', adminAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const status = String(req.query.status || 'all').trim();
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 30)));
+
+    const query = {};
+    if (status !== 'all') query.status = status;
+
+    if (q) {
+      const or = [];
+      if (mongoose.Types.ObjectId.isValid(q)) {
+        or.push({ _id: new mongoose.Types.ObjectId(q) });
+      }
+
+      const safeRegex = new RegExp(escapeRegex(q), 'i');
+      const users = await User.find({
+        $or: [
+          { name: safeRegex },
+          { email: safeRegex },
+          { phone: safeRegex },
+        ],
+      }).select('_id').limit(200);
+      const userIds = users.map((u) => u._id);
+      if (userIds.length) {
+        or.push({ client: { $in: userIds } });
+        or.push({ professional: { $in: userIds } });
+      }
+
+      or.push({ 'payment.transactionId': safeRegex });
+
+      query.$or = or;
+    }
+
+    const requests = await ServiceRequest.find(query)
+      .populate('client', 'name email phone')
+      .populate('professional', 'name email phone')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    const items = requests.map((request) => ({
+      ...request.toObject(),
+      supportActions: {
+        canCancel: ['searching', 'accepted', 'in_progress'].includes(request.status),
+        canRefund: request?.payment?.status === 'paid',
+      },
+    }));
+
+    res.json({ items });
+  } catch (err) {
+    console.error('Support request search error:', err);
+    res.status(500).json({ message: 'Erro ao buscar serviços contratados' });
+  }
+});
+
+// PATCH /api/admin/support/requests/:id/cancel
+router.patch('/support/requests/:id/cancel', adminAuth, async (req, res) => {
+  try {
+    const reason = String(req.body.reason || '').trim();
+    const request = await ServiceRequest.findById(req.params.id)
+      .populate('client', 'name')
+      .populate('professional', 'name');
+    if (!request) return res.status(404).json({ message: 'Serviço não encontrado' });
+
+    if (request.status === 'cancelled') {
+      return res.status(400).json({ message: 'Serviço já está cancelado' });
+    }
+    if (request.status === 'completed') {
+      return res.status(400).json({ message: 'Serviço já foi concluído e não pode ser cancelado' });
+    }
+
+    if (request.status === 'searching') {
+      clearRequestTimer(request._id);
+      request.currentAssignedTo = null;
+    }
+
+    request.status = 'cancelled';
+    request.cancelledAt = new Date();
+    request.cancelReason = reason || `Cancelado pelo suporte (${req.admin.name})`;
+    await request.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${request.client._id}`).emit('request_cancelled_by_support', {
+        requestId: request._id,
+        reason: request.cancelReason,
+      });
+      if (request.professional?._id) {
+        io.to(`user_${request.professional._id}`).emit('request_cancelled_by_support', {
+          requestId: request._id,
+          reason: request.cancelReason,
+        });
+      }
+    }
+
+    res.json({ message: 'Serviço cancelado com sucesso', request });
+  } catch (err) {
+    console.error('Support cancel request error:', err);
+    res.status(500).json({ message: 'Erro ao cancelar serviço' });
+  }
+});
+
+// PATCH /api/admin/support/requests/:id/refund
+router.patch('/support/requests/:id/refund', adminAuth, async (req, res) => {
+  try {
+    const reason = String(req.body.reason || '').trim();
+    const request = await ServiceRequest.findById(req.params.id)
+      .populate('client', 'name')
+      .populate('professional', 'name');
+    if (!request) return res.status(404).json({ message: 'Serviço não encontrado' });
+
+    if (request?.payment?.status !== 'paid') {
+      return res.status(400).json({ message: 'Somente serviços pagos podem ter estorno solicitado' });
+    }
+
+    const tx = String(request?.payment?.transactionId || '');
+    const method = String(request?.payment?.method || '').toLowerCase();
+
+    if (tx.startsWith('cora:') || method === 'pix') {
+      request.payment.refundRequestedAt = new Date();
+      request.payment.refundReason = reason || `Solicitado via suporte por ${req.admin.name}`;
+      await request.save();
+      return res.json({
+        message: 'Solicitação de estorno registrada para análise financeira (PIX/Cora)',
+        request,
+        pendingManualReview: true,
+      });
+    }
+
+    if (!tx) {
+      return res.status(400).json({ message: 'Transação inválida para estorno' });
+    }
+
+    const stripe = await getStripeClientForAdmin();
+    const refundPayload = tx.startsWith('pi_')
+      ? { payment_intent: tx }
+      : { charge: tx };
+    const refund = await stripe.refunds.create(refundPayload);
+
+    request.payment.status = 'refunded';
+    request.payment.refundedAt = new Date();
+    request.payment.refundReason = reason || `Estorno efetuado via suporte por ${req.admin.name}`;
+    request.payment.refundReference = refund.id;
+    await request.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${request.client._id}`).emit('request_refunded_by_support', {
+        requestId: request._id,
+        refundId: refund.id,
+      });
+    }
+
+    res.json({ message: 'Estorno processado com sucesso', request, refundId: refund.id });
+  } catch (err) {
+    console.error('Support refund request error:', err);
+    const detail = err?.raw?.message || err.message || 'Erro ao processar estorno';
+    res.status(500).json({ message: detail });
   }
 });
 

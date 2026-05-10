@@ -6,16 +6,22 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supportChatAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme';
 
 const POLL_INTERVAL_MS = 8000;
 
 export default function SupportChatScreen({ navigation }) {
+  const { user } = useAuth();
+  const isProfessional = user?.userType === 'professional';
   const [phase, setPhase] = useState('form'); // 'form' | 'waiting' | 'chat' | 'closed'
   const [subject, setSubject] = useState('');
+  const [emergencyContext, setEmergencyContext] = useState('');
+  const [relatedServiceRequestId, setRelatedServiceRequestId] = useState('');
   const [chatId, setChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [chatPriority, setChatPriority] = useState('normal');
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sendingMsg, setSendingMsg] = useState(false);
@@ -69,6 +75,8 @@ export default function SupportChatScreen({ navigation }) {
         const chat = res.data.chat;
         if (chat) {
           setChatId(chat._id);
+          setSubject(chat.subject || '');
+          setChatPriority(chat.priority || 'normal');
           setMessages(chat.messages || []);
           if (chat.status === 'assigned') setPhase('chat');
           else if (chat.status === 'closed') setPhase('closed');
@@ -82,16 +90,27 @@ export default function SupportChatScreen({ navigation }) {
     })();
   }, []);
 
-  const handleCreate = async () => {
+  const handleCreate = async (priority = 'normal') => {
     if (!subject.trim()) {
       Alert.alert('Campo obrigatório', 'Descreva brevemente o assunto do atendimento.');
       return;
     }
     setCreating(true);
     try {
-      const res = await supportChatAPI.create(subject.trim());
-      const { chatId: id, status } = res.data;
+      const extra = {};
+      if (isProfessional && priority === 'p1') {
+        extra.priority = 'p1';
+        extra.category = 'emergency';
+        extra.isEmergency = true;
+        extra.emergencyContext = emergencyContext.trim();
+        if (relatedServiceRequestId.trim()) {
+          extra.relatedServiceRequestId = relatedServiceRequestId.trim();
+        }
+      }
+      const res = await supportChatAPI.create(subject.trim(), extra);
+      const { chatId: id, status, priority: createdPriority } = res.data;
       setChatId(id);
+      setChatPriority(createdPriority || priority);
       if (status === 'assigned') setPhase('chat');
       else setPhase('waiting');
     } catch (err) {
@@ -161,9 +180,34 @@ export default function SupportChatScreen({ navigation }) {
             maxLength={200}
           />
           <Text style={styles.charCount}>{subject.length}/200</Text>
+          {isProfessional ? (
+            <View style={styles.emergencyCard}>
+              <Text style={styles.emergencyTitle}>Prioridade 1 para emergência</Text>
+              <Text style={styles.emergencySub}>Use quando houver risco real, por exemplo cliente acidentado durante o serviço.</Text>
+              <TextInput
+                style={styles.emergencyInput}
+                placeholder="ID do serviço contratado (opcional)"
+                placeholderTextColor={colors.textLight}
+                value={relatedServiceRequestId}
+                onChangeText={setRelatedServiceRequestId}
+                autoCapitalize="none"
+                maxLength={36}
+              />
+              <TextInput
+                style={[styles.input, { minHeight: 70, marginTop: 10 }]}
+                placeholder="Contexto rápido da emergência (opcional)"
+                placeholderTextColor={colors.textLight}
+                value={emergencyContext}
+                onChangeText={setEmergencyContext}
+                multiline
+                numberOfLines={2}
+                maxLength={250}
+              />
+            </View>
+          ) : null}
           <TouchableOpacity
             style={[styles.startBtn, creating && { opacity: 0.7 }]}
-            onPress={handleCreate}
+            onPress={() => handleCreate('normal')}
             disabled={creating}
             activeOpacity={0.85}
           >
@@ -171,6 +215,16 @@ export default function SupportChatScreen({ navigation }) {
               ? <ActivityIndicator color="#fff" />
               : <Text style={styles.startBtnText}>🎧 Iniciar Atendimento</Text>}
           </TouchableOpacity>
+          {isProfessional ? (
+            <TouchableOpacity
+              style={[styles.p1Btn, creating && { opacity: 0.7 }]}
+              onPress={() => handleCreate('p1')}
+              disabled={creating}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.p1BtnText}>🚨 Abrir Chamado Prioridade 1</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -188,8 +242,11 @@ export default function SupportChatScreen({ navigation }) {
         <View style={styles.waitingContainer}>
           <View style={styles.waitingCard}>
             <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />
-            <Text style={styles.waitingTitle}>🕐 Aguardando atendente...</Text>
+            <Text style={styles.waitingTitle}>{chatPriority === 'p1' ? '🚨 Chamado P1 em atendimento...' : '🕐 Aguardando atendente...'}</Text>
             <Text style={styles.waitingSubject}>Assunto: {subject || 'Suporte geral'}</Text>
+            {chatPriority === 'p1' ? (
+              <Text style={styles.waitingPriority}>Prioridade 1 enviada para toda a equipe de suporte.</Text>
+            ) : null}
             <Text style={styles.waitingNote}>
               Você será atendido em breve. Por favor, aguarde enquanto conectamos com um de nossos especialistas.
             </Text>
@@ -328,11 +385,39 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top', minHeight: 90,
   },
   charCount: { fontSize: 11, color: colors.textLight, textAlign: 'right', marginTop: 4, marginBottom: 20 },
+  emergencyCard: {
+    backgroundColor: '#FFF6F6',
+    borderColor: '#F1B1B1',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  emergencyTitle: { color: '#A22A2A', fontWeight: '700', fontSize: 14, marginBottom: 4 },
+  emergencySub: { color: '#8E4A4A', fontSize: 12, lineHeight: 18, marginBottom: 8 },
+  emergencyInput: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F1D1D1',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: colors.textPrimary,
+  },
   startBtn: {
     backgroundColor: colors.primary, borderRadius: 28,
     paddingVertical: 16, alignItems: 'center',
   },
   startBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  p1Btn: {
+    marginTop: 10,
+    backgroundColor: '#C62828',
+    borderRadius: 28,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  p1BtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   // Waiting
   waitingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   waitingCard: {
@@ -343,6 +428,7 @@ const styles = StyleSheet.create({
   },
   waitingTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: 10 },
   waitingSubject: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', marginBottom: 16 },
+  waitingPriority: { fontSize: 12, color: '#B42318', textAlign: 'center', marginBottom: 10, fontWeight: '600' },
   waitingNote: { fontSize: 13, color: colors.textLight, textAlign: 'center', lineHeight: 20 },
   waitingDivider: { height: 1, backgroundColor: '#E8ECF4', width: '80%', marginVertical: 16 },
   waitingPoll: { fontSize: 11, color: colors.textLight },

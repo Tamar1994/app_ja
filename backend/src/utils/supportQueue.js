@@ -72,8 +72,8 @@ async function onChatClosed(operatorId, io) {
   const operator = await AdminUser.findById(operatorId);
   if (!operator || operator.supportStatus !== 'online' || operator.activeSupportChats >= 5) return;
 
-  // Puxar próximo da fila (mais antigo primeiro)
-  const nextChat = await SupportChat.findOne({ status: 'waiting' }).sort({ queuedAt: 1 });
+  // Puxar próximo da fila priorizando P1 e depois mais antigo
+  const nextChat = await SupportChat.findOne({ status: 'waiting' }).sort({ priorityLevel: -1, queuedAt: 1 });
   if (!nextChat) return;
 
   await tryAssignChat(nextChat._id, io);

@@ -80,6 +80,10 @@ const serviceRequestSchema = new mongoose.Schema({
     method: { type: String, default: null },
     transactionId: { type: String, default: null },
     paidAt: { type: Date, default: null },
+    refundRequestedAt: { type: Date, default: null },
+    refundedAt: { type: Date, default: null },
+    refundReference: { type: String, default: null },
+    refundReason: { type: String, default: null },
   },
   // Histórico de profissionais que recusaram
   rejectedBy: [{
