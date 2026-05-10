@@ -64,7 +64,8 @@
           "locationAlwaysAndWhenInUsePermission": "O Já! precisa da sua localização para conectar você com profissionais próximos."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-font"
     ],
     "extra": {
       "eas": {

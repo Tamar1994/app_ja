@@ -21,6 +21,29 @@ const STEPS = [
 const LIVE_POLL_MS = 10000;
 const AVG_SPEED_KMH = 28;
 
+function toFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function toValidCoordinatePair(coords) {
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const lng = toFiniteNumber(coords[0]);
+  const lat = toFiniteNumber(coords[1]);
+  if (lng === null || lat === null) return null;
+  if (lat < -90 || lat > 90) return null;
+  if (lng < -180 || lng > 180) return null;
+  if (Math.abs(lng) < 0.0001 && Math.abs(lat) < 0.0001) return null;
+  return { latitude: lat, longitude: lng };
+}
+
+function formatUpdatedAtLabel(value) {
+  if (!value) return 'Aguardando primeira posição';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'Aguardando primeira posição';
+  return `Atualizado ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+}
+
 function haversineKm(a, b) {
   if (!a || !b) return null;
   const toRad = (deg) => (deg * Math.PI) / 180;
@@ -119,30 +142,13 @@ export default function TrackingScreen({ navigation, route }) {
   const currentStep = STEPS[Math.max(currentStepIndex, 0)];
 
   const clientCoords = useMemo(() => {
-    const coords = request?.address?.coordinates;
-    if (!Array.isArray(coords) || coords.length < 2) return null;
-    const [lng, lat] = coords;
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-    if (Math.abs(lng) < 0.0001 && Math.abs(lat) < 0.0001) return null;
-    return { latitude: lat, longitude: lng };
+    return toValidCoordinatePair(request?.address?.coordinates);
   }, [request?.address?.coordinates]);
 
   const professionalCoords = useMemo(() => {
-    const reqCoords = request?.professionalLiveLocation?.coordinates;
-    if (Array.isArray(reqCoords) && reqCoords.length >= 2) {
-      const [lng, lat] = reqCoords;
-      if (Number.isFinite(lng) && Number.isFinite(lat)) {
-        return { latitude: lat, longitude: lng };
-      }
-    }
-    const userCoords = request?.professional?.location?.coordinates;
-    if (Array.isArray(userCoords) && userCoords.length >= 2) {
-      const [lng, lat] = userCoords;
-      if (Number.isFinite(lng) && Number.isFinite(lat)) {
-        return { latitude: lat, longitude: lng };
-      }
-    }
-    return null;
+    const live = toValidCoordinatePair(request?.professionalLiveLocation?.coordinates);
+    if (live) return live;
+    return toValidCoordinatePair(request?.professional?.location?.coordinates);
   }, [request?.professionalLiveLocation?.coordinates, request?.professional?.location?.coordinates]);
 
   const mapRegion = useMemo(() => {
@@ -267,7 +273,9 @@ export default function TrackingScreen({ navigation, route }) {
               <View style={styles.proRating}>
                 <Ionicons name="star" size={14} color={colors.warning} />
                 <Text style={styles.proRatingText}>
-                  {request.professional.professional?.rating?.toFixed(1) || '5.0'} • Diarista
+                  {Number.isFinite(toFiniteNumber(request.professional.professional?.rating))
+                    ? toFiniteNumber(request.professional.professional?.rating).toFixed(1)
+                    : '5.0'} • Diarista
                 </Text>
               </View>
             </View>
@@ -287,27 +295,17 @@ export default function TrackingScreen({ navigation, route }) {
             <View style={styles.mapHeader}>
               <Text style={styles.cardLabel}>Rastreamento em tempo real</Text>
               <Text style={styles.mapUpdatedText}>
-                {request?.professionalLiveLocationUpdatedAt
-                  ? `Atualizado ${new Date(request.professionalLiveLocationUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-                  : 'Aguardando primeira posição'}
+                {formatUpdatedAtLabel(request?.professionalLiveLocationUpdatedAt)}
               </Text>
             </View>
 
-            <MapView style={styles.map} initialRegion={mapRegion} region={mapRegion}>
+            <MapView style={styles.map} initialRegion={mapRegion}>
               {clientCoords && (
-                <Marker coordinate={clientCoords} title="Sua casa" description="Endereço do atendimento">
-                  <View style={styles.homeMarker}>
-                    <Ionicons name="home" size={18} color={colors.white} />
-                  </View>
-                </Marker>
+                <Marker coordinate={clientCoords} title="Sua casa" description="Endereço do atendimento" pinColor={colors.primary} />
               )}
 
               {professionalCoords && (
-                <Marker coordinate={professionalCoords} title={request?.professional?.name || 'Profissional'} description="Profissional a caminho">
-                  <View style={styles.proMarker}>
-                    <Text style={styles.proMarkerText}>JÁ</Text>
-                  </View>
-                </Marker>
+                <Marker coordinate={professionalCoords} title={request?.professional?.name || 'Profissional'} description="Profissional a caminho" pinColor={colors.secondary} />
               )}
             </MapView>
 
