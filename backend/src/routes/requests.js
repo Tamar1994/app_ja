@@ -6,6 +6,7 @@ const Review = require('../models/Review');
 const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const CouponRedemption = require('../models/CouponRedemption');
+const ServiceCoverageCity = require('../models/ServiceCoverageCity');
 const { dispatchToNextProfessional, clearRequestTimer } = require('../utils/requestQueue');
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
@@ -14,6 +15,56 @@ const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService
 const router = express.Router();
 
 const SPECIALIST_PREMIUM_PERCENT = 30; // acrescimo percentual para pedidos especialista
+
+const normalizeCityKey = (value = '') => String(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase()
+  .replace(/\s+/g, ' ');
+
+const normalizeStateKey = (value = '') => String(value).trim().toLowerCase();
+
+async function isCityCovered(city = '', state = '') {
+  const normalizedCity = normalizeCityKey(city);
+  const normalizedState = normalizeStateKey(state);
+  if (!normalizedCity) return { covered: false, coverageCity: null };
+
+  const cityOnlyMatch = await ServiceCoverageCity.findOne({
+    normalizedCity,
+    isActive: true,
+  }).sort({ normalizedState: 1, order: 1, createdAt: 1 });
+
+  if (!cityOnlyMatch) return { covered: false, coverageCity: null };
+  if (!normalizedState) return { covered: true, coverageCity: cityOnlyMatch };
+
+  const exactMatch = await ServiceCoverageCity.findOne({
+    normalizedCity,
+    normalizedState,
+    isActive: true,
+  });
+
+  if (exactMatch) return { covered: true, coverageCity: exactMatch };
+
+  return { covered: false, coverageCity: null, matchedCity: cityOnlyMatch };
+}
+
+// GET /api/requests/coverage?city=...&state=...
+router.get('/coverage', auth, async (req, res) => {
+  try {
+    const { city = '', state = '' } = req.query;
+    const coverage = await isCityCovered(city, state);
+    res.json({
+      covered: coverage.covered,
+      city: String(city || '').trim(),
+      state: String(state || '').trim(),
+      coverageCity: coverage.coverageCity || coverage.matchedCity || null,
+      message: coverage.covered ? 'Cidade atendida' : 'No momento a solicitação não está disponível na sua cidade, mas a Já! vem ampliando sua zona de cobertura e logo estará disponível na sua cidade também.',
+    });
+  } catch {
+    res.status(500).json({ message: 'Erro ao validar cobertura da cidade' });
+  }
+});
 
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
@@ -80,6 +131,13 @@ router.post('/', auth, [
     customFormData,
     isSpecialist,
   } = req.body;
+
+  const coverage = await isCityCovered(address?.city, address?.state);
+  if (!coverage.covered) {
+    return res.status(403).json({
+      message: 'No momento a solicitação não está disponível na sua cidade, mas a Já! vem ampliando sua zona de cobertura e logo estará disponível na sua cidade também.',
+    });
+  }
 
   let pricePerHour, estimated, platformFee, specialistPremium = 0;
   let normalizedCustomFormData = {};

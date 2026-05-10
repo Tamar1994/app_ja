@@ -77,6 +77,8 @@ export default function RequestServiceScreen({ navigation, route }) {
   const [estimate, setEstimate] = useState(null);
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
+  const [coverageNotice, setCoverageNotice] = useState('');
+  const [checkingCoverage, setCheckingCoverage] = useState(false);
   const [timeWindows, setTimeWindows] = useState(serviceType?.timeWindows || []);
   const [pricePerMinute, setPricePerMinute] = useState(serviceType?.pricePerMinute || 0);
 
@@ -123,6 +125,10 @@ export default function RequestServiceScreen({ navigation, route }) {
   useEffect(() => {
     fetchEstimate();
   }, [hours, hasProducts, JSON.stringify(customFormData), serviceType?.slug]);
+
+  useEffect(() => {
+    if (coverageNotice) setCoverageNotice('');
+  }, [address.city, address.state]);
 
   const fetchEstimate = async () => {
     setLoadingEstimate(true);
@@ -175,13 +181,29 @@ export default function RequestServiceScreen({ navigation, route }) {
       Alert.alert('Atenção', 'Preencha o endereço do serviço.');
       return;
     }
-    const requestData = {
-      hours, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
-      address, scheduledDate: getFinalScheduledDate(),
-      serviceTypeSlug: serviceType?.slug || null,
-      customFormData,
-    };
-    navigation.navigate('Payment', { requestData, estimate, serviceType });
+    setCheckingCoverage(true);
+    requestAPI.checkCoverage(address.city, address.state)
+      .then(({ data }) => {
+        if (!data.covered) {
+          const message = data.message || 'No momento a solicitação não está disponível na sua cidade, mas a Já! vem ampliando sua zona de cobertura e logo estará disponível na sua cidade também.';
+          setCoverageNotice(message);
+          Alert.alert('Serviço indisponível', message);
+          return;
+        }
+
+        const requestData = {
+          hours, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
+          address, scheduledDate: getFinalScheduledDate(),
+          serviceTypeSlug: serviceType?.slug || null,
+          customFormData,
+        };
+        navigation.navigate('Payment', { requestData, estimate, serviceType });
+      })
+      .catch((err) => {
+        const message = err?.response?.data?.message || 'Não foi possível validar sua cidade no momento.';
+        Alert.alert('Erro', message);
+      })
+      .finally(() => setCheckingCoverage(false));
   };
 
   const handleContinue = () => {
@@ -579,6 +601,13 @@ export default function RequestServiceScreen({ navigation, route }) {
                 />
               </View>
             ))}
+
+            {!!coverageNotice && (
+              <View style={styles.coverageWarning}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.warning} />
+                <Text style={styles.coverageWarningText}>{coverageNotice}</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -649,11 +678,14 @@ export default function RequestServiceScreen({ navigation, route }) {
           <TouchableOpacity
             style={styles.btnNextWrap}
             onPress={handleSubmit}
+            disabled={checkingCoverage}
             activeOpacity={0.85}
           >
             <LinearGradient colors={colors.gradientPrimary} style={styles.btnNext}>
-              <Ionicons name="lock-closed" size={18} color={colors.white} />
-              <Text style={styles.btnNextText}>Ir para Pagamento</Text>
+              {checkingCoverage
+                ? <ActivityIndicator color={colors.white} />
+                : <Ionicons name="lock-closed" size={18} color={colors.white} />}
+              <Text style={styles.btnNextText}>{checkingCoverage ? 'Validando...' : 'Ir para Pagamento'}</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -752,6 +784,23 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   checkRowActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}05` },
+  coverageWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFF6E8',
+    borderWidth: 1,
+    borderColor: '#F5C16C',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginTop: 10,
+  },
+  coverageWarningText: {
+    flex: 1,
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
   checkbox: {
     width: 24, height: 24, borderRadius: 7,
     borderWidth: 2, borderColor: colors.border,

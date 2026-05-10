@@ -367,6 +367,10 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='service-types'?'active':''}" onclick="navTo('service-types')">
             <span class="icon">📋</span> Profissões
           </div>` : ''}
+          ${hasPermission(PERMISSIONS.SERVICE_MANAGEMENT) ? `
+          <div class="nav-item ${currentPage==='coverage-cities'?'active':''}" onclick="navTo('coverage-cities')">
+            <span class="icon">🗺️</span> Cidades Atendidas
+          </div>` : ''}
           ${hasPermission(PERMISSIONS.ACCESS_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='admins'?'active':''}" onclick="navTo('admins')">
             <span class="icon">🛡️</span> Equipe Admin
@@ -426,6 +430,7 @@ const navTo = (page) => {
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
     'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
+    'coverage-cities': [PERMISSIONS.SERVICE_MANAGEMENT],
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
   };
@@ -452,6 +457,7 @@ const navTo = (page) => {
     pagamentos: 'Pagamentos & Stripe',
     saques: 'Fila de Saques PIX',
     'service-types': 'Profissões e Serviços',
+    'coverage-cities': 'Cidades Atendidas',
     'pause-types': 'Tipos de Pausa',
     admins: 'Equipe Admin',
   }[page] || page;
@@ -471,6 +477,7 @@ const renderPage = () => {
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
     'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
+    'coverage-cities': [PERMISSIONS.SERVICE_MANAGEMENT],
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
   };
@@ -478,7 +485,7 @@ const renderPage = () => {
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'pause-types': renderPauseTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -2431,6 +2438,125 @@ const deletePauseType = async (id) => {
     await req('DELETE', `/pause-types/${id}`);
     showAlert('Excluído.', 'success');
     renderPauseTypes();
+  } catch (err) { showAlert(err.message); }
+};
+
+// ── COVERAGE CITIES ────────────────────────────────────────────────────────
+
+const renderCoverageCities = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', '/coverage-cities');
+    const cities = data.coverageCities || [];
+    c.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;gap:12px;flex-wrap:wrap;">
+        <p style="color:#5C6B7A;font-size:13px;max-width:760px;">Cadastre as cidades onde a solicitação de serviço pode ser iniciada. Quando uma cidade ficar inativa, o app mostra a mensagem de expansão da cobertura.</p>
+        <button class="btn btn-primary" onclick="openNewCoverageCityModal()">+ Nova Cidade</button>
+      </div>
+      <div class="section-card">
+        <div class="section-header"><h2>Cidades Atendidas (${cities.length})</h2></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Cidade</th><th>Estado</th><th>Ordem</th><th>Status</th><th>Ação</th></tr></thead>
+          <tbody>${cities.length ? cities.map((city) => `
+            <tr>
+              <td><strong>${escHtml(city.city)}</strong></td>
+              <td>${escHtml(city.state || '-')}</td>
+              <td>${Number(city.order || 0)}</td>
+              <td><span class="badge ${city.isActive ? 'badge-approved' : 'badge-rejected'}">${city.isActive ? 'Ativa' : 'Inativa'}</span></td>
+              <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" onclick='openEditCoverageCityModal(${JSON.stringify(JSON.stringify(city))})'>Editar</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteCoverageCity('${city._id}')">Excluir</button>
+              </td>
+            </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:#7A84A0;">Nenhuma cidade atendida cadastrada.</td></tr>'}</tbody>
+        </table></div>
+      </div>`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+const openNewCoverageCityModal = () => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h3>🗺️ Nova Cidade Atendida</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Cidade</label><input id="ncc-city" class="form-input" placeholder="Ex: São José dos Campos" /></div>
+      <div class="form-group"><label class="form-label">Estado</label><input id="ncc-state" class="form-input" placeholder="Ex: SP" maxlength="2" /></div>
+      <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ncc-order" class="form-input" type="number" value="0" /></div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="ncc-active" type="checkbox" checked />
+        <label for="ncc-active" class="form-label" style="margin:0;">Ativa</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="createCoverageCity()">Criar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const createCoverageCity = async () => {
+  const city = document.getElementById('ncc-city').value.trim();
+  const state = document.getElementById('ncc-state').value.trim();
+  const order = Number(document.getElementById('ncc-order').value || 0);
+  const isActive = !!document.getElementById('ncc-active').checked;
+  if (!city) { showAlert('Informe a cidade.'); return; }
+  try {
+    await req('POST', '/coverage-cities', { city, state, order, isActive });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Cidade cadastrada!', 'success');
+    renderCoverageCities();
+  } catch (err) { showAlert(err.message); }
+};
+
+const openEditCoverageCityModal = (cityJson) => {
+  const city = JSON.parse(cityJson);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h3>✏️ Editar Cidade Atendida</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Cidade</label><input id="ecc-city" class="form-input" value="${escHtml(city.city || '')}" /></div>
+      <div class="form-group"><label class="form-label">Estado</label><input id="ecc-state" class="form-input" value="${escHtml(city.state || '')}" maxlength="2" /></div>
+      <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ecc-order" class="form-input" type="number" value="${Number(city.order || 0)}" /></div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+        <input id="ecc-active" type="checkbox" ${city.isActive ? 'checked' : ''} />
+        <label for="ecc-active" class="form-label" style="margin:0;">Ativa</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteCoverageCity('${city._id}')">Excluir</button>
+      <button class="btn btn-primary" onclick="saveCoverageCity('${city._id}')">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const saveCoverageCity = async (id) => {
+  const city = document.getElementById('ecc-city').value.trim();
+  const state = document.getElementById('ecc-state').value.trim();
+  const order = Number(document.getElementById('ecc-order').value || 0);
+  const isActive = !!document.getElementById('ecc-active').checked;
+  if (!city) { showAlert('Informe a cidade.'); return; }
+  try {
+    await req('PATCH', `/coverage-cities/${id}`, { city, state, order, isActive });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Cidade atualizada!', 'success');
+    renderCoverageCities();
+  } catch (err) { showAlert(err.message); }
+};
+
+const deleteCoverageCity = async (id) => {
+  if (!confirm('Excluir esta cidade atendida?')) return;
+  try {
+    await req('DELETE', `/coverage-cities/${id}`);
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Cidade excluída.', 'success');
+    renderCoverageCities();
   } catch (err) { showAlert(err.message); }
 };
 

@@ -44,6 +44,8 @@ export const userAPI = {
 export const requestAPI = {
   estimate: (hours, hasProducts, serviceTypeSlug = null, customFormData = {}) =>
     api.post('/requests/estimate', { hours, hasProducts, serviceTypeSlug, customFormData }),
+  checkCoverage: (city, state = '') =>
+    api.get('/requests/coverage', { params: { city, state } }),
   create: (data) => api.post('/requests', data),
   list: (scope = null) => api.get(`/requests${scope ? `?scope=${scope}` : ''}`),
   getById: (id) => api.get(`/requests/${id}`),

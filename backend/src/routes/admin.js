@@ -13,6 +13,7 @@ const ServiceChat = require('../models/ServiceChat');
 const ServiceRequest = require('../models/ServiceRequest');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ServiceType = require('../models/ServiceType');
+const ServiceCoverageCity = require('../models/ServiceCoverageCity');
 const HelpTopic = require('../models/HelpTopic');
 const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
@@ -269,6 +270,19 @@ router.post('/seed', async (req, res) => {
   for (const t of defaultTypes) {
     await ServiceType.findOneAndUpdate({ slug: t.slug }, t, { upsert: true });
   }
+
+  await ServiceCoverageCity.findOneAndUpdate(
+    { normalizedCity: 'sao jose dos campos', normalizedState: 'sp' },
+    {
+      city: 'São José dos Campos',
+      state: 'SP',
+      normalizedCity: 'sao jose dos campos',
+      normalizedState: 'sp',
+      isActive: true,
+      order: 0,
+    },
+    { upsert: true }
+  );
 
   res.status(201).json({ message: 'Super admin criado', email: admin.email });
 });
@@ -2039,6 +2053,97 @@ router.patch('/coupons/:id/toggle', adminAuth, async (req, res) => {
 // ─── Pause Types ───────────────────────────────────────────────────────────
 
 const PauseType = require('../models/PauseType');
+
+const normalizeCityKey = (value = '') => String(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase()
+  .replace(/\s+/g, ' ');
+
+const normalizeStateKey = (value = '') => String(value).trim().toLowerCase();
+
+// ─── Cities Coverage ───────────────────────────────────────────────────────
+
+// GET /api/admin/coverage-cities
+router.get('/coverage-cities', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const cities = await ServiceCoverageCity.find().sort({ order: 1, city: 1, createdAt: 1 });
+    res.json({ coverageCities: cities });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar cidades atendidas' });
+  }
+});
+
+// POST /api/admin/coverage-cities
+router.post('/coverage-cities', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const { city, state, isActive, order } = req.body;
+    const cityName = String(city || '').trim();
+    const stateName = String(state || '').trim();
+    if (!cityName) {
+      return res.status(400).json({ message: 'Cidade é obrigatória' });
+    }
+
+    const normalizedCity = normalizeCityKey(cityName);
+    const normalizedState = normalizeStateKey(stateName);
+    const coverageCity = await ServiceCoverageCity.create({
+      city: cityName,
+      state: stateName,
+      normalizedCity,
+      normalizedState,
+      isActive: isActive !== false,
+      order: Number(order || 0),
+    });
+    res.status(201).json({ coverageCity });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ message: 'Essa cidade já está cadastrada' });
+    }
+    res.status(500).json({ message: 'Erro ao criar cidade atendida' });
+  }
+});
+
+// PATCH /api/admin/coverage-cities/:id
+router.patch('/coverage-cities/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const coverageCity = await ServiceCoverageCity.findById(req.params.id);
+    if (!coverageCity) return res.status(404).json({ message: 'Cidade atendida não encontrada' });
+
+    const { city, state, isActive, order } = req.body;
+    if (city !== undefined) {
+      const cityName = String(city || '').trim();
+      if (!cityName) return res.status(400).json({ message: 'Cidade é obrigatória' });
+      coverageCity.city = cityName;
+      coverageCity.normalizedCity = normalizeCityKey(cityName);
+    }
+    if (state !== undefined) {
+      const stateName = String(state || '').trim();
+      coverageCity.state = stateName;
+      coverageCity.normalizedState = normalizeStateKey(stateName);
+    }
+    if (isActive !== undefined) coverageCity.isActive = Boolean(isActive);
+    if (order !== undefined) coverageCity.order = Number(order);
+    await coverageCity.save();
+    res.json({ coverageCity });
+  } catch (err) {
+    if (err?.code === 11000) {
+      return res.status(409).json({ message: 'Essa combinação de cidade/estado já existe' });
+    }
+    res.status(500).json({ message: 'Erro ao atualizar cidade atendida' });
+  }
+});
+
+// DELETE /api/admin/coverage-cities/:id
+router.delete('/coverage-cities/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const coverageCity = await ServiceCoverageCity.findByIdAndDelete(req.params.id);
+    if (!coverageCity) return res.status(404).json({ message: 'Cidade atendida não encontrada' });
+    res.json({ message: 'Cidade atendida excluída' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao excluir cidade atendida' });
+  }
+});
 
 // GET /api/admin/pause-types
 router.get('/pause-types', adminAuth, async (req, res) => {
