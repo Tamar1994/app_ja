@@ -1,19 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   ScrollView, TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const STEPS = [
-  { status: 'accepted', label: 'Profissional a caminho', icon: 'walk', color: colors.secondary },
+  { status: 'accepted', label: 'Profissional confirmado', icon: 'person-circle', color: colors.secondary },
+  { status: 'preparing', label: 'Profissional se preparando', icon: 'construct', color: '#7C3AED' },
+  { status: 'on_the_way', label: 'Profissional a caminho', icon: 'car', color: '#2563EB' },
   { status: 'in_progress', label: 'Serviço em andamento', icon: 'home', color: colors.warning },
   { status: 'completed', label: 'Serviço concluído!', icon: 'checkmark-circle', color: colors.success },
 ];
+
+const LIVE_POLL_MS = 10000;
 
 export default function TrackingScreen({ navigation, route }) {
   const { requestId } = route.params;
@@ -22,10 +27,47 @@ export default function TrackingScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadRequest();
-    const unsubStart = on('service_started', ({ requestId: id }) => { if (id === requestId) loadRequest(); });
-    const unsubComplete = on('service_completed', ({ requestId: id }) => { if (id === requestId) loadRequest(); });
-    return () => { unsubStart && unsubStart(); unsubComplete && unsubComplete(); };
+    let mounted = true;
+
+    const refresh = async () => {
+      if (!mounted) return;
+      await loadRequest();
+    };
+
+    refresh();
+
+    const unsubStatus = on('request_status_updated', ({ request: updated }) => {
+      if (updated?._id?.toString() === requestId?.toString()) {
+        setRequest(updated);
+      }
+    });
+    const unsubLoc = on('professional_location_update', ({ requestId: id, longitude, latitude, updatedAt }) => {
+      if (id?.toString() !== requestId?.toString()) return;
+      setRequest((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          professionalLiveLocation: {
+            type: 'Point',
+            coordinates: [longitude, latitude],
+          },
+          professionalLiveLocationUpdatedAt: updatedAt,
+        };
+      });
+    });
+    const unsubStart = on('service_started', ({ requestId: id }) => { if (id?.toString() === requestId?.toString()) refresh(); });
+    const unsubComplete = on('service_completed', ({ requestId: id }) => { if (id?.toString() === requestId?.toString()) refresh(); });
+
+    const interval = setInterval(refresh, LIVE_POLL_MS);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+      unsubStatus && unsubStatus();
+      unsubLoc && unsubLoc();
+      unsubStart && unsubStart();
+      unsubComplete && unsubComplete();
+    };
   }, [requestId]);
 
   const loadRequest = async () => {
@@ -62,8 +104,64 @@ export default function TrackingScreen({ navigation, route }) {
     );
   }
 
-  const currentStepIndex = STEPS.findIndex((s) => s.status === request?.status);
+  const currentStepIndex = Math.max(0, STEPS.findIndex((s) => s.status === request?.status));
   const currentStep = STEPS[Math.max(currentStepIndex, 0)];
+
+  const clientCoords = useMemo(() => {
+    const coords = request?.address?.coordinates;
+    if (!Array.isArray(coords) || coords.length < 2) return null;
+    const [lng, lat] = coords;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+    if (Math.abs(lng) < 0.0001 && Math.abs(lat) < 0.0001) return null;
+    return { latitude: lat, longitude: lng };
+  }, [request?.address?.coordinates]);
+
+  const professionalCoords = useMemo(() => {
+    const reqCoords = request?.professionalLiveLocation?.coordinates;
+    if (Array.isArray(reqCoords) && reqCoords.length >= 2) {
+      const [lng, lat] = reqCoords;
+      if (Number.isFinite(lng) && Number.isFinite(lat)) {
+        return { latitude: lat, longitude: lng };
+      }
+    }
+    const userCoords = request?.professional?.location?.coordinates;
+    if (Array.isArray(userCoords) && userCoords.length >= 2) {
+      const [lng, lat] = userCoords;
+      if (Number.isFinite(lng) && Number.isFinite(lat)) {
+        return { latitude: lat, longitude: lng };
+      }
+    }
+    return null;
+  }, [request?.professionalLiveLocation?.coordinates, request?.professional?.location?.coordinates]);
+
+  const mapRegion = useMemo(() => {
+    if (clientCoords && professionalCoords) {
+      const midLat = (clientCoords.latitude + professionalCoords.latitude) / 2;
+      const midLng = (clientCoords.longitude + professionalCoords.longitude) / 2;
+      const latDelta = Math.max(0.01, Math.abs(clientCoords.latitude - professionalCoords.latitude) * 1.8);
+      const lngDelta = Math.max(0.01, Math.abs(clientCoords.longitude - professionalCoords.longitude) * 1.8);
+      return {
+        latitude: midLat,
+        longitude: midLng,
+        latitudeDelta: latDelta,
+        longitudeDelta: lngDelta,
+      };
+    }
+    if (clientCoords) {
+      return {
+        latitude: clientCoords.latitude,
+        longitude: clientCoords.longitude,
+        latitudeDelta: 0.015,
+        longitudeDelta: 0.015,
+      };
+    }
+    return {
+      latitude: -23.55052,
+      longitude: -46.633308,
+      latitudeDelta: 0.2,
+      longitudeDelta: 0.2,
+    };
+  }, [clientCoords, professionalCoords]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -155,6 +253,45 @@ export default function TrackingScreen({ navigation, route }) {
           </View>
         )}
 
+        {request?.status === 'on_the_way' && (
+          <View style={styles.mapCard}>
+            <View style={styles.mapHeader}>
+              <Text style={styles.cardLabel}>Rastreamento em tempo real</Text>
+              <Text style={styles.mapUpdatedText}>
+                {request?.professionalLiveLocationUpdatedAt
+                  ? `Atualizado ${new Date(request.professionalLiveLocationUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+                  : 'Aguardando primeira posição'}
+              </Text>
+            </View>
+
+            <MapView style={styles.map} initialRegion={mapRegion} region={mapRegion}>
+              {clientCoords && (
+                <Marker coordinate={clientCoords} title="Sua casa" description="Endereço do atendimento">
+                  <View style={styles.homeMarker}>
+                    <Ionicons name="home" size={18} color={colors.white} />
+                  </View>
+                </Marker>
+              )}
+
+              {professionalCoords && (
+                <Marker coordinate={professionalCoords} title={request?.professional?.name || 'Profissional'} description="Profissional a caminho">
+                  <View style={styles.proMarker}>
+                    <Text style={styles.proMarkerText}>JÁ</Text>
+                  </View>
+                </Marker>
+              )}
+
+              {clientCoords && professionalCoords && (
+                <Polyline
+                  coordinates={[professionalCoords, clientCoords]}
+                  strokeColor={colors.primary}
+                  strokeWidth={4}
+                />
+              )}
+            </MapView>
+          </View>
+        )}
+
         {/* Detalhes do serviço */}
         {request && (
           <View style={styles.detailsCard}>
@@ -177,7 +314,7 @@ export default function TrackingScreen({ navigation, route }) {
           </View>
         )}
 
-        {request?.status === 'accepted' && (
+        {['accepted', 'preparing', 'on_the_way'].includes(request?.status) && (
           <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
             <Ionicons name="close-circle-outline" size={20} color={colors.error} />
             <Text style={styles.cancelText}>Cancelar serviço</Text>
@@ -322,6 +459,50 @@ const styles = StyleSheet.create({
   callBtnGradient: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
+  },
+  mapCard: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    ...shadows.md,
+  },
+  mapHeader: { marginBottom: 8 },
+  mapUpdatedText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textLight,
+    marginTop: 2,
+  },
+  map: {
+    width: '100%',
+    height: 220,
+    borderRadius: borderRadius.lg,
+  },
+  homeMarker: {
+    backgroundColor: colors.secondary,
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
+  proMarker: {
+    backgroundColor: colors.primary,
+    borderRadius: 16,
+    minWidth: 36,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
+    paddingHorizontal: 6,
+  },
+  proMarkerText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   // Details
   detailsCard: {

@@ -9,6 +9,8 @@ let activeChat = null;
 let pollTimer = null;
 let countdownTimer = null;
 let unlockTargetId = null;
+let pendingImageFile = null;
+let pendingImagePreviewUrl = null;
 
 /* ── UTILS ──────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
@@ -62,6 +64,45 @@ function fmtSeconds(secs) {
 
 function escHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function setPendingImage(file) {
+  if (pendingImagePreviewUrl) {
+    URL.revokeObjectURL(pendingImagePreviewUrl);
+    pendingImagePreviewUrl = null;
+  }
+  pendingImageFile = file || null;
+
+  $('attachImgBtn').classList.toggle('has-file', !!pendingImageFile);
+  $('attachImgBtn').textContent = pendingImageFile ? '✅' : '🖼️';
+
+  const box = $('pendingImageBox');
+  if (!pendingImageFile) {
+    box.style.display = 'none';
+    $('pendingImagePreview').removeAttribute('src');
+    $('pendingImageName').textContent = '';
+    return;
+  }
+
+  pendingImagePreviewUrl = URL.createObjectURL(pendingImageFile);
+  $('pendingImagePreview').src = pendingImagePreviewUrl;
+  $('pendingImageName').textContent = pendingImageFile.name || 'imagem';
+  box.style.display = 'flex';
+}
+
+async function cropFileToCenterSquare(file) {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const sx = Math.floor((bitmap.width - side) / 2);
+  const sy = Math.floor((bitmap.height - side) / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = side;
+  canvas.height = side;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, side, side);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+  if (!blob) throw new Error('Nao foi possivel recortar a imagem');
+  return new File([blob], `crop-${Date.now()}.jpg`, { type: 'image/jpeg' });
 }
 
 /* ── LOGIN ──────────────────────────────────────────────────── */
@@ -282,7 +323,7 @@ async function selectChat(id, chatsList) {
     el.classList.toggle('active', el.dataset.id === id);
   });
   hide('chatEmpty');
-  $('chatConversation').style.display = 'flex';
+  show('chatConversation');
 
   const chat = (chatsList || []).find(c => c._id === id);
   const name = chat?.userId?.name || chat?.userId?.email || 'Usuário';
@@ -309,9 +350,14 @@ function renderMessages(msgs) {
   if (!msgs.length) { area.innerHTML = '<div class="muted" style="text-align:center;padding:20px;">Sem mensagens ainda</div>'; return; }
   area.innerHTML = msgs.map(m => {
     const isOp = m.sender === 'support';
+    const hasText = !!String(m.text || '').trim();
+    const hasImage = !!m.imageUrl;
     return `<div class="msg-block${isOp ? ' me' : ''}">
       <div class="msg-sender${isOp ? ' me' : ''}">${isOp ? 'Você' : 'Cliente'} · ${fmt(m.createdAt)}</div>
-      <div class="bubble ${isOp ? 'op' : 'user'}">${escHtml(m.text)}</div>
+      <div class="bubble ${isOp ? 'op' : 'user'}">
+        ${hasText ? `<div>${escHtml(m.text)}</div>` : ''}
+        ${hasImage ? `<img class="msg-image" src="${escHtml(m.imageUrl)}" alt="imagem" onclick="window.open('${escHtml(m.imageUrl)}','_blank')" />` : ''}
+      </div>
     </div>`;
   }).join('');
   area.scrollTop = area.scrollHeight;
@@ -534,6 +580,7 @@ $('logoutBtn').addEventListener('click', () => {
   token = null;
   localStorage.removeItem('ss_token');
   me = null;
+  setPendingImage(null);
   clearInterval(pollTimer);
   clearInterval(countdownTimer);
   clearInterval(window._svCountdown);
@@ -545,13 +592,47 @@ $('logoutBtn').addEventListener('click', () => {
 /* ── SEND MESSAGE ───────────────────────────────────────────── */
 $('sendMsgBtn').addEventListener('click', sendMsg);
 $('msgText').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
+$('attachImgBtn').addEventListener('click', () => $('msgImageInput').click());
+$('cropPendingBtn').addEventListener('click', async () => {
+  if (!pendingImageFile) return;
+  try {
+    const cropped = await cropFileToCenterSquare(pendingImageFile);
+    setPendingImage(cropped);
+    showAlert('Imagem recortada (centro).', 'success');
+  } catch (err) {
+    showAlert(err.message || 'Erro ao recortar imagem', 'error');
+  }
+});
+$('removePendingBtn').addEventListener('click', () => {
+  setPendingImage(null);
+  $('msgImageInput').value = '';
+});
+$('msgImageInput').addEventListener('change', (e) => {
+  setPendingImage(e.target.files?.[0] || null);
+});
 
 async function sendMsg() {
   const text = $('msgText').value.trim();
-  if (!text || !activeChat) return;
+  if ((!text && !pendingImageFile) || !activeChat) return;
+  const imageFile = pendingImageFile;
   $('msgText').value = '';
+  setPendingImage(null);
+  $('msgImageInput').value = '';
   try {
-    await apiFetch(`/chats/${activeChat}/message`, { method: 'POST', body: { text } });
+    if (imageFile) {
+      const fd = new FormData();
+      if (text) fd.append('text', text);
+      fd.append('image', imageFile);
+      const res = await fetch(`${API}/chats/${activeChat}/message`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Erro ao enviar imagem');
+    } else {
+      await apiFetch(`/chats/${activeChat}/message`, { method: 'POST', body: { text } });
+    }
     const data = await apiFetch(`/chats/${activeChat}`);
     renderMessages(data.chat?.messages || []);
   } catch (err) { showAlert(err.message, 'error'); }

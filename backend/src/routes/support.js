@@ -1,6 +1,7 @@
 const express = require('express');
 const SupportChat = require('../models/SupportChat');
 const auth = require('../middleware/auth');
+const upload = require('../config/multer');
 const { tryAssignChat } = require('../utils/supportQueue');
 const { logAudit } = require('../utils/auditLog');
 
@@ -184,9 +185,10 @@ router.get('/chats/:id', auth, async (req, res) => {
 });
 
 // POST /api/support/chats/:id/message — usuário envia mensagem
-router.post('/chats/:id/message', auth, async (req, res) => {
-  const { text } = req.body;
-  if (!text?.trim()) return res.status(400).json({ message: 'Mensagem vazia' });
+router.post('/chats/:id/message', auth, upload.single('image'), async (req, res) => {
+  const text = String(req.body.text || '').trim();
+  const hasImage = !!req.file;
+  if (!text && !hasImage) return res.status(400).json({ message: 'Mensagem vazia' });
   try {
     const chat = await SupportChat.findOne({
       _id: req.params.id,
@@ -195,7 +197,13 @@ router.post('/chats/:id/message', auth, async (req, res) => {
     });
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
 
-    chat.messages.push({ sender: 'user', text: text.trim() });
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    chat.messages.push({
+      sender: 'user',
+      text,
+      imageUrl,
+      imageMimeType: req.file?.mimetype || null,
+    });
     await chat.save();
 
     // Notificar operador via socket (sala do operador)
@@ -203,13 +211,14 @@ router.post('/chats/:id/message', auth, async (req, res) => {
     if (io && chat.assignedTo) {
       io.to(`admin_${chat.assignedTo}`).emit('user_message', {
         chatId: chat._id,
-        text: text.trim(),
+        text,
+        imageUrl,
         userName: req.user.name,
         userId: req.user._id,
       });
     }
 
-    res.json({ message: 'Mensagem enviada' });
+    res.json({ message: 'Mensagem enviada', chat });
   } catch {
     res.status(500).json({ message: 'Erro ao enviar mensagem' });
   }

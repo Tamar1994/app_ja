@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   ScrollView, TouchableOpacity, Alert, ActivityIndicator,
@@ -17,10 +17,10 @@ export default function ActiveJobScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [clientConfirmed, setClientConfirmed] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const locationIntervalRef = useRef(null);
 
   useEffect(() => {
     loadRequest();
-    startSendingLocation();
 
     // Cliente confirmou o profissional → liberar botão de iniciar
     const unsubConfirmed = on('client_confirmed', ({ requestId: rId }) => {
@@ -43,14 +43,62 @@ export default function ActiveJobScreen({ navigation, route }) {
     return () => {
       unsubConfirmed && unsubConfirmed();
       unsubRejected && unsubRejected();
+      if (locationIntervalRef.current) {
+        clearInterval(locationIntervalRef.current);
+        locationIntervalRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!request || request.status !== 'on_the_way') {
+      if (locationIntervalRef.current) {
+        clearInterval(locationIntervalRef.current);
+        locationIntervalRef.current = null;
+      }
+      return;
+    }
+
+    let stopped = false;
+    const start = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || stopped) return;
+
+      const sendOnce = async () => {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const longitude = loc.coords.longitude;
+          const latitude = loc.coords.latitude;
+          emit('update_location', { longitude, latitude });
+          userAPI.updateLocation(longitude, latitude).catch(() => {});
+          requestAPI.updateProfessionalLocation(requestId, longitude, latitude).catch(() => {});
+        } catch {
+          // noop
+        }
+      };
+
+      await sendOnce();
+      if (!stopped) {
+        locationIntervalRef.current = setInterval(sendOnce, 15000);
+      }
+    };
+
+    start();
+
+    return () => {
+      stopped = true;
+      if (locationIntervalRef.current) {
+        clearInterval(locationIntervalRef.current);
+        locationIntervalRef.current = null;
+      }
+    };
+  }, [request?.status, requestId]);
 
   const loadRequest = async () => {
     try {
       const { data } = await requestAPI.getById(requestId);
       setRequest(data.request);
-      setClientConfirmed(Boolean(data.request.clientConfirmedAt) || ['in_progress', 'completed'].includes(data.request.status));
+      setClientConfirmed(Boolean(data.request.clientConfirmedAt) || ['preparing', 'on_the_way', 'in_progress', 'completed'].includes(data.request.status));
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar o serviço.');
     } finally {
@@ -58,21 +106,28 @@ export default function ActiveJobScreen({ navigation, route }) {
     }
   };
 
-  const startSendingLocation = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') return;
+  const handlePreparing = async () => {
+    setActionLoading(true);
+    try {
+      await requestAPI.markPreparing(requestId);
+      await loadRequest();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível atualizar para se preparando.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
-    // Envia localização a cada 15 segundos
-    const interval = setInterval(async () => {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      emit('update_location', {
-        longitude: loc.coords.longitude,
-        latitude: loc.coords.latitude,
-      });
-      userAPI.updateLocation(loc.coords.longitude, loc.coords.latitude).catch(() => {});
-    }, 15000);
-
-    return () => clearInterval(interval);
+  const handleOnTheWay = async () => {
+    setActionLoading(true);
+    try {
+      await requestAPI.markOnTheWay(requestId);
+      await loadRequest();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível atualizar para a caminho.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleStart = async () => {
@@ -127,6 +182,10 @@ export default function ActiveJobScreen({ navigation, route }) {
         colors={
           request?.status === 'in_progress'
             ? [colors.warning, '#E65100']
+            : request?.status === 'on_the_way'
+            ? colors.gradientSecondary
+            : request?.status === 'preparing'
+            ? ['#7C3AED', '#5B21B6']
             : clientConfirmed || request?.status !== 'accepted'
             ? colors.gradientSecondary
             : ['#5C6BC0', '#3949AB']  // roxo para estado de espera
@@ -144,6 +203,10 @@ export default function ActiveJobScreen({ navigation, route }) {
               name={
                 request?.status === 'in_progress'
                   ? 'home'
+                  : request?.status === 'on_the_way'
+                  ? 'car'
+                  : request?.status === 'preparing'
+                  ? 'construct'
                   : clientConfirmed
                   ? 'walk'
                   : 'time'
@@ -155,11 +218,15 @@ export default function ActiveJobScreen({ navigation, route }) {
           <Text style={styles.headerTitle}>
             {request?.status === 'in_progress'
               ? 'Serviço em andamento'
+              : request?.status === 'on_the_way'
+              ? 'A caminho do cliente'
+              : request?.status === 'preparing'
+              ? 'Profissional se preparando'
               : clientConfirmed
               ? 'A caminho do cliente'
               : 'Aguardando confirmação'}
           </Text>
-          {(clientConfirmed || request?.status === 'in_progress') && (
+          {(request?.status === 'on_the_way' || request?.status === 'in_progress') && (
             <View style={styles.locBadge}>
               <Ionicons name="location" size={12} color={colors.white} />
               <Text style={styles.locBadgeText}>Localização sendo enviada</Text>
@@ -240,6 +307,42 @@ export default function ActiveJobScreen({ navigation, route }) {
         {request?.status === 'accepted' && clientConfirmed && (
           <TouchableOpacity
             style={styles.btnWrap}
+            onPress={handlePreparing}
+            disabled={actionLoading}
+          >
+            <LinearGradient colors={['#7C3AED', '#5B21B6']} style={styles.btn}>
+              {actionLoading
+                ? <ActivityIndicator color={colors.white} />
+                : (
+                  <>
+                    <Ionicons name="construct" size={20} color={colors.white} />
+                    <Text style={styles.btnText}>Estou me preparando</Text>
+                  </>
+                )}
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+        {request?.status === 'preparing' && (
+          <TouchableOpacity
+            style={styles.btnWrap}
+            onPress={handleOnTheWay}
+            disabled={actionLoading}
+          >
+            <LinearGradient colors={colors.gradientSecondary} style={styles.btn}>
+              {actionLoading
+                ? <ActivityIndicator color={colors.white} />
+                : (
+                  <>
+                    <Ionicons name="car" size={20} color={colors.white} />
+                    <Text style={styles.btnText}>Estou a caminho</Text>
+                  </>
+                )}
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+        {request?.status === 'on_the_way' && (
+          <TouchableOpacity
+            style={styles.btnWrap}
             onPress={handleStart}
             disabled={actionLoading}
           >
@@ -249,7 +352,7 @@ export default function ActiveJobScreen({ navigation, route }) {
                 : (
                   <>
                     <Ionicons name="play" size={20} color={colors.white} />
-                    <Text style={styles.btnText}>Iniciar serviço</Text>
+                    <Text style={styles.btnText}>Cheguei e vou iniciar</Text>
                   </>
                 )}
             </LinearGradient>

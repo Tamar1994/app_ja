@@ -159,14 +159,14 @@ router.get('/', auth, async (req, res) => {
     let requests;
     if (req.user.userType === 'client') {
       requests = await ServiceRequest.find({ client: req.user._id })
-        .populate('professional', 'name avatar professional.rating')
+        .populate('professional', 'name avatar professional.rating location')
         .sort({ createdAt: -1 });
     } else {
       const { scope = 'available' } = req.query;
       if (scope === 'my-services') {
         requests = await ServiceRequest.find({
           professional: req.user._id,
-          status: { $in: ['accepted', 'in_progress', 'completed'] },
+          status: { $in: ['accepted', 'preparing', 'on_the_way', 'in_progress', 'completed'] },
         })
           .populate('client', 'name avatar')
           .sort({ updatedAt: -1, createdAt: -1 });
@@ -191,11 +191,127 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const request = await ServiceRequest.findById(req.params.id)
       .populate('client', 'name avatar phone')
-      .populate('professional', 'name avatar phone professional');
+      .populate('professional', 'name avatar phone professional location');
     if (!request) return res.status(404).json({ message: 'Solicitação não encontrada' });
     res.json({ request });
   } catch {
     res.status(500).json({ message: 'Erro ao buscar solicitação' });
+  }
+});
+
+// PATCH /api/requests/:id/professional-preparing — profissional se preparando
+router.patch('/:id/professional-preparing', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem alterar este status' });
+  }
+
+  try {
+    const request = await ServiceRequest.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        professional: req.user._id,
+        status: 'accepted',
+        clientConfirmedAt: { $ne: null },
+      },
+      {
+        status: 'preparing',
+        professionalPreparingAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!request) return res.status(400).json({ message: 'Serviço não elegível para preparação' });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${request.client}`).emit('request_status_updated', { request });
+    }
+
+    res.json({ request });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar status para preparação' });
+  }
+});
+
+// PATCH /api/requests/:id/professional-on-the-way — profissional saiu para atendimento
+router.patch('/:id/professional-on-the-way', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem alterar este status' });
+  }
+
+  try {
+    const request = await ServiceRequest.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        professional: req.user._id,
+        status: { $in: ['accepted', 'preparing'] },
+        clientConfirmedAt: { $ne: null },
+      },
+      {
+        status: 'on_the_way',
+        professionalOnTheWayAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!request) return res.status(400).json({ message: 'Serviço não elegível para status a caminho' });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${request.client}`).emit('request_status_updated', { request });
+    }
+
+    res.json({ request });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar status para a caminho' });
+  }
+});
+
+// PATCH /api/requests/:id/professional-location — atualiza localização em tempo real durante deslocamento
+router.patch('/:id/professional-location', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem atualizar localização' });
+  }
+
+  const longitude = Number(req.body.longitude);
+  const latitude = Number(req.body.latitude);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return res.status(400).json({ message: 'Coordenadas inválidas' });
+  }
+
+  try {
+    const request = await ServiceRequest.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        professional: req.user._id,
+        status: { $in: ['on_the_way', 'preparing', 'accepted'] },
+      },
+      {
+        professionalLiveLocation: {
+          type: 'Point',
+          coordinates: [longitude, latitude],
+        },
+        professionalLiveLocationUpdatedAt: new Date(),
+      },
+      { new: true }
+    );
+
+    if (!request) return res.status(400).json({ message: 'Serviço não elegível para rastreamento' });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${request.client}`).emit('professional_location_update', {
+        requestId: request._id,
+        longitude,
+        latitude,
+        updatedAt: request.professionalLiveLocationUpdatedAt,
+      });
+      io.to(`user_${request.client}`).emit('request_status_updated', { request });
+    }
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar localização do profissional' });
   }
 });
 
@@ -365,7 +481,7 @@ router.patch('/:id/start', auth, async (req, res) => {
       {
         _id: req.params.id,
         professional: req.user._id,
-        status: 'accepted',
+        status: { $in: ['accepted', 'preparing', 'on_the_way'] },
         clientConfirmedAt: { $ne: null },
       },
       { status: 'in_progress', startedAt: new Date() },
@@ -489,8 +605,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
     const filter = req.user.userType === 'client'
-      ? { _id: req.params.id, client: req.user._id, status: { $in: ['searching', 'accepted'] } }
-      : { _id: req.params.id, professional: req.user._id, status: 'accepted' };
+      ? { _id: req.params.id, client: req.user._id, status: { $in: ['searching', 'accepted', 'preparing', 'on_the_way'] } }
+      : { _id: req.params.id, professional: req.user._id, status: { $in: ['accepted', 'preparing', 'on_the_way'] } };
 
     const request = await ServiceRequest.findOneAndUpdate(filter, {
       status: 'cancelled',

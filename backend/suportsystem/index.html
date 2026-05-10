@@ -131,10 +131,22 @@
     .bubble { max-width: 65%; padding: 10px 14px; border-radius: 16px; font-size: 14px; line-height: 1.5; word-break: break-word; }
     .bubble.user { background: var(--card2); border-bottom-left-radius: 4px; }
     .bubble.op   { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+    .msg-image { max-width: 280px; border-radius: 12px; display: block; margin-top: 6px; border: 1px solid var(--border); cursor: pointer; }
     .chat-input-wrap { padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
     .chat-input-wrap input { flex: 1; }
     .send-btn { background: var(--accent); color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: 700; font-size: 13px; white-space: nowrap; }
     .send-btn:hover { background: #ea6c0a; }
+    .attach-btn { background: var(--card2); color: var(--text); padding: 10px 12px; border: 1px solid var(--border); }
+    .attach-btn.has-file { border-color: var(--accent2); color: #bfdbfe; }
+    .pending-media { margin: 10px 16px 0; background: var(--card2); border: 1px solid var(--border); border-radius: 10px; padding: 8px; display: none; align-items: center; gap: 10px; }
+    .pending-media img { width: 72px; height: 72px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
+    .pending-media .meta { flex: 1; min-width: 0; }
+    .pending-media .title { font-size: 12px; font-weight: 700; color: var(--text); }
+    .pending-media .name { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pending-media .actions { display: flex; gap: 6px; margin-top: 6px; }
+    .mini-btn { font-size: 11px; padding: 5px 9px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text); }
+    .mini-btn:hover { border-color: var(--accent2); }
+    .mini-btn.danger { border-color: rgba(239,68,68,.5); color: #f87171; }
 
     /* RIGHT PANEL */
     .op-right { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); overflow: hidden; }
@@ -300,7 +312,20 @@
       <div id="chatConversation" class="hidden" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
         <div class="chat-header" id="chatHeader"></div>
         <div class="messages-area" id="chatMessages"></div>
+        <div id="pendingImageBox" class="pending-media">
+          <img id="pendingImagePreview" alt="preview" />
+          <div class="meta">
+            <div class="title">Imagem pronta para envio</div>
+            <div class="name" id="pendingImageName">arquivo</div>
+            <div class="actions">
+              <button class="mini-btn" id="cropPendingBtn">Recortar</button>
+              <button class="mini-btn danger" id="removePendingBtn">Remover</button>
+            </div>
+          </div>
+        </div>
         <div class="chat-input-wrap">
+          <input id="msgImageInput" type="file" accept="image/png,image/jpeg,image/webp" class="hidden" />
+          <button class="attach-btn" id="attachImgBtn" title="Anexar imagem">🖼️</button>
           <input id="msgText" placeholder="Digite sua mensagem para o cliente..." />
           <button class="send-btn" id="sendMsgBtn">Enviar →</button>
           <button class="btn-danger" id="closeChatBtn" style="white-space:nowrap;">Encerrar</button>

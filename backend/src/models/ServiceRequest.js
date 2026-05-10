@@ -22,7 +22,7 @@ const serviceRequestSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['searching', 'accepted', 'in_progress', 'completed', 'cancelled'],
+    enum: ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress', 'completed', 'cancelled'],
     default: 'searching',
   },
   address: {
@@ -113,6 +113,20 @@ const serviceRequestSchema = new mongoose.Schema({
   completedAt: { type: Date, default: null },
   cancelledAt: { type: Date, default: null },
   cancelReason: { type: String, default: null },
+  professionalPreparingAt: { type: Date, default: null },
+  professionalOnTheWayAt: { type: Date, default: null },
+  professionalLiveLocation: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point',
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      default: null,
+    },
+  },
+  professionalLiveLocationUpdatedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 serviceRequestSchema.index({ 'address.coordinates': '2dsphere' });

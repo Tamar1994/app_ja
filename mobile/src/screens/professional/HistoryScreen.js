@@ -29,21 +29,27 @@ export default function ProfessionalHistoryScreen() {
 
   const STATUS_COLORS = {
     accepted: colors.secondary,
+    preparing: '#7C3AED',
+    on_the_way: '#2563EB',
     in_progress: colors.warning,
     completed: colors.success,
   };
   const STATUS_LABELS = {
-    accepted: 'Aguardando cliente',
+    accepted: 'Confirmado',
+    preparing: 'Se preparando',
+    on_the_way: 'A caminho',
     in_progress: 'Em andamento',
     completed: 'Finalizado',
   };
   const STATUS_ICONS = {
     accepted: 'hourglass-outline',
+    preparing: 'construct-outline',
+    on_the_way: 'car-outline',
     in_progress: 'home',
     completed: 'checkmark-circle',
   };
 
-  const waitingRequests = requests.filter((item) => item.status === 'accepted');
+  const waitingRequests = requests.filter((item) => ['accepted', 'preparing', 'on_the_way'].includes(item.status));
   const activeRequests = requests.filter((item) => item.status === 'in_progress');
   const completedRequests = requests.filter((item) => item.status === 'completed');
 

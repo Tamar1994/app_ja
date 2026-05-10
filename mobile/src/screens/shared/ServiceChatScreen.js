@@ -93,7 +93,15 @@ export default function ServiceChatScreen({ navigation, route }) {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>{peerName || 'Chat do serviço'}</Text>
           <Text style={styles.headerSub}>
-            {chat?.status === 'closed' ? 'Chat encerrado' : request?.status === 'in_progress' ? 'Serviço em andamento' : 'Serviço confirmado'}
+            {chat?.status === 'closed'
+              ? 'Chat encerrado'
+              : request?.status === 'in_progress'
+              ? 'Serviço em andamento'
+              : request?.status === 'on_the_way'
+              ? 'Profissional a caminho'
+              : request?.status === 'preparing'
+              ? 'Profissional se preparando'
+              : 'Serviço confirmado'}
           </Text>
         </View>
         <View style={{ width: 24 }} />

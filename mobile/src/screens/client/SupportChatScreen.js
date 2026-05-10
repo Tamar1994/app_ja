@@ -1,15 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { supportChatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { colors } from '../../theme';
 
 const POLL_INTERVAL_MS = 8000;
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api').replace(/\/api\/?$/, '');
+
+function buildImageUrl(path) {
+  if (!path) return null;
+  if (String(path).startsWith('http://') || String(path).startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
 
 export default function SupportChatScreen({ navigation }) {
   const { user } = useAuth();
@@ -22,6 +30,7 @@ export default function SupportChatScreen({ navigation }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [chatPriority, setChatPriority] = useState('normal');
+  const [pendingImage, setPendingImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [sendingMsg, setSendingMsg] = useState(false);
@@ -121,19 +130,65 @@ export default function SupportChatScreen({ navigation }) {
   };
 
   const handleSend = async () => {
-    if (!inputText.trim() || !chatId) return;
+    if ((!inputText.trim() && !pendingImage) || !chatId) return;
     const text = inputText.trim();
+    const imageAsset = pendingImage;
     setInputText('');
+    setPendingImage(null);
     setSendingMsg(true);
     try {
-      const res = await supportChatAPI.sendMessage(chatId, text);
-      setMessages(res.data.messages || [...messages, { text, sender: 'user', createdAt: new Date() }]);
+      if (imageAsset) {
+        const ext = imageAsset.uri.split('.').pop()?.toLowerCase();
+        const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
+        const formData = new FormData();
+        if (text) formData.append('text', text);
+        formData.append('image', {
+          uri: imageAsset.uri,
+          name: `support.${safeExt}`,
+          type: `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
+        });
+        await supportChatAPI.sendImage(chatId, formData);
+      } else {
+        await supportChatAPI.sendMessage(chatId, text);
+      }
+      const updated = await supportChatAPI.getById(chatId);
+      setMessages(updated.data.chat?.messages || []);
     } catch {
       Alert.alert('Erro', 'Não foi possível enviar a mensagem.');
       setInputText(text);
+      setPendingImage(imageAsset || null);
     } finally {
       setSendingMsg(false);
     }
+  };
+
+  const handlePickImage = async () => {
+    Alert.alert('Enviar imagem', 'Como deseja selecionar a imagem?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sem recorte', onPress: () => pickImage(false) },
+      { text: 'Escolher e recortar', onPress: () => pickImage(true) },
+    ]);
+  };
+
+  const pickImage = async (allowEditing) => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permissão necessária', 'Precisamos de acesso à galeria para enviar imagem.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.[0]) {
+      setPendingImage(result.assets[0]);
+    }
+  };
+
+  const handleCropPendingImage = async () => {
+    await pickImage(true);
   };
 
   const fmtTime = (d) => {
@@ -319,9 +374,14 @@ export default function SupportChatScreen({ navigation }) {
               )}
               <View>
                 <View style={[styles.msgBubble, item.sender === 'user' ? styles.msgBubbleUser : styles.msgBubbleSupport]}>
-                  <Text style={[styles.msgText, item.sender === 'user' ? styles.msgTextUser : styles.msgTextSupport]}>
-                    {item.text}
-                  </Text>
+                    {item.text ? (
+                      <Text style={[styles.msgText, item.sender === 'user' ? styles.msgTextUser : styles.msgTextSupport]}>
+                        {item.text}
+                      </Text>
+                    ) : null}
+                    {item.imageUrl ? (
+                      <Image source={{ uri: buildImageUrl(item.imageUrl) }} style={styles.msgImage} resizeMode="cover" />
+                    ) : null}
                 </View>
                 <Text style={[styles.msgTime, item.sender === 'user' ? { textAlign: 'right' } : { textAlign: 'left' }]}>
                   {fmtTime(item.createdAt)}
@@ -332,7 +392,32 @@ export default function SupportChatScreen({ navigation }) {
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
 
+        {pendingImage ? (
+          <View style={styles.pendingImageRow}>
+            <Image source={{ uri: pendingImage.uri }} style={styles.pendingImageThumb} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pendingImageTitle}>Imagem pronta para envio</Text>
+              <Text style={styles.pendingImageSub} numberOfLines={1}>{pendingImage.fileName || 'foto selecionada'}</Text>
+              <View style={styles.pendingImageActions}>
+                <TouchableOpacity style={styles.pendingActionBtn} onPress={handleCropPendingImage}>
+                  <Text style={styles.pendingActionText}>Recortar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.pendingActionBtn, styles.pendingActionDanger]} onPress={() => setPendingImage(null)}>
+                  <Text style={[styles.pendingActionText, styles.pendingActionDangerText]}>Remover</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.inputRow}>
+          <TouchableOpacity
+            style={[styles.attachBtn, pendingImage && styles.attachBtnActive]}
+            onPress={handlePickImage}
+            disabled={sendingMsg}
+          >
+            <Ionicons name={pendingImage ? 'checkmark' : 'image-outline'} size={20} color={pendingImage ? '#fff' : colors.primary} />
+          </TouchableOpacity>
           <TextInput
             style={styles.chatInput}
             placeholder="Digite sua mensagem..."
@@ -345,9 +430,9 @@ export default function SupportChatScreen({ navigation }) {
             returnKeyType="send"
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (!inputText.trim() || sendingMsg) && { opacity: 0.5 }]}
+            style={[styles.sendBtn, (!inputText.trim() && !pendingImage || sendingMsg) && { opacity: 0.5 }]}
             onPress={handleSend}
-            disabled={!inputText.trim() || sendingMsg}
+            disabled={(!inputText.trim() && !pendingImage) || sendingMsg}
           >
             {sendingMsg
               ? <ActivityIndicator size="small" color="#fff" />
@@ -460,7 +545,35 @@ const styles = StyleSheet.create({
   msgText: { fontSize: 15, lineHeight: 22 },
   msgTextUser: { color: '#fff' },
   msgTextSupport: { color: colors.textPrimary },
+  msgImage: { width: 220, height: 220, borderRadius: 12, marginTop: 8 },
   msgTime: { fontSize: 10, color: colors.textLight, marginTop: 3, paddingHorizontal: 4 },
+  pendingImageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E8ECF4',
+    backgroundColor: '#fff',
+  },
+  pendingImageThumb: { width: 58, height: 58, borderRadius: 10, backgroundColor: '#F5F6FA' },
+  pendingImageTitle: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  pendingImageSub: { fontSize: 11, color: colors.textLight, marginTop: 2 },
+  pendingImageActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  pendingActionBtn: {
+    borderWidth: 1,
+    borderColor: '#CCD4E0',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#fff',
+  },
+  pendingActionText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  pendingActionDanger: { borderColor: '#F1B1B1' },
+  pendingActionDangerText: { color: '#B42318' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end',
     paddingHorizontal: 12, paddingVertical: 10,
@@ -472,6 +585,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10,
     fontSize: 15, color: colors.textPrimary,
     maxHeight: 100, textAlignVertical: 'top',
+  },
+  attachBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    borderWidth: 1.2, borderColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  attachBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   sendBtn: {
     width: 44, height: 44, borderRadius: 22,

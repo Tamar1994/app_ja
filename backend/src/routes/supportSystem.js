@@ -9,6 +9,7 @@ const Coupon = require('../models/Coupon');
 const CouponClaim = require('../models/CouponClaim');
 const SupportCouponRelease = require('../models/SupportCouponRelease');
 const PauseType = require('../models/PauseType');
+const upload = require('../config/multer');
 const { adminAuth, ADMIN_PERMISSIONS, hasPermission } = require('../middleware/adminAuth');
 const { tryAssignChat, onChatClosed } = require('../utils/supportQueue');
 
@@ -306,11 +307,12 @@ router.get('/chats/:id', async (req, res) => {
 });
 
 // POST /api/support-system/chats/:id/message
-router.post('/chats/:id/message', async (req, res) => {
+router.post('/chats/:id/message', upload.single('image'), async (req, res) => {
   if (!isOperator(req.admin)) return res.status(403).json({ message: 'Somente operadores' });
 
   const text = String(req.body.text || '').trim();
-  if (!text) return res.status(400).json({ message: 'Mensagem vazia' });
+  const hasImage = !!req.file;
+  if (!text && !hasImage) return res.status(400).json({ message: 'Mensagem vazia' });
 
   const chat = await SupportChat.findById(req.params.id).populate('userId', 'name');
   if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
@@ -319,7 +321,14 @@ router.post('/chats/:id/message', async (req, res) => {
     return res.status(403).json({ message: 'Você não está atendendo este chat' });
   }
 
-  chat.messages.push({ sender: 'support', adminId: req.admin._id, text });
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  chat.messages.push({
+    sender: 'support',
+    adminId: req.admin._id,
+    text,
+    imageUrl,
+    imageMimeType: req.file?.mimetype || null,
+  });
   await chat.save();
 
   const io = req.app.get('io');
@@ -327,6 +336,7 @@ router.post('/chats/:id/message', async (req, res) => {
     io.to(`user_${chat.userId._id}`).emit('support_message', {
       chatId: chat._id,
       text,
+      imageUrl,
       sender: 'support',
       adminName: req.admin.name,
     });

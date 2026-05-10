@@ -50,6 +50,10 @@ export const requestAPI = {
   accept: (id) => api.patch(`/requests/${id}/accept`),
   reject: (id) => api.patch(`/requests/${id}/reject`),
   start: (id) => api.patch(`/requests/${id}/start`),
+  markPreparing: (id) => api.patch(`/requests/${id}/professional-preparing`),
+  markOnTheWay: (id) => api.patch(`/requests/${id}/professional-on-the-way`),
+  updateProfessionalLocation: (id, longitude, latitude) =>
+    api.patch(`/requests/${id}/professional-location`, { longitude, latitude }),
   complete: (id, final) => api.patch(`/requests/${id}/complete`, { final }),
   cancel: (id, reason) => api.patch(`/requests/${id}/cancel`, { reason }),
   clientReject: (id, professionalId) => api.patch(`/requests/${id}/client-reject`, { professionalId }),
@@ -95,6 +99,10 @@ export const supportChatAPI = {
   getMy: () => api.get('/support/chats/my'),
   getById: (id) => api.get(`/support/chats/${id}`),
   sendMessage: (id, text) => api.post(`/support/chats/${id}/message`, { text }),
+  sendImage: (id, formData) =>
+    api.post(`/support/chats/${id}/message`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 };
 
 export const serviceChatAPI = {

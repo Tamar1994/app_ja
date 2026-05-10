@@ -15,7 +15,9 @@ const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.on
 
 const STATUS_LABELS = {
   searching: 'Buscando profissional...',
-  accepted: 'Profissional a caminho',
+  accepted: 'Profissional confirmado',
+  preparing: 'Profissional se preparando',
+  on_the_way: 'Profissional a caminho',
   in_progress: 'Em andamento',
   completed: 'Concluído',
   cancelled: 'Cancelado',
@@ -24,6 +26,8 @@ const STATUS_LABELS = {
 const STATUS_COLORS = {
   searching: colors.primary,
   accepted: colors.secondary,
+  preparing: '#7C3AED',
+  on_the_way: '#2563EB',
   in_progress: colors.warning,
   completed: colors.success,
   cancelled: colors.textLight,
@@ -31,7 +35,9 @@ const STATUS_COLORS = {
 
 const STATUS_ICONS = {
   searching: 'search',
-  accepted: 'walk',
+  accepted: 'person-circle',
+  preparing: 'construct',
+  on_the_way: 'car',
   in_progress: 'home',
   completed: 'checkmark-circle',
   cancelled: 'close-circle',
@@ -50,7 +56,7 @@ export default function HomeScreen({ navigation }) {
     try {
       const { data } = await requestAPI.list();
       const active = data.requests.find((r) =>
-        ['searching', 'accepted', 'in_progress'].includes(r.status)
+        ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress'].includes(r.status)
       );
       setActiveRequest(active || null);
       return active;
