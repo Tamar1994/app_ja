@@ -16,6 +16,7 @@ import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
 import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
+import RequestDetailsScreen from '../screens/shared/RequestDetailsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -26,6 +27,7 @@ function DashboardStack() {
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
       <Stack.Screen name="ServiceChat" component={ServiceChatScreen} />
+      <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} />
     </Stack.Navigator>
   );
 }

@@ -11,6 +11,8 @@ import { colors, typography, spacing, borderRadius, shadows } from '../../theme'
 const STATUS_LABELS = {
   searching: 'Buscando',
   accepted: 'Aceito',
+  preparing: 'Se preparando',
+  on_the_way: 'A caminho',
   in_progress: 'Em andamento',
   completed: 'Concluído',
   cancelled: 'Cancelado',
@@ -18,13 +20,17 @@ const STATUS_LABELS = {
 const STATUS_COLORS = {
   searching: colors.primary,
   accepted: colors.secondary,
+  preparing: '#7C3AED',
+  on_the_way: '#2563EB',
   in_progress: colors.warning,
   completed: colors.success,
   cancelled: colors.textLight,
 };
 const STATUS_ICONS = {
   searching: 'search',
-  accepted: 'walk',
+  accepted: 'person-circle',
+  preparing: 'construct',
+  on_the_way: 'car',
   in_progress: 'home',
   completed: 'checkmark-circle',
   cancelled: 'close-circle',
@@ -50,16 +56,22 @@ export default function HistoryScreen({ navigation }) {
   useEffect(() => { load(); }, []);
 
   const renderItem = ({ item }) => {
-    const isActive = ['searching', 'accepted', 'in_progress'].includes(item.status);
+    const isActive = ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress'].includes(item.status);
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={() => {
-          if (isActive) {
-            navigation.navigate('HomeTab', { screen: 'Tracking', params: { requestId: item._id } });
+          if (item.status === 'searching') {
+            navigation.navigate('HomeTab', { screen: 'Searching', params: { requestId: item._id } });
+            return;
           }
+          if (['accepted', 'preparing', 'on_the_way', 'in_progress'].includes(item.status)) {
+            navigation.navigate('HomeTab', { screen: 'Tracking', params: { requestId: item._id } });
+            return;
+          }
+          navigation.navigate('HomeTab', { screen: 'RequestDetails', params: { requestId: item._id, role: 'client' } });
         }}
-        activeOpacity={isActive ? 0.8 : 1}
+        activeOpacity={0.85}
       >
         <View style={styles.cardTop}>
           <View style={styles.cardIconWrap}>
@@ -97,9 +109,13 @@ export default function HistoryScreen({ navigation }) {
           <Text style={styles.cardPrice}>R$ {item.pricing.estimated.toFixed(2)}</Text>
         </View>
 
-        {isActive && (
+        {isActive ? (
           <View style={styles.trackBanner}>
             <Text style={styles.trackBannerText}>Toque para acompanhar →</Text>
+          </View>
+        ) : (
+          <View style={styles.trackBanner}>
+            <Text style={styles.trackBannerText}>Toque para ver detalhes →</Text>
           </View>
         )}
       </TouchableOpacity>

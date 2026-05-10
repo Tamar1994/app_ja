@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  FlatList, ActivityIndicator, RefreshControl,
+  FlatList, ActivityIndicator, RefreshControl, TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
-export default function ProfessionalHistoryScreen() {
+export default function ProfessionalHistoryScreen({ navigation }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -33,6 +33,7 @@ export default function ProfessionalHistoryScreen() {
     on_the_way: '#2563EB',
     in_progress: colors.warning,
     completed: colors.success,
+    cancelled: colors.textLight,
   };
   const STATUS_LABELS = {
     accepted: 'Confirmado',
@@ -40,21 +41,33 @@ export default function ProfessionalHistoryScreen() {
     on_the_way: 'A caminho',
     in_progress: 'Em andamento',
     completed: 'Finalizado',
+    cancelled: 'Cancelado',
   };
   const STATUS_ICONS = {
-    accepted: 'hourglass-outline',
+    accepted: 'person-circle',
     preparing: 'construct-outline',
     on_the_way: 'car-outline',
     in_progress: 'home',
     completed: 'checkmark-circle',
+    cancelled: 'close-circle',
   };
 
   const waitingRequests = requests.filter((item) => ['accepted', 'preparing', 'on_the_way'].includes(item.status));
   const activeRequests = requests.filter((item) => item.status === 'in_progress');
   const completedRequests = requests.filter((item) => item.status === 'completed');
+  const cancelledRequests = requests.filter((item) => item.status === 'cancelled');
+
+  const handleOpenRequest = (item) => {
+    if (!item?._id) return;
+    if (['accepted', 'preparing', 'on_the_way', 'in_progress'].includes(item.status)) {
+      navigation.navigate('DashboardTab', { screen: 'ActiveJob', params: { requestId: item._id } });
+      return;
+    }
+    navigation.navigate('DashboardTab', { screen: 'RequestDetails', params: { requestId: item._id, role: 'professional' } });
+  };
 
   const renderItem = ({ item }) => (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} activeOpacity={0.85} onPress={() => handleOpenRequest(item)}>
       <View style={styles.cardHeader}>
         <View style={styles.cardService}>
           <View style={styles.cardServiceIcon}>
@@ -94,7 +107,14 @@ export default function ProfessionalHistoryScreen() {
           </Text>
         )}
       </View>
-    </View>
+      <View style={styles.tapBanner}>
+        <Text style={styles.tapBannerText}>
+          {['accepted', 'preparing', 'on_the_way', 'in_progress'].includes(item.status)
+            ? 'Toque para retomar serviço ativo →'
+            : 'Toque para ver detalhes →'}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 
   if (loading) {
@@ -109,6 +129,7 @@ export default function ProfessionalHistoryScreen() {
     { key: 'active', title: 'Serviço ativo', data: activeRequests },
     { key: 'waiting', title: 'Aguardando aceite do cliente', data: waitingRequests },
     { key: 'completed', title: 'Histórico de finalizadas', data: completedRequests },
+    { key: 'cancelled', title: 'Canceladas', data: cancelledRequests },
   ];
 
   return (
@@ -215,6 +236,12 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
     fontSize: typography.fontSizes.lg, fontWeight: '800', color: colors.success,
   },
+  tapBanner: {
+    backgroundColor: colors.secondary + '12',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  tapBannerText: { fontSize: typography.fontSizes.sm, color: colors.secondary, fontWeight: '600' },
   empty: { alignItems: 'center', paddingTop: 80, gap: spacing.sm },
   emptyIcon: {
     width: 80, height: 80, borderRadius: 40,

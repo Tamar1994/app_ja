@@ -51,7 +51,13 @@ export default function TrackingScreen({ navigation, route }) {
 
     const unsubStatus = on('request_status_updated', ({ request: updated }) => {
       if (updated?._id?.toString() === requestId?.toString()) {
-        setRequest(updated);
+        setRequest((prev) => ({
+          ...(prev || {}),
+          ...(updated || {}),
+          professional: (updated && typeof updated.professional === 'object')
+            ? updated.professional
+            : prev?.professional || updated?.professional,
+        }));
       }
     });
     const unsubLoc = on('professional_location_update', ({ requestId: id, longitude, latitude, updatedAt }) => {
@@ -108,14 +114,6 @@ export default function TrackingScreen({ navigation, route }) {
       }},
     ]);
   };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
-    );
-  }
 
   const currentStepIndex = Math.max(0, STEPS.findIndex((s) => s.status === request?.status));
   const currentStep = STEPS[Math.max(currentStepIndex, 0)];
@@ -186,6 +184,14 @@ export default function TrackingScreen({ navigation, route }) {
     return Math.max(1, minutes);
   }, [clientCoords, professionalCoords]);
 
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -248,11 +254,11 @@ export default function TrackingScreen({ navigation, route }) {
         </View>
 
         {/* Card do profissional */}
-        {request?.professional && (
+        {request?.professional && typeof request.professional === 'object' && !!request.professional.name && (
           <View style={styles.proCard}>
             <View style={styles.proAvatarWrap}>
               <LinearGradient colors={colors.gradientSecondary} style={styles.proAvatar}>
-                <Text style={styles.proAvatarText}>{request.professional.name[0]}</Text>
+                <Text style={styles.proAvatarText}>{String(request.professional.name)[0]}</Text>
               </LinearGradient>
               <View style={styles.proOnline} />
             </View>
