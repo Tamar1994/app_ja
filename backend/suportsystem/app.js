@@ -8,7 +8,6 @@ let me = null;
 let activeChat = null;
 let pollTimer = null;
 let countdownTimer = null;
-let pauseTypes = [];
 let unlockTargetId = null;
 
 /* ── UTILS ──────────────────────────────────────────────────── */
@@ -61,6 +60,10 @@ function fmtSeconds(secs) {
   return (secs < 0 ? '-' : '') + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
 }
 
+function escHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /* ── LOGIN ──────────────────────────────────────────────────── */
 $('loginBtn').addEventListener('click', doLogin);
 $('password').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -95,7 +98,7 @@ function renderTopbar() {
 
   const dot = $('topbarStatusDot');
   dot.className = me.supportStatus === 'online' ? 'online'
-                : me.supportStatus === 'paused' || me.supportStatus === 'pause_requested' ? 'paused'
+                : me.supportStatus === 'paused' || me.supportStatus === 'pause_scheduled' ? 'paused'
                 : 'offline';
 
   const center = $('topbarCenter');
@@ -111,14 +114,14 @@ function renderTopbar() {
   } else if (me.supportStatus === 'online') {
     center.innerHTML = `<button class="btn-accent" id="openPauseBtn" style="font-size:13px;padding:9px 22px;">⏸ Inserir Pausa</button>`;
     $('openPauseBtn').addEventListener('click', () => show('pauseModal'));
-  } else if (me.supportStatus === 'pause_requested') {
+  } else if (me.supportStatus === 'pause_scheduled') {
     center.innerHTML = `
       <span class="pause-label">PAUSA AGENDADA</span>
       <button class="btn-ghost" id="cancelPauseReqBtn" style="font-size:12px;padding:7px 14px;">✖ Cancelar</button>`;
     $('cancelPauseReqBtn').addEventListener('click', () => show('cancelPauseModal'));
   } else if (me.supportStatus === 'paused') {
     const locked = me.pauseLockedBySupervisor;
-    const secs = me.pauseSecondsRemaining !== undefined ? me.pauseSecondsRemaining : null;
+    const secs = me.pauseEndsAt ? Math.round((new Date(me.pauseEndsAt).getTime() - Date.now()) / 1000) : null;
     center.innerHTML = `
       <span class="pause-label">EM PAUSA${locked ? ' 🔒' : ''}</span>
       <span id="topbarTimer" class="t-normal">--:--</span>
@@ -165,7 +168,7 @@ async function endPause() {
 /* ── LOAD ME ────────────────────────────────────────────────── */
 async function loadMe() {
   const data = await apiFetch('/me');
-  me = data;
+  me = data.admin;
 }
 
 async function refreshMe() {
@@ -177,10 +180,10 @@ async function refreshMe() {
 async function loadPauseTypes() {
   try {
     const data = await apiFetch('/pause-types');
-    pauseTypes = data;
+    const pauseTypes = data.pauseTypes || [];
     const sel = $('pauseTypeSelect');
-    sel.innerHTML = data.length
-      ? data.map(pt => `<option value="${pt._id}">${pt.name} (${pt.durationMinutes} min)</option>`).join('')
+    sel.innerHTML = pauseTypes.length
+      ? pauseTypes.map(pt => `<option value="${pt._id}">${pt.name} (${pt.durationMinutes} min)</option>`).join('')
       : '<option disabled>Nenhum tipo de pausa configurado</option>';
   } catch (e) { /* silent */ }
 }
@@ -190,15 +193,15 @@ async function loadOperatorData() {
   try {
     const [chatsData, queueData, couponsData, releasesData] = await Promise.allSettled([
       apiFetch('/chats/mine'),
-      apiFetch('/queue'),
-      apiFetch('/coupons'),
-      apiFetch('/releases/mine'),
+      apiFetch('/chats/queue'),
+      apiFetch('/coupons/available'),
+      apiFetch('/coupon-releases/mine'),
     ]);
 
-    const chats  = chatsData.status  === 'fulfilled' ? chatsData.value  : [];
-    const queue  = queueData.status  === 'fulfilled' ? queueData.value  : [];
-    const coupons = couponsData.status === 'fulfilled' ? couponsData.value : [];
-    const releases = releasesData.status === 'fulfilled' ? releasesData.value : [];
+    const chats = chatsData.status === 'fulfilled' ? (chatsData.value.chats || []) : [];
+    const queue = queueData.status === 'fulfilled' ? (queueData.value.queue || []) : [];
+    const coupons = couponsData.status === 'fulfilled' ? (couponsData.value.coupons || []) : [];
+    const releases = releasesData.status === 'fulfilled' ? (releasesData.value.releases || []) : [];
 
     // My chats
     const myList = $('myChatsList');
@@ -220,10 +223,10 @@ async function loadOperatorData() {
     } else {
       qList.innerHTML = queue.map(q => `
         <div class="chat-item" style="cursor:default;">
-          <div class="av-sm">${initials(q.user?.name)}</div>
+          <div class="av-sm">${initials(q.userId?.name)}</div>
           <div class="chat-item-info">
-            <div class="chat-item-name">${q.user?.name || 'Usuário'}</div>
-            <div class="chat-item-preview">${q.lastMessage || 'Aguardando...'}</div>
+            <div class="chat-item-name">${q.userId?.name || 'Usuário'}</div>
+            <div class="chat-item-preview">${q.messages?.length ? q.messages[q.messages.length - 1].text : 'Aguardando...'}</div>
           </div>
         </div>`).join('');
     }
@@ -260,13 +263,13 @@ async function loadOperatorData() {
 }
 
 function renderChatItem(c) {
-  const name = c.user?.name || c.user?.email || 'Usuário';
-  const preview = c.lastMessage?.text || '';
+  const name = c.userId?.name || c.userId?.email || 'Usuário';
+  const preview = c.messages?.length ? c.messages[c.messages.length - 1].text : '';
   const isActive = activeChat === c._id;
   return `<div class="chat-item${isActive ? ' active' : ''}" data-id="${c._id}">
     <div class="av-sm" style="background:var(--accent2);">${initials(name)}</div>
     <div class="chat-item-info">
-      <div class="chat-item-name">${name} ${c.unread ? `<span class="badge badge-p1">${c.unread}</span>` : ''}</div>
+      <div class="chat-item-name">${name} ${c.priority === 'p1' ? `<span class="badge badge-p1">P1</span>` : ''}</div>
       <div class="chat-item-preview">${preview}</div>
     </div>
   </div>`;
@@ -282,7 +285,7 @@ async function selectChat(id, chatsList) {
   $('chatConversation').style.display = 'flex';
 
   const chat = (chatsList || []).find(c => c._id === id);
-  const name = chat?.user?.name || chat?.user?.email || 'Usuário';
+  const name = chat?.userId?.name || chat?.userId?.email || 'Usuário';
 
   // Header
   const header = $('chatHeader');
@@ -291,13 +294,13 @@ async function selectChat(id, chatsList) {
     <div class="av ${colorClass}">${initials(name)}</div>
     <div class="chat-header-info">
       <h3>${name}</h3>
-      <p>${chat?.serviceRequest?.serviceType?.name || ''} · #${(id || '').slice(-6)}</p>
+      <p>${chat?.subject || 'Atendimento'} · #${(id || '').slice(-6)}</p>
     </div>`;
 
   // Load messages
   try {
-    const msgs = await apiFetch(`/chats/${id}/messages`);
-    renderMessages(msgs);
+    const data = await apiFetch(`/chats/${id}`);
+    renderMessages(data.chat?.messages || []);
   } catch (e) { console.error('selectChat messages', e); }
 }
 
@@ -313,27 +316,23 @@ function renderMessages(msgs) {
   }).join('');
   area.scrollTop = area.scrollHeight;
 }
-
-function escHtml(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
 /* ── SUPERVISOR DATA ────────────────────────────────────────── */
 async function loadSupervisorData() {
   try {
+    const statusFilter = $('releaseStatusFilter').value || 'pending';
     const [opsData, relData, queueData] = await Promise.allSettled([
       apiFetch('/supervisor/operators'),
-      apiFetch('/releases', { method: 'GET' }),
-      apiFetch('/queue'),
+      apiFetch(`/supervisor/coupon-releases?status=${encodeURIComponent(statusFilter)}`),
+      apiFetch('/chats/queue'),
     ]);
 
-    const ops = opsData.status === 'fulfilled' ? opsData.value : [];
-    const releases = relData.status === 'fulfilled' ? relData.value : [];
-    const queue = queueData.status === 'fulfilled' ? queueData.value : [];
+    const ops = opsData.status === 'fulfilled' ? (opsData.value.operators || []) : [];
+    const releases = relData.status === 'fulfilled' ? (relData.value.releases || []) : [];
+    const queue = queueData.status === 'fulfilled' ? (queueData.value.queue || []) : [];
 
     // KPIs
     const online = ops.filter(o => o.supportStatus === 'online').length;
-    const paused = ops.filter(o => o.supportStatus === 'paused' || o.supportStatus === 'pause_requested').length;
+    const paused = ops.filter(o => o.supportStatus === 'paused' || o.supportStatus === 'pause_scheduled').length;
     const overdue = ops.filter(o => (o.pauseSecondsRemaining !== undefined && o.pauseSecondsRemaining < 0)).length;
     const activeChats = ops.reduce((sum, o) => sum + (o.activeSupportChats || 0), 0);
     $('kpiActiveChats').textContent = activeChats;
@@ -350,14 +349,15 @@ async function loadSupervisorData() {
     $('operatorsList').innerHTML = detailCards || '<div class="muted">Nenhum operador</div>';
 
     // Releases table
-    renderReleasesTable(releases, $('releaseStatusFilter').value || 'pending');
+    renderReleasesTable(releases, statusFilter);
+    startSupervisorCountdowns();
   } catch (err) { console.error('loadSupervisorData', err); }
 }
 
 function renderOpCards(ops, detailed) {
   if (!ops.length) return '';
   return ops.map(op => {
-    const paused = op.supportStatus === 'paused' || op.supportStatus === 'pause_requested';
+    const paused = op.supportStatus === 'paused' || op.supportStatus === 'pause_scheduled';
     const secs = paused && op.pauseSecondsRemaining !== undefined ? op.pauseSecondsRemaining : null;
     const overdue = secs !== null && secs < 0;
     const nearEnd = secs !== null && secs >= 0 && secs <= 120;
@@ -369,7 +369,7 @@ function renderOpCards(ops, detailed) {
     let statusBadge = '';
     if (op.supportStatus === 'online') statusBadge = '<span class="badge badge-online">Online</span>';
     else if (op.supportStatus === 'paused') statusBadge = '<span class="badge badge-paused">Em Pausa</span>';
-    else if (op.supportStatus === 'pause_requested') statusBadge = '<span class="badge badge-paused">Pausa Aguardando</span>';
+    else if (op.supportStatus === 'pause_scheduled') statusBadge = '<span class="badge badge-paused">Pausa Aguardando</span>';
     else statusBadge = '<span class="badge badge-offline">Offline</span>';
 
     let timerHtml = '';
@@ -441,8 +441,8 @@ function renderReleasesTable(releases, statusFilter) {
       : '<span class="muted">—</span>';
     return `<tr>
       <td>${escHtml(r.coupon?.code || '—')}</td>
-      <td>${escHtml(r.targetUser?.name || r.targetUserId || '—')}</td>
-      <td>${escHtml(r.operator?.name || '—')}</td>
+      <td>${escHtml(r.targetUser?.name || '—')}</td>
+      <td>${escHtml(r.requestedBy?.name || '—')}</td>
       <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(r.reason || '—')}</td>
       <td class="${stClass}">${stLabel}</td>
       <td>${actions}</td>
@@ -452,7 +452,7 @@ function renderReleasesTable(releases, statusFilter) {
 
 async function approveRelease(id, approve) {
   try {
-    await apiFetch(`/releases/${id}/${approve ? 'approve' : 'reject'}`, { method: 'PATCH' });
+    await apiFetch(`/supervisor/coupon-releases/${id}/${approve ? 'approve' : 'reject'}`, { method: 'PATCH' });
     showAlert(approve ? 'Liberação aprovada!' : 'Liberação recusada.', 'success');
     loadSupervisorData();
   } catch (err) { showAlert(err.message, 'error'); }
@@ -484,7 +484,7 @@ $('unlockConfirmBtn').addEventListener('click', async () => {
   if (!pwd) { showAlert('Informe sua senha.', 'error'); return; }
   $('unlockConfirmBtn').disabled = true;
   try {
-    await apiFetch(`/supervisor/operators/${unlockTargetId}/unlock-pause`, { method: 'PATCH', body: { supervisorPassword: pwd } });
+    await apiFetch(`/supervisor/operators/${unlockTargetId}/unlock-pause`, { method: 'PATCH', body: { password: pwd } });
     hide('unlockModal');
     showAlert('Operador desbloqueado com sucesso!', 'success');
     loadSupervisorData();
@@ -551,9 +551,9 @@ async function sendMsg() {
   if (!text || !activeChat) return;
   $('msgText').value = '';
   try {
-    await apiFetch(`/chats/${activeChat}/messages`, { method: 'POST', body: { text } });
-    const msgs = await apiFetch(`/chats/${activeChat}/messages`);
-    renderMessages(msgs);
+    await apiFetch(`/chats/${activeChat}/message`, { method: 'POST', body: { text } });
+    const data = await apiFetch(`/chats/${activeChat}`);
+    renderMessages(data.chat?.messages || []);
   } catch (err) { showAlert(err.message, 'error'); }
 }
 
@@ -582,17 +582,18 @@ async function searchServices() {
   if (query) params.set('q', query);
   if (status !== 'all') params.set('status', status);
   try {
-    const results = await apiFetch('/requests?' + params);
+    const results = await apiFetch('/requests/search?' + params.toString());
+    const items = results.items || [];
     const list = $('reqList');
-    if (!results.length) {
+    if (!items.length) {
       list.innerHTML = '<div class="muted" style="text-align:center;padding:10px;">Nenhum resultado</div>';
       $('serviceActionsPanel').style.display = 'none';
       return;
     }
-    list.innerHTML = results.map(r => `
-      <div class="result-card" data-id="${r._id}" onclick="selectService('${r._id}','${escHtml(r.serviceType?.name || r._id)}')">
-        <h4>${escHtml(r.serviceType?.name || 'Serviço')} <span class="badge badge-active" style="font-size:10px;">${escHtml(r.status)}</span></h4>
-        <p>${escHtml(r.user?.name || r.user?.email || '?')} · #${r._id.slice(-6)}</p>
+    list.innerHTML = items.map(r => `
+      <div class="result-card" data-id="${r._id}" onclick="selectService('${r._id}','${escHtml(r._id)}')">
+        <h4>${escHtml(r._id.slice(-8))} <span class="badge badge-active" style="font-size:10px;">${escHtml(r.status)}</span></h4>
+        <p>${escHtml(r.client?.name || r.client?.email || r.professional?.name || r.professional?.email || '?')} · #${r._id.slice(-6)}</p>
       </div>`).join('');
   } catch (err) { showAlert(err.message, 'error'); }
 }
@@ -608,7 +609,14 @@ function selectService(id, label) {
   $('cancelServiceBtn').onclick = async () => {
     if (!confirm('Encerrar serviço #' + id.slice(-6) + '?')) return;
     try {
-      await apiFetch('/requests/' + id + '/cancel', { method: 'PATCH' });
+      const res = await fetch('/api/admin/support/requests/' + id + '/cancel', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Erro ao encerrar serviço');
+      }
       showAlert('Serviço encerrado.', 'success');
       $('serviceActionsPanel').style.display = 'none';
       searchServices();
@@ -628,7 +636,7 @@ $('requestCouponBtn').addEventListener('click', async () => {
   if (!reason) { showAlert('Informe o motivo.', 'error'); return; }
   $('requestCouponBtn').disabled = true;
   try {
-    await apiFetch('/releases', { method: 'POST', body: { couponId, targetUserId, reason } });
+    await apiFetch('/coupon-releases/request', { method: 'POST', body: { couponId, targetUserId, reason } });
     showAlert('Solicitação enviada para o supervisor!', 'success');
     $('couponSelect').value = '';
     $('targetUserId').value = '';
