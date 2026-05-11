@@ -18,6 +18,7 @@ const HelpTopic = require('../models/HelpTopic');
 const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
 const TermsOfUse = require('../models/TermsOfUse');
+const Waitlist = require('../models/Waitlist');
 const Coupon = require('../models/Coupon');
 const CouponClaim = require('../models/CouponClaim');
 const CouponRedemption = require('../models/CouponRedemption');
@@ -2319,6 +2320,25 @@ router.delete('/pause-types/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS
     res.json({ message: 'Tipo de pausa excluído' });
   } catch {
     res.status(500).json({ message: 'Erro ao excluir tipo de pausa' });
+  }
+});
+
+// ── Waitlist da Landing Page ──
+router.get('/waitlist', adminAuth, async (req, res) => {
+  try {
+    const entries = await Waitlist.find().sort({ createdAt: -1 });
+    res.json({ total: entries.length, entries });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar waitlist' });
+  }
+});
+
+router.delete('/waitlist/:id', adminAuth, async (req, res) => {
+  try {
+    await Waitlist.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ message: 'Erro ao excluir entrada' });
   }
 });
 

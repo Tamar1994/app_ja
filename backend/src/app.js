@@ -17,6 +17,7 @@ const paymentRoutes = require('./routes/payments');
 const couponRoutes = require('./routes/coupons');
 const specialistCertificatesRoutes = require('./routes/specialistCertificates');
 const TermsOfUse = require('./models/TermsOfUse');
+const Waitlist = require('./models/Waitlist');
 
 const app = express();
 
@@ -67,13 +68,23 @@ app.get('/api/terms', async (req, res) => {
   }
 });
 
-// Waitlist da Landing Page — salva no log do servidor e retorna 200
-app.post('/api/landing/waitlist', express.json(), (req, res) => {
+// Waitlist da Landing Page
+app.post('/api/landing/waitlist', express.json(), async (req, res) => {
   const { name, email } = req.body || {};
   if (!email || !email.includes('@')) {
     return res.status(400).json({ message: 'E-mail inválido' });
   }
-  console.log(`[WAITLIST] ${new Date().toISOString()} | ${name || '?'} | ${email}`);
+  try {
+    await Waitlist.create({ name: String(name || '').trim(), email });
+  } catch (err) {
+    if (err.code === 11000) {
+      // E-mail já cadastrado — retorna sucesso mesmo assim (não expõe duplicata)
+      return res.json({ ok: true, duplicate: true });
+    }
+    console.error('[WAITLIST] Erro ao salvar:', err);
+    return res.status(500).json({ message: 'Erro ao salvar cadastro' });
+  }
+  console.log(`[WAITLIST] Novo cadastro: ${name || '?'} | ${email}`);
   res.json({ ok: true });
 });
 
