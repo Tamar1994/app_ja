@@ -20,6 +20,7 @@ import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ProfessionalFoundScreen from '../screens/client/ProfessionalFoundScreen';
 import WalletScreen from '../screens/client/WalletScreen';
 import SecurityScreen from '../screens/shared/SecurityScreen';
+import ResidenceProofUploadScreen from '../screens/shared/ResidenceProofUploadScreen';
 import TermsScreen from '../screens/shared/TermsScreen';
 import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
 import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
@@ -70,6 +71,7 @@ export default function ClientNavigator() {
         <Stack.Screen name="Terms" component={TermsScreen} />
         <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
         <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
+        <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
       </Stack.Navigator>
     );
   }

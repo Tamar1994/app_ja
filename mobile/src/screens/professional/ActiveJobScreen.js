@@ -59,6 +59,9 @@ export default function ActiveJobScreen({ navigation, route }) {
       return;
     }
 
+    // Rastreamento de localização só para tipos de serviço que exigem
+    if (!request.requiresLocationTracking) return;
+
     let stopped = false;
     const start = async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -123,19 +126,20 @@ export default function ActiveJobScreen({ navigation, route }) {
     try {
       await requestAPI.markOnTheWay(requestId);
 
-      // Enviar localização imediatamente ao marcar "a caminho"
-      // para o cliente já ver o marcador no mapa sem precisar aguardar o intervalo
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          const { longitude, latitude } = loc.coords;
-          emit('update_location', { longitude, latitude });
-          userAPI.updateLocation(longitude, latitude).catch(() => {});
-          requestAPI.updateProfessionalLocation(requestId, longitude, latitude).catch(() => {});
+      // Enviar localização imediatamente ao marcar "a caminho" (se exigido)
+      if (request?.requiresLocationTracking) {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            const { longitude, latitude } = loc.coords;
+            emit('update_location', { longitude, latitude });
+            userAPI.updateLocation(longitude, latitude).catch(() => {});
+            requestAPI.updateProfessionalLocation(requestId, longitude, latitude).catch(() => {});
+          }
+        } catch {
+          // localização não essencial para o fluxo
         }
-      } catch {
-        // localização não essencial para o fluxo
       }
 
       await loadRequest();
@@ -170,13 +174,13 @@ export default function ActiveJobScreen({ navigation, route }) {
             setActionLoading(true);
             try {
               await requestAPI.complete(requestId);
-              navigation.replace('Dashboard');
+              navigation.replace('CompletionPhotos', { requestId });
             } catch {
               // Verificar se o serviço foi concluído mesmo com erro de rede/servidor
               try {
                 const { data } = await requestAPI.getById(requestId);
                 if (data?.request?.status === 'completed') {
-                  navigation.replace('Dashboard');
+                  navigation.replace('CompletionPhotos', { requestId });
                   return;
                 }
               } catch {

@@ -12,7 +12,7 @@ import { colors, typography, spacing, borderRadius } from '../theme';
  * Exibe badges dos perfis disponíveis e permite ativar outro perfil ou criar um novo.
  * Ao trocar de perfil, atualiza o contexto e recarrega a navegação via updateUser.
  */
-export default function ProfileSwitcher({ onSwitch }) {
+export default function ProfileSwitcher({ onSwitch, navigation }) {
   const { user, setUser } = useAuth();
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +35,59 @@ export default function ProfileSwitcher({ onSwitch }) {
   };
 
   const enableProfile = async (profile) => {
-    const label = profile === 'client' ? 'cliente' : 'profissional';
+    if (profile === 'professional') {
+      const status = user?.verificationStatus;
+      const hasResidence = Boolean(user?.residenceProofUrl);
+
+      if (status === 'approved' && hasResidence) {
+        // Já aprovado e tem comprovante — apenas habilitar
+        setLoading(true);
+        try {
+          await userAPI.enableProfile(profile);
+          const { data } = await userAPI.getMe();
+          setUser(data.user);
+          Alert.alert('Perfil ativado', 'Seu perfil profissional foi ativado!');
+        } catch (err) {
+          Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível ativar o perfil.');
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (status === 'approved' && !hasResidence) {
+        // Aprovado mas sem comprovante de residência
+        Alert.alert(
+          'Comprovante necessário',
+          'Para usar o perfil profissional, precisamos do seu comprovante de residência.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Enviar agora',
+              onPress: () => navigation?.navigate('ResidenceProofUpload'),
+            },
+          ]
+        );
+        return;
+      }
+
+      // Não aprovado — fluxo completo de documentos
+      Alert.alert(
+        'Verificação necessária',
+        'Para usar o perfil profissional é necessário enviar documentos de verificação.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Enviar documentos',
+            onPress: () => navigation?.navigate('DocumentUpload'),
+          },
+        ]
+      );
+      return;
+    }
+
+    // Perfil de cliente
+    const label = 'cliente';
     Alert.alert(
       `Criar perfil ${label}`,
       `Isso criará um perfil de ${label} nesta conta. Deseja continuar?`,
@@ -47,14 +99,9 @@ export default function ProfileSwitcher({ onSwitch }) {
             setLoading(true);
             try {
               await userAPI.enableProfile(profile);
-              // Reload fresh user
               const { data } = await userAPI.getMe();
               setUser(data.user);
-              if (profile === 'professional') {
-                Alert.alert('Perfil criado', 'Para usar como profissional é necessário enviar documentos para verificação.');
-              } else {
-                Alert.alert('Perfil criado', 'Seu perfil de cliente foi ativado!');
-              }
+              Alert.alert('Perfil criado', 'Seu perfil de cliente foi ativado!');
             } catch (err) {
               Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível criar o perfil.');
             } finally {

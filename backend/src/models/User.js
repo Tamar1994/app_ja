@@ -111,6 +111,14 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  documentBackUrl: {
+    type: String,
+    default: null,
+  },
+  residenceProofUrl: {
+    type: String,
+    default: null,
+  },
   // Carteira do profissional (ganhos)
   wallet: {
     balance: { type: Number, default: 0 },

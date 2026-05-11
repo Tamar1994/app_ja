@@ -203,6 +203,8 @@ router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, re
       ...(parsedPricePerMinute !== undefined ? { pricePerMinute: parsedPricePerMinute } : {}),
       ...(parsedPlatformFeePercent !== undefined ? { platformFeePercent: parsedPlatformFeePercent } : {}),
       ...(checkoutFields !== undefined ? { checkoutFields } : {}),
+      durationUnit: req.body.durationUnit === 'minutes' ? 'minutes' : 'hours',
+      requiresLocationTracking: req.body.requiresLocationTracking === 'true',
     });
     res.status(201).json({ serviceType: st });
   } catch (err) {
@@ -252,6 +254,8 @@ router.patch('/:id', adminAuth, serviceTypeUpload.single('iconFile'), async (req
     if (parsedHoursOptions !== undefined) updates.hoursOptions = parsedHoursOptions;
     if (parsedPricePerMinute !== undefined) updates.pricePerMinute = parsedPricePerMinute;
     if (parsedPlatformFeePercent !== undefined) updates.platformFeePercent = parsedPlatformFeePercent;
+    if (req.body.durationUnit) updates.durationUnit = req.body.durationUnit === 'minutes' ? 'minutes' : 'hours';
+    if (req.body.requiresLocationTracking !== undefined) updates.requiresLocationTracking = req.body.requiresLocationTracking === 'true';
     if (req.file) updates.imageUrl = `/uploads/service-types/${req.file.filename}`;
     const st = await ServiceType.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
     if (req.file && existingServiceType.imageUrl && existingServiceType.imageUrl !== st.imageUrl) {

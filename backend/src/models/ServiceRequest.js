@@ -38,7 +38,7 @@ const serviceRequestSchema = new mongoose.Schema({
     },
   },
   details: {
-    hours: { type: Number, required: true, min: 2, max: 12 },
+    hours: { type: Number, required: true, min: 0.25 },
     rooms: { type: Number, default: 1 },
     bathrooms: { type: Number, default: 1 },
     hasProducts: { type: Boolean, default: false }, // cliente fornece produtos
@@ -62,6 +62,12 @@ const serviceRequestSchema = new mongoose.Schema({
   },
   // true quando o cliente solicitou um Profissional Especialista
   isSpecialist: { type: Boolean, default: false },
+
+  // Rastreamento de localização durante o serviço (herdado do ServiceType)
+  requiresLocationTracking: { type: Boolean, default: false },
+
+  // Fotos de comprovação enviadas pelo profissional ao concluir (visível apenas para admin/suporte)
+  completionPhotos: { type: [String], default: [] },
 
   pricing: {
     pricePerHour: { type: Number, required: true },

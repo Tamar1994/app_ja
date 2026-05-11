@@ -14,7 +14,11 @@ export default function DocumentUploadScreen({ navigation }) {
   const { user, setUser } = useAuth();
   const [selfie, setSelfie] = useState(null);
   const [document, setDocument] = useState(null);
+  const [documentBack, setDocumentBack] = useState(null);
+  const [residenceProof, setResidenceProof] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const setters = { selfie: setSelfie, document: setDocument, documentBack: setDocumentBack, residenceProof: setResidenceProof };
 
   const pickImage = async (type) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -24,14 +28,11 @@ export default function DocumentUploadScreen({ navigation }) {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      allowsEditing: type === 'selfie',
       aspect: type === 'selfie' ? [1, 1] : [4, 3],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      if (type === 'selfie') setSelfie(result.assets[0]);
-      else setDocument(result.assets[0]);
-    }
+    if (!result.canceled && result.assets[0]) setters[type](result.assets[0]);
   };
 
   const takePhoto = async (type) => {
@@ -41,14 +42,11 @@ export default function DocumentUploadScreen({ navigation }) {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
+      allowsEditing: type === 'selfie',
       aspect: type === 'selfie' ? [1, 1] : [4, 3],
       quality: 0.8,
     });
-    if (!result.canceled && result.assets[0]) {
-      if (type === 'selfie') setSelfie(result.assets[0]);
-      else setDocument(result.assets[0]);
-    }
+    if (!result.canceled && result.assets[0]) setters[type](result.assets[0]);
   };
 
   const showImageOptions = (type) => {
@@ -60,28 +58,28 @@ export default function DocumentUploadScreen({ navigation }) {
   };
 
   const handleUpload = async () => {
-    if (!selfie || !document) {
-      Alert.alert('Atenção', 'Envie a selfie e a foto do documento.');
+    if (!selfie || !document || !documentBack) {
+      Alert.alert('Atenção', 'Envie a selfie, a frente e o verso do documento.');
       return;
     }
     setLoading(true);
     try {
       const formData = new FormData();
-      formData.append('selfie', {
-        uri: selfie.uri,
-        type: 'image/jpeg',
-        name: 'selfie.jpg',
-      });
-      formData.append('document', {
-        uri: document.uri,
-        type: 'image/jpeg',
-        name: 'document.jpg',
-      });
+      formData.append('selfie', { uri: selfie.uri, type: 'image/jpeg', name: 'selfie.jpg' });
+      formData.append('document', { uri: document.uri, type: 'image/jpeg', name: 'document.jpg' });
+      formData.append('documentBack', { uri: documentBack.uri, type: 'image/jpeg', name: 'documentBack.jpg' });
+      if (residenceProof) {
+        const isImage = residenceProof.mimeType ? residenceProof.mimeType.startsWith('image/') : !residenceProof.uri.endsWith('.pdf');
+        formData.append('residenceProof', {
+          uri: residenceProof.uri,
+          type: isImage ? 'image/jpeg' : 'application/pdf',
+          name: isImage ? 'residencia.jpg' : 'residencia.pdf',
+        });
+      }
       const res = await uploadDocuments(formData);
       if (setUser) setUser(prev => ({ ...prev, verificationStatus: 'pending_review' }));
       navigation.replace('PendingApproval');
     } catch (err) {
-      // No Android, o FormData multipart às vezes lança erro mesmo após upload bem-sucedido
       if (!err.response) {
         try {
           const { data } = await userAPI.getMe();
@@ -158,26 +156,42 @@ export default function DocumentUploadScreen({ navigation }) {
             type="selfie"
             image={selfie}
             label="📸 Selfie"
-            hint="Foto do seu rosto em local bem iluminado"
+            hint="Esta selfie será usada como sua foto de perfil"
             icon="person-circle-outline"
           />
 
           <PhotoCard
             type="document"
             image={document}
-            label="🪪 Documento oficial"
+            label="🪪 Documento — Frente"
             hint="RG, CNH ou Passaporte (frente visível)"
             icon="card-outline"
           />
 
+          <PhotoCard
+            type="documentBack"
+            image={documentBack}
+            label="🪪 Documento — Verso"
+            hint="Foto do verso do documento"
+            icon="card-outline"
+          />
+
+          <PhotoCard
+            type="residenceProof"
+            image={residenceProof}
+            label="🏠 Comprovante de residência (opcional)"
+            hint="Conta de água, luz, gás, etc. — Foto ou PDF"
+            icon="document-outline"
+          />
+
           <TouchableOpacity
-            style={[styles.btn, (!selfie || !document || loading) && styles.btnDisabled]}
+            style={[styles.btn, (!selfie || !document || !documentBack || loading) && styles.btnDisabled]}
             onPress={handleUpload}
-            disabled={!selfie || !document || loading}
+            disabled={!selfie || !document || !documentBack || loading}
             activeOpacity={0.85}
           >
             <LinearGradient
-              colors={(!selfie || !document || loading) ? ['#ccc', '#bbb'] : colors.gradientPrimary}
+              colors={(!selfie || !document || !documentBack || loading) ? ['#ccc', '#bbb'] : colors.gradientPrimary}
               style={styles.btnGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}

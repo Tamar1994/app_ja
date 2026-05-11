@@ -10,13 +10,15 @@ const { cleanupRequestUploads, deleteUploadFiles, deleteUploadFile } = require('
 const router = express.Router();
 
 // POST /api/upload/documents
-// Envia selfie + foto do documento + CPF + data nascimento
+// Envia selfie + frente do documento + verso do documento + comprovante de endereço + CPF + data nascimento
 router.post('/documents', auth, upload.fields([
   { name: 'selfie', maxCount: 1 },
   { name: 'document', maxCount: 1 },
+  { name: 'documentBack', maxCount: 1 },
+  { name: 'residenceProof', maxCount: 1 },
 ]), async (req, res) => {
   try {
-    const existingUser = await User.findById(req.user._id).select('cpf birthDate selfieUrl documentUrl');
+    const existingUser = await User.findById(req.user._id).select('cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl');
 
     // CPF e data de nascimento já foram salvos no cadastro
     const cpfClean = existingUser?.cpf || req.user.cpf;
@@ -44,24 +46,34 @@ router.post('/documents', auth, upload.fields([
       return res.status(400).json({ message: 'CPF já cadastrado na plataforma.' });
     }
 
-    if (!req.files?.selfie || !req.files?.document) {
+    if (!req.files?.selfie || !req.files?.document || !req.files?.documentBack) {
       await cleanupRequestUploads(req);
-      return res.status(400).json({ message: 'Envie a selfie e a foto do documento.' });
+      return res.status(400).json({ message: 'Envie a selfie, a frente e o verso do documento.' });
     }
 
     const selfieUrl = `/uploads/${req.files.selfie[0].filename}`;
     const documentUrl = `/uploads/${req.files.document[0].filename}`;
+    const documentBackUrl = `/uploads/${req.files.documentBack[0].filename}`;
+    const residenceProofUrl = req.files?.residenceProof
+      ? `/uploads/${req.files.residenceProof[0].filename}`
+      : existingUser?.residenceProofUrl || null;
+
     const previousSelfieUrl = existingUser?.selfieUrl || null;
     const previousDocumentUrl = existingUser?.documentUrl || null;
+    const previousDocumentBackUrl = existingUser?.documentBackUrl || null;
 
     await User.findByIdAndUpdate(req.user._id, {
       selfieUrl,
       documentUrl,
+      documentBackUrl,
+      residenceProofUrl,
+      // Selfie vira foto de perfil automaticamente
+      avatar: selfieUrl,
       verificationStatus: 'pending_review',
     });
 
     try {
-      await deleteUploadFiles([previousSelfieUrl, previousDocumentUrl]);
+      await deleteUploadFiles([previousSelfieUrl, previousDocumentUrl, previousDocumentBackUrl]);
     } catch (cleanupError) {
       console.error('Erro ao remover documentos antigos:', cleanupError);
     }
@@ -112,6 +124,48 @@ router.post('/avatar', auth, avatarUpload.single('avatar'), async (req, res) => 
     await cleanupRequestUploads(req);
     console.error(err);
     res.status(500).json({ message: 'Erro ao enviar foto de perfil.' });
+  }
+});
+
+// POST /api/upload/residence-proof — comprovante de endereço (para cliente que adiciona perfil profissional)
+// Aceita imagem ou PDF
+const residenceUpload = require('multer')({
+  storage: require('multer').diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(__dirname, '../../uploads');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      const crypto = require('crypto');
+      cb(null, `${crypto.randomBytes(16).toString('hex')}${ext}`);
+    },
+  }),
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+    if (allowed.includes(path.extname(file.originalname).toLowerCase())) cb(null, true);
+    else cb(new Error('Apenas imagens ou PDF são permitidos'));
+  },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+router.post('/residence-proof', auth, residenceUpload.single('residenceProof'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+    const existingUser = await User.findById(req.user._id).select('residenceProofUrl');
+    const residenceProofUrl = `/uploads/${req.file.filename}`;
+    await User.findByIdAndUpdate(req.user._id, {
+      residenceProofUrl,
+      verificationStatus: 'pending_review',
+    });
+    try {
+      if (existingUser?.residenceProofUrl) await deleteUploadFile(existingUser.residenceProofUrl);
+    } catch {}
+    res.json({ message: 'Comprovante enviado! Sua conta está em análise.', residenceProofUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao enviar comprovante.' });
   }
 });
 

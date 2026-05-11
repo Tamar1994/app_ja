@@ -7,6 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme';
 import DashboardScreen from '../screens/professional/DashboardScreen';
 import ActiveJobScreen from '../screens/professional/ActiveJobScreen';
+import CompletionPhotosScreen from '../screens/professional/CompletionPhotosScreen';
+import ProfessionalReviewScreen from '../screens/professional/ProfessionalReviewScreen';
+import ResidenceProofUploadScreen from '../screens/shared/ResidenceProofUploadScreen';
 import HistoryScreen from '../screens/professional/HistoryScreen';
 import EarningsScreen from '../screens/professional/EarningsScreen';
 import ProfileScreen from '../screens/professional/ProfileScreen';
@@ -26,6 +29,9 @@ function DashboardStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Dashboard" component={DashboardScreen} />
       <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
+      <Stack.Screen name="CompletionPhotos" component={CompletionPhotosScreen} />
+      <Stack.Screen name="ProfessionalReview" component={ProfessionalReviewScreen} />
+      <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
       <Stack.Screen name="ServiceChat" component={ServiceChatScreen} />
       <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} />
     </Stack.Navigator>

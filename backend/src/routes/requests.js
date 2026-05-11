@@ -1,5 +1,8 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const auth = require('../middleware/auth');
 const ServiceRequest = require('../models/ServiceRequest');
 const Review = require('../models/Review');
@@ -13,6 +16,28 @@ const { resolveProfessionalRewardForCompletion } = require('../services/couponSe
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
 
 const router = express.Router();
+
+// Multer para fotos de conclusão de serviço
+const completionPhotosUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(__dirname, '../../uploads/completion');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const { randomBytes } = require('crypto');
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${randomBytes(16).toString('hex')}${ext}`);
+    },
+  }),
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+    if (allowed.includes(path.extname(file.originalname).toLowerCase())) cb(null, true);
+    else cb(new Error('Apenas imagens'));
+  },
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 const SPECIALIST_PREMIUM_PERCENT = 30; // acrescimo percentual para pedidos especialista
 
@@ -253,10 +278,19 @@ router.post('/', auth, [
   }
 
   try {
+    // Verificar se o tipo de serviço exige rastreamento de localização
+    let requiresLocationTracking = false;
+    if (serviceTypeSlug) {
+      const ServiceType = require('../models/ServiceType');
+      const st = await ServiceType.findOne({ slug: serviceTypeSlug }).select('requiresLocationTracking');
+      requiresLocationTracking = st?.requiresLocationTracking || false;
+    }
+
     const request = await ServiceRequest.create({
       client: req.user._id,
       isSpecialist: !!isSpecialist,
       serviceTypeSlug: serviceTypeSlug || null,
+      requiresLocationTracking,
       details: {
         hours,
         rooms,
@@ -770,7 +804,8 @@ router.patch('/:id/cancel', auth, async (req, res) => {
   }
 });
 
-// POST /api/requests/:id/review — avaliar após conclusão
+// POST /api/requests/:id/review — avaliação mútua após conclusão
+// Cliente avalia profissional | Profissional avalia cliente
 router.post('/:id/review', auth, async (req, res) => {
   const { rating, comment } = req.body;
   if (!rating || rating < 1 || rating > 5) {
@@ -783,8 +818,16 @@ router.post('/:id/review', auth, async (req, res) => {
       return res.status(400).json({ message: 'Serviço não concluído' });
     }
 
-    // Cliente avalia profissional
-    const reviewed = request.professional;
+    const isClient = req.user._id.toString() === request.client.toString();
+    const isProfessional = request.professional && req.user._id.toString() === request.professional.toString();
+
+    if (!isClient && !isProfessional) {
+      return res.status(403).json({ message: 'Você não faz parte deste serviço' });
+    }
+
+    const reviewerRole = isClient ? 'client' : 'professional';
+    const reviewed = isClient ? request.professional : request.client;
+
     const existing = await Review.findOne({ serviceRequest: request._id, reviewer: req.user._id });
     if (existing) return res.status(400).json({ message: 'Você já avaliou este serviço' });
 
@@ -792,6 +835,7 @@ router.post('/:id/review', auth, async (req, res) => {
       serviceRequest: request._id,
       reviewer: req.user._id,
       reviewed,
+      reviewerRole,
       rating,
       comment,
     });
@@ -799,6 +843,28 @@ router.post('/:id/review', auth, async (req, res) => {
     res.status(201).json({ review });
   } catch {
     res.status(500).json({ message: 'Erro ao avaliar' });
+  }
+});
+
+// POST /api/requests/:id/completion-photos — profissional envia fotos de comprovação
+router.post('/:id/completion-photos', auth, completionPhotosUpload.array('photos', 10), async (req, res) => {
+  try {
+    const request = await ServiceRequest.findOne({ _id: req.params.id, professional: req.user._id });
+    if (!request) return res.status(404).json({ message: 'Serviço não encontrado' });
+    if (!['in_progress', 'completed'].includes(request.status)) {
+      return res.status(400).json({ message: 'Upload só permitido ao concluir o serviço' });
+    }
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'Nenhuma foto enviada' });
+    }
+    const urls = req.files.map(f => `/uploads/completion/${f.filename}`);
+    await ServiceRequest.findByIdAndUpdate(req.params.id, {
+      $push: { completionPhotos: { $each: urls } },
+    });
+    res.json({ ok: true, photos: urls });
+  } catch (err) {
+    console.error('[completion-photos]', err);
+    res.status(500).json({ message: 'Erro ao salvar fotos' });
   }
 });
 

@@ -242,7 +242,6 @@ export default function DashboardScreen({ navigation }) {
           {[
             { icon: 'star', value: user.professional?.rating?.toFixed(1) || '—', label: 'Avaliação', color: colors.warning },
             { icon: 'checkmark-circle', value: user.professional?.totalServicesCompleted || 0, label: 'Serviços', color: colors.success },
-            { icon: 'cash-outline', value: `R$${user.professional?.pricePerHour || 35}`, label: 'Por hora', color: '#90CAF9' },
           ].map((s, i) => (
             <View key={i} style={styles.statCard}>
               <Ionicons name={s.icon} size={20} color={s.color} />

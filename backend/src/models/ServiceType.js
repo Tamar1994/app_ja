@@ -124,6 +124,15 @@ const serviceTypeSchema = new mongoose.Schema({
     type: Number,
     default: null,
   },
+  durationUnit: {
+    type: String,
+    enum: ['hours', 'minutes'],
+    default: 'hours',
+  },
+  requiresLocationTracking: {
+    type: Boolean,
+    default: false,
+  },
   checkoutFields: {
     type: [checkoutFieldSchema],
     default: [],

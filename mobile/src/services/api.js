@@ -62,11 +62,20 @@ export const requestAPI = {
   clientConfirm: (id) => api.patch(`/requests/${id}/client-confirm`),
   review: (id, rating, comment) =>
     api.post(`/requests/${id}/review`, { rating, comment }),
+  uploadCompletionPhotos: (id, formData) =>
+    api.post(`/requests/${id}/completion-photos`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 };
 
 // Upload de documentos (multipart/form-data)
 export const uploadDocuments = (formData) =>
   api.post('/upload/documents', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+export const uploadResidenceProof = (formData) =>
+  api.post('/upload/residence-proof', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 

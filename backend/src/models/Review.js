@@ -16,6 +16,11 @@ const reviewSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  reviewerRole: {
+    type: String,
+    enum: ['client', 'professional'],
+    required: true,
+  },
   rating: {
     type: Number,
     required: true,
@@ -29,10 +34,11 @@ const reviewSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-// Após salvar review, atualizar rating médio do profissional
+// Atualiza rating médio do profissional SOMENTE quando um cliente avalia
 reviewSchema.post('save', async function () {
+  if (this.reviewerRole !== 'client') return;
   const User = mongoose.model('User');
-  const reviews = await mongoose.model('Review').find({ reviewed: this.reviewed });
+  const reviews = await mongoose.model('Review').find({ reviewed: this.reviewed, reviewerRole: 'client' });
   const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
   await User.findByIdAndUpdate(this.reviewed, {
     'professional.rating': Math.round(avg * 10) / 10,

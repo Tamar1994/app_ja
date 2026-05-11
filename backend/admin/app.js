@@ -3418,6 +3418,7 @@ const renderServiceTypeCard = (t) => `
       <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Faixa de horas: ${Number.isFinite(Number(t.minHours)) ? Number(t.minHours) : 2}h - ${Number.isFinite(Number(t.maxHours)) ? Number(t.maxHours) : 12}h</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Opções: ${Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(', ') : '2, 3, 4, 5, 6, 8'}h</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Valor/min: ${Number.isFinite(Number(t.pricePerMinute)) && Number(t.pricePerMinute) > 0 ? `R$ ${Number(t.pricePerMinute).toFixed(2)}` : 'padrão global'} · Taxa plataforma: ${Number.isFinite(Number(t.platformFeePercent)) ? `${Number(t.platformFeePercent)}%` : 'padrão global'}</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Duração: ${(t.durationUnit === 'minutes') ? 'minutos' : 'horas'} · Rastreamento: <span style="color:${t.requiresLocationTracking ? '#00C853' : '#5C6B7A'};font-weight:600;">${t.requiresLocationTracking ? '✅ Sim' : 'Não'}</span></div>
       <div class="service-type-toggle">
         <label class="toggle-switch" title="${t.status === 'enabled' ? 'Desativar' : 'Ativar'} profissão">
           <input type="checkbox" ${t.status === 'enabled' ? 'checked' : ''} onchange="toggleServiceType('${t._id}', this.checked)" />
@@ -3648,8 +3649,19 @@ const openNewServiceTypeModal = () => {
       <div class="form-group"><label class="form-label">Opções de duração (horas)</label><input id="st-hours-options" class="form-input" placeholder="2,3,4" value="2,3,4,5,6,8" /></div>
       <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="st-price-minute" class="form-input" type="number" min="0.01" step="0.01" placeholder="Ex: 0.90" /></div>
       <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="st-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="Ex: 15" /></div>
-      <div class="form-group">
-        <label class="form-label">Campos customizados do formulário</label>
+      <div class="form-group"><label class="form-label">Unidade de duração</label>
+        <select id="st-duration-unit" class="form-select">
+          <option value="hours">Horas</option>
+          <option value="minutes">Minutos</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:12px;">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
+          <input type="checkbox" id="st-location-tracking" />
+          Exige rastreamento de localização durante o serviço
+        </label>
+        <span style="font-size:12px;color:#7A84A0;">(ex: pet walker)</span>
+      </div>
         <div class="stf-fields-list" id="st-fields-list">${buildCheckoutFieldRows([])}</div>
         <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('st-fields-list')">+ Adicionar campo</button>
       </div>
@@ -3673,8 +3685,9 @@ const createServiceType = async () => {
   const hoursOptionsRaw = (document.getElementById('st-hours-options').value || '').trim();
   const pricePerMinuteRaw = (document.getElementById('st-price-minute').value || '').trim();
   const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
+  const durationUnit = document.getElementById('st-duration-unit').value || 'hours';
+  const requiresLocationTracking = document.getElementById('st-location-tracking').checked;
   const imageFile = document.getElementById('st-image').files?.[0] || null;
-  if (!name || !slug) { alert('Nome e slug são obrigatórios.'); return; }
   if (!Number.isFinite(minHours) || !Number.isFinite(maxHours) || minHours < 1 || maxHours < minHours) {
     showAlert('Faixa de horas inválida.');
     return;
@@ -3715,8 +3728,9 @@ const createServiceType = async () => {
     if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
     if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('checkoutFields', JSON.stringify(checkoutFields));
+    formData.append('durationUnit', durationUnit);
+    formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
-    await stMultipartReq('POST', '', formData);
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Profissão criada!', 'success');
     renderServiceTypes();
@@ -3746,8 +3760,19 @@ const openEditServiceTypeModal = (t) => {
       <div class="form-group"><label class="form-label">Opções de duração (horas)</label><input id="ste-hours-options" class="form-input" value="${escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '2,3,4,5,6,8')}" /></div>
       <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="ste-price-minute" class="form-input" type="number" min="0.01" step="0.01" value="${Number.isFinite(Number(t.pricePerMinute)) ? Number(t.pricePerMinute) : ''}" placeholder="padrão global" /></div>
       <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : ''}" placeholder="padrão global" /></div>
-      <div class="form-group">
-        <label class="form-label">Campos customizados do formulário</label>
+      <div class="form-group"><label class="form-label">Unidade de duração</label>
+        <select id="ste-duration-unit" class="form-select">
+          <option value="hours" ${(t.durationUnit || 'hours') === 'hours' ? 'selected' : ''}>Horas</option>
+          <option value="minutes" ${(t.durationUnit || '') === 'minutes' ? 'selected' : ''}>Minutos</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:12px;">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
+          <input type="checkbox" id="ste-location-tracking" ${t.requiresLocationTracking ? 'checked' : ''} />
+          Exige rastreamento de localização durante o serviço
+        </label>
+        <span style="font-size:12px;color:#7A84A0;">(ex: pet walker)</span>
+      </div>
         <div class="stf-fields-list" id="ste-fields-list">${buildCheckoutFieldRows(t.checkoutFields || [])}</div>
         <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('ste-fields-list')">+ Adicionar campo</button>
       </div>
@@ -3772,6 +3797,8 @@ const updateServiceType = async (id) => {
   const hoursOptionsRaw = (document.getElementById('ste-hours-options').value || '').trim();
   const pricePerMinuteRaw = (document.getElementById('ste-price-minute').value || '').trim();
   const platformFeeRaw = (document.getElementById('ste-platform-fee').value || '').trim();
+  const durationUnit = document.getElementById('ste-duration-unit').value || 'hours';
+  const requiresLocationTracking = document.getElementById('ste-location-tracking').checked;
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
   if (!Number.isFinite(minHours) || !Number.isFinite(maxHours) || minHours < 1 || maxHours < minHours) {
     showAlert('Faixa de horas inválida.');
@@ -3813,6 +3840,8 @@ const updateServiceType = async (id) => {
     if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
     if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('checkoutFields', JSON.stringify(checkoutFields));
+    formData.append('durationUnit', durationUnit);
+    formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('PATCH', `/${id}`, formData);
     document.querySelector('.modal-overlay')?.remove();
