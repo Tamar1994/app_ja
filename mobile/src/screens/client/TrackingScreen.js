@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform,
@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -61,6 +62,8 @@ export default function TrackingScreen({ navigation, route }) {
   const { on } = useSocket();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [geocodedClientCoords, setGeocodedClientCoords] = useState(null);
+  const geocodingAttempted = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -141,9 +144,43 @@ export default function TrackingScreen({ navigation, route }) {
   const currentStepIndex = Math.max(0, STEPS.findIndex((s) => s.status === request?.status));
   const currentStep = STEPS[Math.max(currentStepIndex, 0)] || STEPS[0];
 
+  // Geocodificar endereço do pedido quando as coordenadas salvas forem inválidas (ex: [0,0])
+  useEffect(() => {
+    if (!request?.address) return;
+    const fromDB = toValidCoordinatePair(request.address.coordinates);
+    if (fromDB) {
+      setGeocodedClientCoords(fromDB);
+      return;
+    }
+    if (geocodingAttempted.current) return;
+    geocodingAttempted.current = true;
+
+    const addressText = [
+      request.address.street,
+      request.address.neighborhood,
+      request.address.city,
+      request.address.state,
+      request.address.zipCode,
+      'Brasil',
+    ]
+      .map((c) => String(c || '').trim())
+      .filter(Boolean)
+      .join(', ');
+
+    Location.geocodeAsync(addressText)
+      .then((results) => {
+        const first = Array.isArray(results) && results.length ? results[0] : null;
+        if (first && Number.isFinite(first.longitude) && Number.isFinite(first.latitude)) {
+          const coords = { latitude: first.latitude, longitude: first.longitude };
+          setGeocodedClientCoords(coords);
+        }
+      })
+      .catch(() => {});
+  }, [request?.address]);
+
   const clientCoords = useMemo(() => {
-    return toValidCoordinatePair(request?.address?.coordinates);
-  }, [request?.address?.coordinates]);
+    return toValidCoordinatePair(request?.address?.coordinates) || geocodedClientCoords;
+  }, [request?.address?.coordinates, geocodedClientCoords]);
 
   const professionalCoords = useMemo(() => {
     const live = toValidCoordinatePair(request?.professionalLiveLocation?.coordinates);

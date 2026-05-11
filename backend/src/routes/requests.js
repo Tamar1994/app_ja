@@ -652,85 +652,93 @@ router.patch('/:id/complete', auth, async (req, res) => {
     );
     if (!request) return res.status(400).json({ message: 'Serviço não encontrado' });
 
-    const pricingConfig = await PricingConfig.getSingleton();
-
-    // Creditar carteira do profissional com possível incentivo de cupom
-    // Payout SEMPRE baseado no valor bruto do servico (pricing.estimated), independente de cupons do cliente
-    const grossAmount = request.pricing.estimated;
-    const defaultFeePercent = Number(pricingConfig.platformFeePercent || 15);
-    const reward = await resolveProfessionalRewardForCompletion({
-      professionalUser: req.user,
-      serviceRequest: request,
-      grossAmount,
-      defaultFeePercent,
-    });
-    const platformFee = reward.platformFee;
-    const netAmount = Number((grossAmount - platformFee + reward.bonusAmount).toFixed(2));
-
-    if (reward.coupon) {
-      await CouponRedemption.updateOne(
-        {
-          paymentIntentId: `service:${request._id}`,
-          coupon: reward.coupon._id,
-        },
-        {
-          $setOnInsert: {
-            coupon: reward.coupon._id,
-            user: req.user._id,
-            serviceRequest: request._id,
-            paymentIntentId: `service:${request._id}`,
-            couponCodeSnapshot: reward.coupon.code,
-            discountAmount: reward.totalBenefit,
-          },
-        },
-        { upsert: true }
-      );
-    }
-
-    const updatedRequest = await ServiceRequest.findByIdAndUpdate(request._id, {
-      'pricing.professionalBonus': reward.bonusAmount,
-      'pricing.platformFeeDiscount': reward.feeDiscountAmount,
-      'pricing.professionalRewardCoupon': reward.coupon ? reward.coupon.code : null,
-      'pricing.platformFee': platformFee,
-    }, { new: true });
-
-    await Transaction.create({
-      professional: req.user._id,
-      serviceRequest: request._id,
-      type: 'earning',
-      grossAmount,
-      platformFee,
-      amount: netAmount,
-      description: reward.coupon
-        ? `Serviço concluído + incentivo (${reward.coupon.code})`
-        : 'Serviço concluído',
-    });
-
-    await User.findByIdAndUpdate(req.user._id, {
-      $inc: {
-        'professional.totalServicesCompleted': 1,
-        'wallet.balance': netAmount,
-        'wallet.totalEarned': netAmount,
-      },
-    });
-
-    await closeServiceChatForRequest(request._id, 'Serviço concluído');
-
+    // Notificar cliente e fechar chat imediatamente após marcar como concluído
+    // O processamento financeiro abaixo é feito em background — erros lá não bloqueiam a resposta
     const io = req.app.get('io');
     if (io) {
       io.to(`user_${request.client}`).emit('service_completed', { requestId: request._id });
     }
+    closeServiceChatForRequest(request._id, 'Serviço concluído').catch(() => {});
 
-    res.json({
-      request: updatedRequest || request,
-      rewardApplied: {
+    // Processar pagamento e carteira de forma isolada para não bloquear o response
+    let rewardApplied = { couponCode: null, rewardType: null, totalBenefit: 0, bonusAmount: 0, platformFeeDiscountAmount: 0, platformFeePercentApplied: 15 };
+    let updatedRequest = request;
+    try {
+      const pricingConfig = await PricingConfig.getSingleton();
+      const grossAmount = request.pricing.estimated;
+      const defaultFeePercent = Number(pricingConfig.platformFeePercent || 15);
+      const reward = await resolveProfessionalRewardForCompletion({
+        professionalUser: req.user,
+        serviceRequest: request,
+        grossAmount,
+        defaultFeePercent,
+      });
+      const platformFee = reward.platformFee;
+      const netAmount = Number((grossAmount - platformFee + reward.bonusAmount).toFixed(2));
+
+      if (reward.coupon) {
+        await CouponRedemption.updateOne(
+          {
+            paymentIntentId: `service:${request._id}`,
+            coupon: reward.coupon._id,
+          },
+          {
+            $setOnInsert: {
+              coupon: reward.coupon._id,
+              user: req.user._id,
+              serviceRequest: request._id,
+              paymentIntentId: `service:${request._id}`,
+              couponCodeSnapshot: reward.coupon.code,
+              discountAmount: reward.totalBenefit,
+            },
+          },
+          { upsert: true }
+        );
+      }
+
+      updatedRequest = await ServiceRequest.findByIdAndUpdate(request._id, {
+        'pricing.professionalBonus': reward.bonusAmount,
+        'pricing.platformFeeDiscount': reward.feeDiscountAmount,
+        'pricing.professionalRewardCoupon': reward.coupon ? reward.coupon.code : null,
+        'pricing.platformFee': platformFee,
+      }, { new: true });
+
+      await Transaction.create({
+        professional: req.user._id,
+        serviceRequest: request._id,
+        type: 'earning',
+        grossAmount,
+        platformFee,
+        amount: netAmount,
+        description: reward.coupon
+          ? `Serviço concluído + incentivo (${reward.coupon.code})`
+          : 'Serviço concluído',
+      });
+
+      await User.findByIdAndUpdate(req.user._id, {
+        $inc: {
+          'professional.totalServicesCompleted': 1,
+          'wallet.balance': netAmount,
+          'wallet.totalEarned': netAmount,
+        },
+      });
+
+      rewardApplied = {
         couponCode: reward.coupon ? reward.coupon.code : null,
         rewardType: reward.rewardType,
         totalBenefit: reward.totalBenefit,
         bonusAmount: reward.bonusAmount,
         platformFeeDiscountAmount: reward.feeDiscountAmount,
         platformFeePercentApplied: reward.feePercentApplied,
-      },
+      };
+    } catch (paymentErr) {
+      // Erro no processamento financeiro não impede a conclusão do serviço
+      console.error('[complete] Erro no processamento financeiro:', paymentErr);
+    }
+
+    res.json({
+      request: updatedRequest || request,
+      rewardApplied,
     });
   } catch {
     res.status(500).json({ message: 'Erro ao concluir serviço' });
