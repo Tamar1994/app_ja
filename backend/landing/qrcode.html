@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Baixe o Já! — Disponível em 01/06/2026</title>
+  <meta name="description" content="O Já! chega às lojas no dia 01/06/2026. Cadastre-se para ser avisado assim que o app estiver disponível." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange: #FF6B00;
+      --orange-dark: #E05A00;
+      --orange-light: #FF8C38;
+      --dark: #0F0F0F;
+      --dark2: #1A1A1A;
+      --dark3: #242424;
+      --text: #FAFAFA;
+      --text-muted: #A0A0A0;
+      --text-dim: #555;
+      --border: rgba(255,255,255,0.08);
+      --radius: 20px;
+      --radius-sm: 12px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--dark);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+    }
+
+    /* ─── GLOW BG ─── */
+    .bg-glow-top {
+      position: fixed;
+      top: -200px; left: 50%;
+      transform: translateX(-50%);
+      width: 900px; height: 900px;
+      background: radial-gradient(circle, rgba(255,107,0,0.15) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bg-glow-bottom {
+      position: fixed;
+      bottom: -200px; right: -200px;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(255,107,0,0.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── MAIN CARD ─── */
+    .card {
+      position: relative;
+      z-index: 1;
+      max-width: 480px;
+      width: calc(100% - 48px);
+      margin: 40px auto;
+      text-align: center;
+    }
+
+    /* ─── LOGO ─── */
+    .logo-wrap {
+      margin-bottom: 36px;
+    }
+
+    .logo-wrap img {
+      height: 72px;
+      width: auto;
+      filter: drop-shadow(0 8px 28px rgba(255,107,0,0.4));
+    }
+
+    /* ─── BADGE COUNTDOWN ─── */
+    .launch-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,107,0,0.12);
+      border: 1px solid rgba(255,107,0,0.3);
+      color: var(--orange-light);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 18px;
+      border-radius: 50px;
+      margin-bottom: 28px;
+    }
+
+    .badge-dot {
+      width: 7px; height: 7px;
+      background: var(--orange);
+      border-radius: 50%;
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* ─── TITLE ─── */
+    h1 {
+      font-size: clamp(32px, 8vw, 52px);
+      font-weight: 900;
+      letter-spacing: -2px;
+      line-height: 1.05;
+      margin-bottom: 16px;
+    }
+
+    h1 span { color: var(--orange); }
+
+    .subtitle {
+      font-size: 17px;
+      color: var(--text-muted);
+      line-height: 1.65;
+      margin-bottom: 40px;
+      max-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* ─── COUNTDOWN ─── */
+    .countdown-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+
+    .countdown-unit {
+      background: var(--dark2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px 20px;
+      min-width: 74px;
+    }
+
+    .countdown-num {
+      font-size: 32px;
+      font-weight: 900;
+      color: var(--orange);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .countdown-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* ─── AVISO ─── */
+    .aviso-box {
+      background: var(--dark2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 28px;
+      margin-bottom: 28px;
+      text-align: left;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+
+    .aviso-icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+
+    .aviso-text { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+
+    .aviso-text strong { color: var(--text); font-weight: 700; }
+
+    /* ─── STORE BUTTONS ─── */
+    .store-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+
+    .store-btn {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 24px;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      font-family: 'Inter', sans-serif;
+      cursor: not-allowed;
+      opacity: 0.38;
+      border: 1px solid var(--border);
+      background: var(--dark2);
+      pointer-events: none;
+      user-select: none;
+      transition: none;
+      position: relative;
+    }
+
+    .store-btn-icon { font-size: 28px; flex-shrink: 0; }
+
+    .store-btn-text { text-align: left; }
+
+    .store-btn-sub {
+      display: block;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .store-btn-name {
+      display: block;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    .store-btn-tag {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--orange);
+      background: rgba(255,107,0,0.1);
+      border: 1px solid rgba(255,107,0,0.25);
+      padding: 4px 10px;
+      border-radius: 50px;
+      white-space: nowrap;
+    }
+
+    /* ─── DIVIDER ─── */
+    .sep {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .sep::before, .sep::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .sep span {
+      font-size: 12px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    /* ─── WAITLIST FORM ─── */
+    .waitlist-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .waitlist-sub {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .waitlist-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .wl-input {
+      background: var(--dark3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-size: 15px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+      width: 100%;
+    }
+
+    .wl-input::placeholder { color: var(--text-dim); }
+    .wl-input:focus { border-color: var(--orange); }
+
+    .wl-btn {
+      background: linear-gradient(135deg, var(--orange), var(--orange-dark));
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 15px;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+
+    .wl-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .wl-btn:active { transform: translateY(0); }
+
+    .wl-privacy {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* ─── SUCCESS ─── */
+    .wl-success {
+      display: none;
+      padding: 28px;
+      background: var(--dark2);
+      border: 1px solid rgba(34,197,94,0.2);
+      border-radius: var(--radius);
+    }
+
+    .wl-success-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+
+    .wl-success h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .wl-success p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    /* ─── FOOTER ─── */
+    .page-footer {
+      margin-top: 48px;
+      padding-bottom: 32px;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .page-footer a {
+      font-size: 13px;
+      color: var(--text-dim);
+      text-decoration: none;
+    }
+
+    .page-footer a:hover { color: var(--orange); }
+
+    .page-footer span { color: var(--text-dim); margin: 0 8px; }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 400px) {
+      .countdown-unit { min-width: 60px; padding: 12px 14px; }
+      .countdown-num { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="bg-glow-top"></div>
+  <div class="bg-glow-bottom"></div>
+
+  <div class="card">
+
+    <!-- LOGO -->
+    <div class="logo-wrap">
+      <img src="/landing/logo.png" alt="Já!" />
+    </div>
+
+    <!-- BADGE -->
+    <div class="launch-badge">
+      <div class="badge-dot"></div>
+      🚀 Lançamento em 01/06/2026
+    </div>
+
+    <!-- TITLE -->
+    <h1>Baixe o <span>Já!</span><br/>e transforme seu lar.</h1>
+    <p class="subtitle">
+      Serviços domésticos com profissionais verificados, na palma da sua mão. O app já está no forno — falta pouco!
+    </p>
+
+    <!-- COUNTDOWN -->
+    <div class="countdown-row">
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cd-days">--</div>
+        <div class="countdown-label">Dias</div>
+      </div>
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cd-hours">--</div>
+        <div class="countdown-label">Horas</div>
+      </div>
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cd-min">--</div>
+        <div class="countdown-label">Min</div>
+      </div>
+      <div class="countdown-unit">
+        <div class="countdown-num" id="cd-sec">--</div>
+        <div class="countdown-label">Seg</div>
+      </div>
+    </div>
+
+    <!-- AVISO -->
+    <div class="aviso-box">
+      <div class="aviso-icon">📅</div>
+      <div class="aviso-text">
+        O aplicativo estará disponível nas lojas no dia
+        <strong>01/06/2026 às 10h00 (Horário de Brasília)</strong>.
+        Cadastre-se abaixo para receber um aviso assim que o download estiver liberado!
+      </div>
+    </div>
+
+    <!-- STORE BUTTONS (desabilitados) -->
+    <div class="store-buttons">
+      <div class="store-btn">
+        <div class="store-btn-icon">🤖</div>
+        <div class="store-btn-text">
+          <span class="store-btn-sub">Disponível em breve na</span>
+          <span class="store-btn-name">Google Play</span>
+        </div>
+        <span class="store-btn-tag">01/06/2026</span>
+      </div>
+      <div class="store-btn">
+        <div class="store-btn-icon">🍎</div>
+        <div class="store-btn-text">
+          <span class="store-btn-sub">Disponível em breve na</span>
+          <span class="store-btn-name">App Store</span>
+        </div>
+        <span class="store-btn-tag">01/06/2026</span>
+      </div>
+    </div>
+
+    <!-- SEPARADOR -->
+    <div class="sep"><span>ou seja avisado por e-mail</span></div>
+
+    <!-- WAITLIST -->
+    <div id="wl-form-area">
+      <p class="waitlist-title">📩 Receba o aviso de lançamento</p>
+      <p class="waitlist-sub">Sem spam. Só um e-mail no grande dia.</p>
+      <form class="waitlist-form" onsubmit="handleWaitlist(event)">
+        <input class="wl-input" type="text" name="name" placeholder="Seu nome" required autocomplete="name" />
+        <input class="wl-input" type="email" name="email" placeholder="seu@email.com" required autocomplete="email" />
+        <button class="wl-btn" type="submit" id="wl-btn">Me avise no lançamento →</button>
+      </form>
+      <p class="wl-privacy">🔒 Seus dados não serão compartilhados com terceiros.</p>
+    </div>
+
+    <div class="wl-success" id="wl-success">
+      <div class="wl-success-icon">🎉</div>
+      <h3>Você está na lista!</h3>
+      <p>Te avisaremos assim que o app estiver disponível para download nas lojas. Até lá!</p>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="page-footer">
+    <a href="/">Voltar para o site</a>
+    <span>·</span>
+    <a href="https://instagram.com/chame_ja" target="_blank" rel="noopener">@chame_ja</a>
+  </div>
+
+  <script>
+    // ─── Countdown até 01/06/2026 10:00 BRT (UTC-3) ───
+    const LAUNCH = new Date('2026-06-01T13:00:00Z'); // 10h BRT = 13h UTC
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function tick() {
+      const diff = LAUNCH - Date.now();
+      if (diff <= 0) {
+        document.getElementById('cd-days').textContent = '00';
+        document.getElementById('cd-hours').textContent = '00';
+        document.getElementById('cd-min').textContent = '00';
+        document.getElementById('cd-sec').textContent = '00';
+        return;
+      }
+      const days  = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const min   = Math.floor((diff % 3600000) / 60000);
+      const sec   = Math.floor((diff % 60000) / 1000);
+      document.getElementById('cd-days').textContent  = pad(days);
+      document.getElementById('cd-hours').textContent = pad(hours);
+      document.getElementById('cd-min').textContent   = pad(min);
+      document.getElementById('cd-sec').textContent   = pad(sec);
+    }
+
+    tick();
+    setInterval(tick, 1000);
+
+    // ─── Waitlist ───
+    async function handleWaitlist(e) {
+      e.preventDefault();
+      const btn = document.getElementById('wl-btn');
+      const fd  = new FormData(e.target);
+      btn.textContent = 'Enviando...';
+      btn.disabled = true;
+
+      try {
+        await fetch('/api/landing/waitlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: fd.get('name'), email: fd.get('email'), source: 'qrcode' }),
+        });
+      } catch (_) { /* mostra sucesso mesmo offline */ }
+
+      document.getElementById('wl-form-area').style.display = 'none';
+      document.getElementById('wl-success').style.display = 'block';
+    }
+  </script>
+</body>
+</html>

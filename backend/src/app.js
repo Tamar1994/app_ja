@@ -41,6 +41,9 @@ app.use('/landing', express.static(path.join(__dirname, '../landing')));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../landing/index.html'));
 });
+app.get('/qrcode', (req, res) => {
+  res.sendFile(path.join(__dirname, '../landing/qrcode.html'));
+});
 
 // Rotas
 app.use('/api/auth', authRoutes);
@@ -70,12 +73,12 @@ app.get('/api/terms', async (req, res) => {
 
 // Waitlist da Landing Page
 app.post('/api/landing/waitlist', express.json(), async (req, res) => {
-  const { name, email } = req.body || {};
+  const { name, email, source } = req.body || {};
   if (!email || !email.includes('@')) {
     return res.status(400).json({ message: 'E-mail inválido' });
   }
   try {
-    await Waitlist.create({ name: String(name || '').trim(), email });
+    await Waitlist.create({ name: String(name || '').trim(), email, source: source || 'landing' });
   } catch (err) {
     if (err.code === 11000) {
       // E-mail já cadastrado — retorna sucesso mesmo assim (não expõe duplicata)
