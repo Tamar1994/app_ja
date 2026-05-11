@@ -10,7 +10,14 @@ import * as Location from 'expo-location';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
-const DEFAULT_HOURS_OPTIONS = [2, 3, 4, 5, 6, 8];
+const DEFAULT_HOURS_OPTIONS = [120, 180, 240, 300, 360, 480]; // in minutes
+
+function formatDuration(minutes) {
+  if (minutes < 60) return `${minutes}min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m === 0 ? `${h}h` : `${h}h${m}`;
+}
 const TIME_OPTIONS = ['07:00', '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
 
 function getDateLabel(date) {
@@ -134,7 +141,7 @@ export default function RequestServiceScreen({ navigation, route }) {
     setLoadingEstimate(true);
     try {
       const { data } = await requestAPI.estimate(
-        hours,
+        hours / 60,
         supportsProducts ? hasProducts : true,
         serviceType?.slug || null,
         customFormData
@@ -210,7 +217,7 @@ export default function RequestServiceScreen({ navigation, route }) {
           };
 
           const requestData = {
-            hours, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
+            hours: hours / 60, rooms, bathrooms, hasProducts: supportsProducts ? hasProducts : true, notes,
             address: requestAddress, scheduledDate: getFinalScheduledDate(),
             serviceTypeSlug: serviceType?.slug || null,
             customFormData,
@@ -334,10 +341,10 @@ export default function RequestServiceScreen({ navigation, route }) {
                   {hours === h
                     ? (
                       <LinearGradient colors={colors.gradientPrimary} style={styles.optionBtnGrad}>
-                        <Text style={styles.optionTextActive}>{h}h</Text>
+                        <Text style={styles.optionTextActive}>{formatDuration(h)}</Text>
                       </LinearGradient>
                     )
-                    : <Text style={styles.optionText}>{h}h</Text>}
+                    : <Text style={styles.optionText}>{formatDuration(h)}</Text>}
                 </TouchableOpacity>
               ))}
             </View>
@@ -507,7 +514,7 @@ export default function RequestServiceScreen({ navigation, route }) {
                     <>
                       <Text style={styles.estimateValue}>R$ {estimate.estimated.toFixed(2)}</Text>
                       <Text style={styles.estimateDetail}>
-                        R$ {estimate.pricePerHour}/h × {hours}h
+                        R$ {estimate.pricePerHour}/h × {formatDuration(hours)}
                       </Text>
                     </>
                   )}
@@ -650,7 +657,7 @@ export default function RequestServiceScreen({ navigation, route }) {
 
             <View style={styles.confirmCard}>
               {[
-                { icon: 'time-outline', label: 'Duração', value: `${hours} horas` },
+                { icon: 'time-outline', label: 'Duração', value: formatDuration(hours) },
                 ...(!hasDynamicFields ? [{ icon: 'home-outline', label: 'Cômodos', value: `${rooms} cômodo(s) · ${bathrooms} banheiro(s)` }] : []),
                 ...checkoutFields.map((field) => ({
                   icon: field.inputType === 'boolean' ? 'checkbox-outline' : 'list-outline',

@@ -208,7 +208,7 @@ router.post('/estimate', auth, async (req, res) => {
 
 // POST /api/requests — criar solicitação
 router.post('/', auth, [
-  body('hours').isInt({ min: 1, max: 24 }),
+  body('hours').isFloat({ min: 0.25, max: 24 }),
   body('address.street').notEmpty(),
   body('address.city').notEmpty(),
   body('scheduledDate').isISO8601(),

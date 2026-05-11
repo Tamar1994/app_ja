@@ -3408,6 +3408,15 @@ const renderServiceTypes = async () => {
   }
 };
 
+const formatAdminDuration = (minutes) => {
+  const m = Number(minutes);
+  if (!Number.isFinite(m)) return String(minutes);
+  if (m < 60) return `${m}min`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h${rem}`;
+};
+
 const renderServiceTypeCard = (t) => `
   <div class="service-type-card" id="stc-${t._id}">
     <div class="service-type-icon">${t.imageUrl ? `<img src="${escHtml(t.imageUrl)}" alt="${escHtml(t.name)}" class="service-type-icon-img" />` : (t.icon || '🔧')}</div>
@@ -3416,9 +3425,9 @@ const renderServiceTypeCard = (t) => `
       <div class="service-type-desc">${escHtml(t.description || '')}</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Campos customizados: ${(Array.isArray(t.checkoutFields) ? t.checkoutFields.length : 0)}</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Faixa de horas: ${Number.isFinite(Number(t.minHours)) ? Number(t.minHours) : 2}h - ${Number.isFinite(Number(t.maxHours)) ? Number(t.maxHours) : 12}h</div>
-      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Opções: ${Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(', ') : '2, 3, 4, 5, 6, 8'}h</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Opções: ${Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.map(m => formatAdminDuration(m)).join(', ') : '2h, 3h, 4h'}</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Valor/min: ${Number.isFinite(Number(t.pricePerMinute)) && Number(t.pricePerMinute) > 0 ? `R$ ${Number(t.pricePerMinute).toFixed(2)}` : 'padrão global'} · Taxa plataforma: ${Number.isFinite(Number(t.platformFeePercent)) ? `${Number(t.platformFeePercent)}%` : 'padrão global'}</div>
-      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Duração: ${(t.durationUnit === 'minutes') ? 'minutos' : 'horas'} · Rastreamento: <span style="color:${t.requiresLocationTracking ? '#00C853' : '#5C6B7A'};font-weight:600;">${t.requiresLocationTracking ? '✅ Sim' : 'Não'}</span></div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Rastreamento: <span style="color:${t.requiresLocationTracking ? '#00C853' : '#5C6B7A'};font-weight:600;">${t.requiresLocationTracking ? '✅ Sim' : 'Não'}</span></div>
       <div class="service-type-toggle">
         <label class="toggle-switch" title="${t.status === 'enabled' ? 'Desativar' : 'Ativar'} profissão">
           <input type="checkbox" ${t.status === 'enabled' ? 'checked' : ''} onchange="toggleServiceType('${t._id}', this.checked)" />
@@ -3458,41 +3467,97 @@ const buildOptionsString = (options) => {
 
 const buildCheckoutFieldRows = (fields = []) => {
   if (!Array.isArray(fields) || !fields.length) {
-    return `<div class="stf-empty" style="font-size:12px;color:#7A84A0;">Nenhum campo adicional. Clique em "Adicionar campo".</div>`;
+    return `<div class="stf-empty" style="font-size:12px;color:#7A84A0;">Nenhum campo adicional. Clique em "+ Adicionar campo".</div>`;
   }
 
-  return fields
-    .map((field, idx) => `
-      <div class="stf-row" style="border:1px solid #E8EAF0;border-radius:12px;padding:10px;margin-bottom:8px;background:#FAFBFF;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <input class="form-input stf-key" placeholder="chave (ex: dogs_count)" value="${escHtml(field.key || '')}" />
-          <input class="form-input stf-label" placeholder="rótulo (ex: Quantos cães?)" value="${escHtml(field.label || '')}" />
-          <select class="form-select stf-type">
-            <option value="number" ${(field.inputType || '') === 'number' ? 'selected' : ''}>Número</option>
-            <option value="boolean" ${(field.inputType || '') === 'boolean' ? 'selected' : ''}>Sim/Não</option>
-            <option value="text" ${(field.inputType || '') === 'text' ? 'selected' : ''}>Texto</option>
-            <option value="select" ${(field.inputType || '') === 'select' ? 'selected' : ''}>Seleção</option>
-          </select>
-          <input class="form-input stf-placeholder" placeholder="placeholder" value="${escHtml(field.placeholder || '')}" />
-          <input class="form-input stf-default" placeholder="valor padrão" value="${escHtml(field.defaultValue ?? '')}" />
-          <input class="form-input stf-min" type="number" placeholder="mín" value="${field.min ?? ''}" />
-          <input class="form-input stf-max" type="number" placeholder="máx" value="${field.max ?? ''}" />
-          <input class="form-input stf-step" type="number" placeholder="passo" value="${field.step ?? 1}" />
-          <input class="form-input stf-order" type="number" placeholder="ordem" value="${field.sortOrder ?? idx}" />
-          <input class="form-input stf-options" style="grid-column:1 / span 2" placeholder="opções select: label:valor:impacto, label2:valor2:impacto" value="${escHtml(buildOptionsString(field.options))}" />
+  return fields.map((field, idx) => {
+    const type = field.inputType || 'number';
+    const isPricingEnabled = !!field.pricingEnabled;
+    const typeBtn = (t, emoji, label) => {
+      const active = type === t;
+      return `<button type="button" onclick="stfSelectType(this,'${t}')" class="stf-type-btn" data-type="${t}" style="padding:4px 10px;border-radius:16px;border:1.5px solid ${active ? '#6C63FF' : '#E0E3ED'};background:${active ? '#6C63FF' : 'transparent'};color:${active ? '#fff' : '#5C6B7A'};font-size:12px;cursor:pointer;font-weight:500;">${emoji} ${label}</button>`;
+    };
+    const defPlaceholder = type === 'boolean' ? '"sim" ou "não"' : type === 'number' ? 'Ex: 1' : 'Texto padrão (opcional)';
+    return `
+      <div class="stf-row" style="border:1px solid #E0E3ED;border-radius:14px;padding:14px;margin-bottom:10px;background:#F9FAFF;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.8px;">Campo ${idx + 1}</span>
+          <button class="btn btn-ghost btn-sm" type="button" style="color:#e53935;padding:2px 8px;" onclick="this.closest('.stf-row').remove();refreshCheckoutFieldEmptyState()">✕ Remover</button>
         </div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px;">
-          <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" class="stf-required" ${field.required ? 'checked' : ''}/> Obrigatório</label>
-          <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" class="stf-pricing-enabled" ${field.pricingEnabled ? 'checked' : ''}/> Afeta preço</label>
-          <select class="form-select stf-pricing-mode" style="max-width:170px;">
-            <option value="add_total" ${(field.pricingMode || 'add_total') === 'add_total' ? 'selected' : ''}>Soma no total</option>
-            <option value="add_per_hour" ${(field.pricingMode || '') === 'add_per_hour' ? 'selected' : ''}>Soma por hora</option>
-          </select>
-          <input class="form-input stf-pricing-amount" type="number" step="0.01" placeholder="valor impacto" style="max-width:140px;" value="${Number(field.pricingAmount || 0)}" />
-          <button class="btn btn-ghost btn-sm" type="button" onclick="this.closest('.stf-row').remove();refreshCheckoutFieldEmptyState()">Remover</button>
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Tipo de entrada</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${typeBtn('number', '🔢', 'Número')}
+            ${typeBtn('boolean', '✅', 'Sim/Não')}
+            ${typeBtn('text', '✏️', 'Texto livre')}
+            ${typeBtn('select', '📋', 'Múltipla escolha')}
+          </div>
+          <input type="hidden" class="stf-type" value="${type}" />
         </div>
-      </div>`)
-    .join('');
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Pergunta / Título</div>
+            <input class="form-input stf-label" placeholder='ex: "Quantos cães?"' value="${escHtml(field.label || '')}" oninput="stfAutoKey(this)" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Chave interna (ID único)</div>
+            <input class="form-input stf-key" placeholder="automático (do título)" value="${escHtml(field.key || '')}" style="font-family:monospace;" />
+          </div>
+        </div>
+        <div class="stf-placeholder-group" style="margin-bottom:8px;${type === 'boolean' ? 'display:none;' : ''}">
+          <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Texto de ajuda (exibido no app)</div>
+          <input class="form-input stf-placeholder" placeholder='ex: "Informe o número de cães"' value="${escHtml(field.placeholder || '')}" />
+        </div>
+        <div class="stf-number-fields" style="display:${type === 'number' ? 'grid' : 'none'};grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Valor mínimo</div>
+            <input class="form-input stf-min" type="number" placeholder="0" value="${field.min ?? ''}" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Valor máximo</div>
+            <input class="form-input stf-max" type="number" placeholder="sem limite" value="${field.max ?? ''}" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Incremento (passo)</div>
+            <input class="form-input stf-step" type="number" placeholder="1" value="${field.step ?? 1}" />
+          </div>
+        </div>
+        <div class="stf-select-fields" style="display:${type === 'select' ? 'block' : 'none'};margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Opções de escolha</div>
+          <input class="form-input stf-options" placeholder='ex: "1 cão:1:0, 2 cães:2:10, 3+ cães:3:20"' value="${escHtml(buildOptionsString(field.options))}" />
+          <div style="font-size:11px;color:#7A84A0;margin-top:3px;">Formato: <code>Rótulo:valor:impacto_R$</code> separados por vírgula. Impacto em R$ (0 = sem acréscimo).</div>
+        </div>
+        <div class="stf-default-group" style="margin-bottom:10px;display:${type === 'select' ? 'none' : 'block'};">
+          <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Valor padrão</div>
+          <input class="form-input stf-default" placeholder="${defPlaceholder}" value="${escHtml(String(field.defaultValue ?? ''))}" />
+        </div>
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding-top:10px;border-top:1px solid #E8EAF0;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;">
+            <input type="checkbox" class="stf-required" ${field.required ? 'checked' : ''} /> Obrigatório
+          </label>
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;">
+            <input type="checkbox" class="stf-pricing-enabled" ${field.pricingEnabled ? 'checked' : ''} onchange="stfTogglePricing(this)" /> Afeta preço
+          </label>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;color:#7A84A0;">Ordem</span>
+            <input class="form-input stf-order" type="number" value="${field.sortOrder ?? idx}" style="width:60px;text-align:center;padding:4px 6px;" />
+          </div>
+        </div>
+        <div class="stf-pricing-section" style="display:${isPricingEnabled ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding:10px;background:#FFFBF0;border-radius:8px;border:1px solid #FFE082;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Modo de precificação</div>
+            <select class="form-select stf-pricing-mode">
+              <option value="add_total" ${(field.pricingMode || 'add_total') === 'add_total' ? 'selected' : ''}>➕ Soma no total</option>
+              <option value="add_per_hour" ${(field.pricingMode || '') === 'add_per_hour' ? 'selected' : ''}>⏱ Soma por hora</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Valor a acrescentar (R$)</div>
+            <input class="form-input stf-pricing-amount" type="number" step="0.01" placeholder="Ex: 15.00" value="${Number(field.pricingAmount || 0)}" />
+          </div>
+        </div>
+      </div>`;
+  }).join('');
 };
 
 const refreshCheckoutFieldEmptyState = () => {
@@ -3514,11 +3579,50 @@ const addCheckoutFieldRow = (listId) => {
   const listEl = document.getElementById(listId);
   if (!listEl) return;
   const wrapper = document.createElement('div');
-  wrapper.innerHTML = buildCheckoutFieldRows([{ inputType: 'number', step: 1, pricingMode: 'add_total', pricingAmount: 0 }]);
+  const sortOrder = listEl.querySelectorAll('.stf-row').length;
+  wrapper.innerHTML = buildCheckoutFieldRows([{ inputType: 'number', step: 1, pricingMode: 'add_total', pricingAmount: 0, sortOrder }]);
   const row = wrapper.querySelector('.stf-row');
   if (!row) return;
   listEl.appendChild(row);
   refreshCheckoutFieldEmptyState();
+};
+
+const stfSelectType = (btn, type) => {
+  const row = btn.closest('.stf-row');
+  row.querySelectorAll('.stf-type-btn').forEach(b => {
+    b.style.background = 'transparent';
+    b.style.color = '#5C6B7A';
+    b.style.borderColor = '#E0E3ED';
+  });
+  btn.style.background = '#6C63FF';
+  btn.style.color = '#fff';
+  btn.style.borderColor = '#6C63FF';
+  row.querySelector('.stf-type').value = type;
+  const numFields = row.querySelector('.stf-number-fields');
+  const selFields = row.querySelector('.stf-select-fields');
+  const phGroup = row.querySelector('.stf-placeholder-group');
+  const defGroup = row.querySelector('.stf-default-group');
+  if (numFields) numFields.style.display = type === 'number' ? 'grid' : 'none';
+  if (selFields) selFields.style.display = type === 'select' ? 'block' : 'none';
+  if (phGroup) phGroup.style.display = type === 'boolean' ? 'none' : '';
+  if (defGroup) {
+    defGroup.style.display = type === 'select' ? 'none' : 'block';
+    const defInput = defGroup.querySelector('.stf-default');
+    if (defInput) defInput.placeholder = type === 'boolean' ? '"sim" ou "não"' : type === 'number' ? 'Ex: 1' : 'Texto padrão (opcional)';
+  }
+};
+
+const stfAutoKey = (labelInput) => {
+  const row = labelInput.closest('.stf-row');
+  const keyInput = row && row.querySelector('.stf-key');
+  if (!keyInput || keyInput.value) return;
+  keyInput.value = slugifyFieldKey(labelInput.value);
+};
+
+const stfTogglePricing = (checkbox) => {
+  const row = checkbox.closest('.stf-row');
+  const section = row && row.querySelector('.stf-pricing-section');
+  if (section) section.style.display = checkbox.checked ? 'grid' : 'none';
 };
 
 const slugifyFieldKey = (raw) => String(raw || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
@@ -3644,17 +3748,9 @@ const openNewServiceTypeModal = () => {
           <option value="disabled" selected>Desativado</option>
         </select>
       </div>
-      <div class="form-group"><label class="form-label">Faixa mínima de horas</label><input id="st-min-hours" class="form-input" type="number" min="1" step="1" value="2" /></div>
-      <div class="form-group"><label class="form-label">Faixa máxima de horas</label><input id="st-max-hours" class="form-input" type="number" min="1" step="1" value="12" /></div>
-      <div class="form-group"><label class="form-label">Opções de duração (horas)</label><input id="st-hours-options" class="form-input" placeholder="2,3,4" value="2,3,4,5,6,8" /></div>
+      <div class="form-group"><label class="form-label">Opções de duração (minutos)</label><input id="st-hours-options" class="form-input" placeholder="ex: 30, 60, 90, 120, 180, 240" value="120,180,240,300,360,480" /></div>
       <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="st-price-minute" class="form-input" type="number" min="0.01" step="0.01" placeholder="Ex: 0.90" /></div>
       <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="st-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="Ex: 15" /></div>
-      <div class="form-group"><label class="form-label">Unidade de duração</label>
-        <select id="st-duration-unit" class="form-select">
-          <option value="hours">Horas</option>
-          <option value="minutes">Minutos</option>
-        </select>
-      </div>
       <div class="form-group" style="display:flex;align-items:center;gap:12px;">
         <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
           <input type="checkbox" id="st-location-tracking" />
@@ -3680,25 +3776,18 @@ const createServiceType = async () => {
   const description = document.getElementById('st-desc').value.trim();
   const icon = document.getElementById('st-icon').value.trim();
   const status = document.getElementById('st-status').value;
-  const minHours = parseInt(document.getElementById('st-min-hours').value || '2', 10);
-  const maxHours = parseInt(document.getElementById('st-max-hours').value || '12', 10);
   const hoursOptionsRaw = (document.getElementById('st-hours-options').value || '').trim();
   const pricePerMinuteRaw = (document.getElementById('st-price-minute').value || '').trim();
   const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
-  const durationUnit = document.getElementById('st-duration-unit').value || 'hours';
   const requiresLocationTracking = document.getElementById('st-location-tracking').checked;
   const imageFile = document.getElementById('st-image').files?.[0] || null;
-  if (!Number.isFinite(minHours) || !Number.isFinite(maxHours) || minHours < 1 || maxHours < minHours) {
-    showAlert('Faixa de horas inválida.');
-    return;
-  }
 
   const hoursOptions = hoursOptionsRaw
     .split(',')
     .map((chunk) => parseInt(chunk.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n >= minHours && n <= maxHours);
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 1440);
   if (!hoursOptions.length) {
-    showAlert('Informe ao menos uma opção de duração dentro da faixa de horas.');
+    showAlert('Informe ao menos uma opção de duração em minutos (ex: 30, 60, 90, 120).');
     return;
   }
 
@@ -3722,13 +3811,14 @@ const createServiceType = async () => {
     formData.append('description', description);
     formData.append('icon', icon);
     formData.append('status', status);
-    formData.append('minHours', String(minHours));
-    formData.append('maxHours', String(maxHours));
-    formData.append('hoursOptions', JSON.stringify(Array.from(new Set(hoursOptions)).sort((a, b) => a - b)));
+    const sortedOpts = Array.from(new Set(hoursOptions)).sort((a, b) => a - b);
+    formData.append('minHours', String(+(sortedOpts[0] / 60).toFixed(2)));
+    formData.append('maxHours', String(+(sortedOpts[sortedOpts.length - 1] / 60).toFixed(2)));
+    formData.append('hoursOptions', JSON.stringify(sortedOpts));
     if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
     if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('checkoutFields', JSON.stringify(checkoutFields));
-    formData.append('durationUnit', durationUnit);
+    formData.append('durationUnit', 'minutes');
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
     document.querySelector('.modal-overlay')?.remove();
@@ -3755,17 +3845,9 @@ const openEditServiceTypeModal = (t) => {
           <option value="disabled" ${t.status==='disabled'?'selected':''}>Desativado</option>
         </select>
       </div>
-      <div class="form-group"><label class="form-label">Faixa mínima de horas</label><input id="ste-min-hours" class="form-input" type="number" min="1" step="1" value="${Number.isFinite(Number(t.minHours)) ? Number(t.minHours) : 2}" /></div>
-      <div class="form-group"><label class="form-label">Faixa máxima de horas</label><input id="ste-max-hours" class="form-input" type="number" min="1" step="1" value="${Number.isFinite(Number(t.maxHours)) ? Number(t.maxHours) : 12}" /></div>
-      <div class="form-group"><label class="form-label">Opções de duração (horas)</label><input id="ste-hours-options" class="form-input" value="${escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '2,3,4,5,6,8')}" /></div>
+      <div class="form-group"><label class="form-label">Opções de duração (minutos)</label><input id="ste-hours-options" class="form-input" placeholder="ex: 30, 60, 90, 120" value="${escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '120,180,240,300,360,480')}" /></div>
       <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="ste-price-minute" class="form-input" type="number" min="0.01" step="0.01" value="${Number.isFinite(Number(t.pricePerMinute)) ? Number(t.pricePerMinute) : ''}" placeholder="padrão global" /></div>
       <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : ''}" placeholder="padrão global" /></div>
-      <div class="form-group"><label class="form-label">Unidade de duração</label>
-        <select id="ste-duration-unit" class="form-select">
-          <option value="hours" ${(t.durationUnit || 'hours') === 'hours' ? 'selected' : ''}>Horas</option>
-          <option value="minutes" ${(t.durationUnit || '') === 'minutes' ? 'selected' : ''}>Minutos</option>
-        </select>
-      </div>
       <div class="form-group" style="display:flex;align-items:center;gap:12px;">
         <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
           <input type="checkbox" id="ste-location-tracking" ${t.requiresLocationTracking ? 'checked' : ''} />
@@ -3792,25 +3874,18 @@ const updateServiceType = async (id) => {
   const icon = document.getElementById('ste-icon').value.trim();
   const sortOrder = parseInt(document.getElementById('ste-order').value) || 0;
   const status = document.getElementById('ste-status').value;
-  const minHours = parseInt(document.getElementById('ste-min-hours').value || '2', 10);
-  const maxHours = parseInt(document.getElementById('ste-max-hours').value || '12', 10);
   const hoursOptionsRaw = (document.getElementById('ste-hours-options').value || '').trim();
   const pricePerMinuteRaw = (document.getElementById('ste-price-minute').value || '').trim();
   const platformFeeRaw = (document.getElementById('ste-platform-fee').value || '').trim();
-  const durationUnit = document.getElementById('ste-duration-unit').value || 'hours';
   const requiresLocationTracking = document.getElementById('ste-location-tracking').checked;
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
-  if (!Number.isFinite(minHours) || !Number.isFinite(maxHours) || minHours < 1 || maxHours < minHours) {
-    showAlert('Faixa de horas inválida.');
-    return;
-  }
 
   const hoursOptions = hoursOptionsRaw
     .split(',')
     .map((chunk) => parseInt(chunk.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n >= minHours && n <= maxHours);
+    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 1440);
   if (!hoursOptions.length) {
-    showAlert('Informe ao menos uma opção de duração dentro da faixa de horas.');
+    showAlert('Informe ao menos uma opção de duração em minutos (ex: 30, 60, 90, 120).');
     return;
   }
 
@@ -3834,13 +3909,14 @@ const updateServiceType = async (id) => {
     formData.append('icon', icon);
     formData.append('sortOrder', sortOrder);
     formData.append('status', status);
-    formData.append('minHours', String(minHours));
-    formData.append('maxHours', String(maxHours));
-    formData.append('hoursOptions', JSON.stringify(Array.from(new Set(hoursOptions)).sort((a, b) => a - b)));
+    const sortedOpts = Array.from(new Set(hoursOptions)).sort((a, b) => a - b);
+    formData.append('minHours', String(+(sortedOpts[0] / 60).toFixed(2)));
+    formData.append('maxHours', String(+(sortedOpts[sortedOpts.length - 1] / 60).toFixed(2)));
+    formData.append('hoursOptions', JSON.stringify(sortedOpts));
     if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
     if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('checkoutFields', JSON.stringify(checkoutFields));
-    formData.append('durationUnit', durationUnit);
+    formData.append('durationUnit', 'minutes');
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('PATCH', `/${id}`, formData);

@@ -6,7 +6,6 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { uploadResidenceProof, userAPI } from '../../services/api';
@@ -47,19 +46,10 @@ export default function ResidenceProofUploadScreen({ navigation }) {
     }
   };
 
-  const pickPDF = async () => {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      setFile({ uri: asset.uri, type: 'application/pdf', name: asset.name || 'residencia.pdf', isImage: false });
-    }
-  };
-
   const showOptions = () => {
     Alert.alert('Comprovante de residência', 'Como deseja enviar?', [
       { text: 'Câmera', onPress: takePhoto },
       { text: 'Galeria', onPress: pickImage },
-      { text: 'PDF', onPress: pickPDF },
       { text: 'Cancelar', style: 'cancel' },
     ]);
   };
@@ -101,25 +91,18 @@ export default function ResidenceProofUploadScreen({ navigation }) {
         <View style={styles.headerContent}>
           <Ionicons name="home" size={32} color="#fff" />
           <Text style={styles.headerTitle}>Comprovante de residência</Text>
-          <Text style={styles.headerSub}>Conta de água, luz, gás ou telefone fixo</Text>
+          <Text style={styles.headerSub}>Conta de água, luz, gás ou telefone fixo — Foto</Text>
         </View>
       </LinearGradient>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={styles.fileBox} onPress={showOptions} activeOpacity={0.8}>
           {file ? (
-            file.isImage ? (
               <Image source={{ uri: file.uri }} style={styles.preview} resizeMode="contain" />
-            ) : (
-              <View style={styles.pdfPreview}>
-                <Ionicons name="document" size={48} color={colors.primary} />
-                <Text style={styles.pdfName} numberOfLines={2}>{file.name}</Text>
-              </View>
-            )
           ) : (
             <View style={styles.placeholder}>
               <Ionicons name="cloud-upload-outline" size={48} color={colors.primary} />
-              <Text style={styles.placeholderText}>Toque para selecionar{'\n'}Foto ou PDF</Text>
+              <Text style={styles.placeholderText}>Toque para selecionar{'\n'}Câmera ou Galeria</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -179,8 +162,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   preview: { width: '100%', height: 220 },
-  pdfPreview: { alignItems: 'center', gap: 12, padding: spacing.xl },
-  pdfName: { ...typography.body, color: colors.text, textAlign: 'center' },
   placeholder: { alignItems: 'center', gap: 12, padding: spacing.xl },
   placeholderText: { ...typography.body, color: colors.textLight, textAlign: 'center' },
   changeBtn: { alignItems: 'center' },
