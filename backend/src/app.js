@@ -35,6 +35,12 @@ app.use('/admin', express.static(path.join(__dirname, '../admin')));
 // Servir painel dedicado de suporte
 app.use('/suportsystem', express.static(path.join(__dirname, '../suportsystem')));
 
+// Landing Page — raiz do domínio
+app.use('/landing', express.static(path.join(__dirname, '../landing')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../landing/index.html'));
+});
+
 // Rotas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -59,6 +65,16 @@ app.get('/api/terms', async (req, res) => {
   } catch {
     res.status(500).json({ message: 'Erro ao buscar termos de uso' });
   }
+});
+
+// Waitlist da Landing Page — salva no log do servidor e retorna 200
+app.post('/api/landing/waitlist', express.json(), (req, res) => {
+  const { name, email } = req.body || {};
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ message: 'E-mail inválido' });
+  }
+  console.log(`[WAITLIST] ${new Date().toISOString()} | ${name || '?'} | ${email}`);
+  res.json({ ok: true });
 });
 
 // Health check
