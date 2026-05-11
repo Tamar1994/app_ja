@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceTypeAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatHours } from '../../utils/format';
 
 const { width } = Dimensions.get('window');
 const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
@@ -127,7 +128,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.greeting}>Olá, {firstName}! 👋</Text>
             <Text style={styles.headerSub}>O que você precisa hoje?</Text>
           </View>
-          <TouchableOpacity style={styles.avatarBtn} onPress={() => {}}>
+          <TouchableOpacity style={styles.avatarBtn} onPress={() => navigation.navigate('ProfileTab')}>>
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
             </View>
@@ -142,7 +143,7 @@ export default function HomeScreen({ navigation }) {
             activeOpacity={0.9}
           >
             <Ionicons name="search-outline" size={18} color={colors.textLight} />
-            <Text style={styles.headerSearchText}>Contratar diarista...</Text>
+            <Text style={styles.headerSearchText}>Contratar serviço...</Text>
           </TouchableOpacity>
         )}
       </LinearGradient>
@@ -172,9 +173,9 @@ export default function HomeScreen({ navigation }) {
               />
             </View>
 
-            <Text style={styles.activeTitle}>Diarista</Text>
+            <Text style={styles.activeTitle}>{activeRequest.serviceType?.name || 'Serviço'}</Text>
             <Text style={styles.activeDetail}>
-              {activeRequest.details.hours}h • {new Date(activeRequest.details.scheduledDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+              {formatHours(activeRequest.details.hours)} • {new Date(activeRequest.details.scheduledDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
             </Text>
 
             <View style={styles.activeDivider} />

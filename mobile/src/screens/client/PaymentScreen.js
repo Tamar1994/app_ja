@@ -9,13 +9,8 @@ import { useStripe } from '@stripe/stripe-react-native';
 import { couponAPI, paymentAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatHours } from '../../utils/format';
 
-function formatDuration(minutes) {
-  if (minutes < 60) return `${minutes}min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${h}h` : `${h}h${m}`;
-}
 
 const BRAND_ICONS = {
   visa: 'card',
@@ -305,7 +300,7 @@ export default function PaymentScreen({ navigation, route }) {
           <Text style={styles.cardTitle}>Resumo do pedido</Text>
           <View style={styles.summaryRow}>
             <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.summaryText}>{formatDuration(Math.round(hours * 60))} de serviço</Text>
+            <Text style={styles.summaryText}>{formatHours(hours)} de serviço</Text>
           </View>
           {checkoutFields.map((field) => {
             let value = customFormData?.[field.key];

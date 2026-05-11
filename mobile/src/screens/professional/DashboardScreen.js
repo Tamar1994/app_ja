@@ -11,6 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, userAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatHours } from '../../utils/format';
 import IncomingJobModal from '../../components/IncomingJobModal';
 import { registerForPushNotifications } from '../../services/notifications';
 import { getPendingNotification, clearPendingNotification } from '../../services/pendingNotification';
@@ -187,7 +188,7 @@ export default function DashboardScreen({ navigation }) {
       <View style={styles.cardDivider} />
       <View style={styles.cardTags}>
         {[
-          { icon: 'time-outline', label: `${item.details.hours}h` },
+          { icon: 'time-outline', label: formatHours(item.details.hours) },
           ...((item.details.customFormSummary || []).length
             ? [{ icon: 'list-outline', label: `${item.details.customFormSummary.length} campo(s)` }]
             : [{ icon: 'home-outline', label: `${item.details.rooms} côm.` }]),
@@ -314,7 +315,7 @@ export default function DashboardScreen({ navigation }) {
                 <View style={styles.modalDetail}>
                   {[
                     { icon: 'person-outline', label: 'Cliente', value: selectedRequest.client?.name },
-                    { icon: 'time-outline', label: 'Duração', value: `${selectedRequest.details.hours} horas` },
+                    { icon: 'time-outline', label: 'Duração', value: formatHours(selectedRequest.details.hours) },
                     ...((selectedRequest.details.customFormSummary || []).length
                       ? (selectedRequest.details.customFormSummary || []).map((item) => ({
                         icon: 'list-outline',

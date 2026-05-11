@@ -9,15 +9,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatDuration } from '../../utils/format';
 
 const DEFAULT_HOURS_OPTIONS = [120, 180, 240, 300, 360, 480]; // in minutes
-
-function formatDuration(minutes) {
-  if (minutes < 60) return `${minutes}min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m === 0 ? `${h}h` : `${h}h${m}`;
-}
 const TIME_OPTIONS = ['07:00', '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
 
 function getDateLabel(date) {

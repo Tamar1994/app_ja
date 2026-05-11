@@ -24,9 +24,14 @@ export default function RegisterScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
   const [serviceTypes, setServiceTypes] = useState([]);
-  const [selectedSlug, setSelectedSlug] = useState(null);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [selectedProfessions, setSelectedProfessions] = useState([]);
+
+  const toggleProfession = (id) => {
+    setSelectedProfessions((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   useEffect(() => {
     setLoadingTypes(true);
@@ -71,7 +76,7 @@ export default function RegisterScreen({ navigation }) {
       Alert.alert('Atenção', 'A senha deve ter pelo menos 6 caracteres.');
       return;
     }
-    if (userType === 'professional' && !selectedSlug) {
+    if (userType === 'professional' && selectedProfessions.length === 0) {
       Alert.alert('Atenção', 'Selecione sua profissão para continuar.');
       return;
     }
@@ -88,8 +93,8 @@ export default function RegisterScreen({ navigation }) {
         birthDate: `${year}-${month}-${day}`,
       };
       if (userType === 'professional') {
-        data.pricePerHour = parseFloat(pricePerHour) || 35;
-        if (selectedSlug) data.serviceTypeSlug = selectedSlug;
+        const selectedType = serviceTypes.find((t) => t._id === selectedProfessions[0]);
+        if (selectedType) data.serviceTypeSlug = selectedType.slug;
       }
       await register(data);
       navigation.navigate('VerifyEmail', { email: email.trim().toLowerCase() });
@@ -284,18 +289,17 @@ export default function RegisterScreen({ navigation }) {
                   ) : serviceTypes.length === 0 ? (
                     <Text style={styles.profEmpty}>Nenhuma profissão disponível no momento.</Text>
                   ) : (
-                    <FlatList
-                      data={serviceTypes}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => (
+                    <View>
+                      {serviceTypes.map((item) => (
                         <TouchableOpacity
-                          style={[styles.professionItem, selectedProfessions.includes(item.id) && styles.professionItemSelected]}
-                          onPress={() => toggleProfession(item.id)}
+                          key={item._id}
+                          style={[styles.professionItem, selectedProfessions.includes(item._id) && styles.professionItemSelected]}
+                          onPress={() => toggleProfession(item._id)}
                         >
                           <Text style={styles.professionText}>{item.name}</Text>
                         </TouchableOpacity>
-                      )}
-                    />
+                      ))}
+                    </View>
                   )}
                 </View>
               )}

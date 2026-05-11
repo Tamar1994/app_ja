@@ -9,6 +9,7 @@ import * as Location from 'expo-location';
 import { requestAPI, userAPI } from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatHours } from '../../utils/format';
 
 export default function ActiveJobScreen({ navigation, route }) {
   const { requestId } = route.params;
@@ -295,7 +296,7 @@ export default function ActiveJobScreen({ navigation, route }) {
             <Text style={styles.detailsTitle}>Detalhes do serviço</Text>
             {[
               { icon: 'location-outline', label: 'Endereço', value: `${request.address.street}${request.address.complement ? `, ${request.address.complement}` : ''} — ${request.address.city}` },
-              { icon: 'time-outline', label: 'Duração', value: `${request.details.hours} horas` },
+              { icon: 'time-outline', label: 'Duração', value: formatHours(request.details.hours) },
               ...((request.details.customFormSummary || []).length
                 ? (request.details.customFormSummary || []).map((item) => ({
                   icon: 'list-outline',

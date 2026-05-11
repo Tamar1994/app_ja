@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatHours } from '../../utils/format';
 
 const STATUS_LABELS = {
   searching: 'Buscando',
@@ -78,7 +79,7 @@ export default function HistoryScreen({ navigation }) {
             <Ionicons name="home" size={22} color={colors.primary} />
           </View>
           <View style={styles.cardInfo}>
-            <Text style={styles.cardService}>Diarista</Text>
+            <Text style={styles.cardService}>{item.serviceType?.name || 'Serviço'}</Text>
             <Text style={styles.cardDate}>
               {new Date(item.details.scheduledDate).toLocaleDateString('pt-BR', {
                 day: '2-digit', month: 'short', year: 'numeric',
@@ -98,7 +99,7 @@ export default function HistoryScreen({ navigation }) {
         <View style={styles.cardBottom}>
           <View style={styles.cardDetail}>
             <Ionicons name="time-outline" size={14} color={colors.textLight} />
-            <Text style={styles.cardDetailText}>{item.details.hours}h</Text>
+            <Text style={styles.cardDetailText}>{formatHours(item.details.hours)}</Text>
           </View>
           {item.professional && (
             <View style={styles.cardDetail}>

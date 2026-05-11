@@ -10,6 +10,7 @@ import * as Location from 'expo-location';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { formatHours } from '../../utils/format';
 
 const STEPS = [
   { status: 'accepted', label: 'Profissional confirmado', icon: 'person-circle', color: colors.secondary },
@@ -378,7 +379,7 @@ export default function TrackingScreen({ navigation, route }) {
           <View style={styles.detailsCard}>
             <Text style={styles.cardLabel}>Detalhes</Text>
             {[
-              { label: 'Duração', value: requestHours ? `${requestHours}h` : '-', icon: 'time-outline' },
+              { label: 'Duração', value: requestHours ? formatHours(requestHours) : '-', icon: 'time-outline' },
               { label: 'Endereço', value: `${requestStreet}, ${requestCity}`, icon: 'location-outline' },
               { label: 'Total estimado', value: `R$ ${estimatedValue.toFixed(2)}`, icon: 'cash-outline', highlight: true },
             ].map((row, i) => (

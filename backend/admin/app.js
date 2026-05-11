@@ -3501,7 +3501,7 @@ const buildCheckoutFieldRows = (fields = []) => {
           </div>
           <div>
             <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Chave interna (ID único)</div>
-            <input class="form-input stf-key" placeholder="automático (do título)" value="${escHtml(field.key || '')}" style="font-family:monospace;" />
+            <input class="form-input stf-key" placeholder="automático (do título)" value="${escHtml(field.key || '')}" style="font-family:monospace;" ${!field.key ? 'data-auto="1"' : ''} oninput="delete this.dataset.auto" />
           </div>
         </div>
         <div class="stf-placeholder-group" style="margin-bottom:8px;${type === 'boolean' ? 'display:none;' : ''}">
@@ -3615,7 +3615,7 @@ const stfSelectType = (btn, type) => {
 const stfAutoKey = (labelInput) => {
   const row = labelInput.closest('.stf-row');
   const keyInput = row && row.querySelector('.stf-key');
-  if (!keyInput || keyInput.value) return;
+  if (!keyInput || !keyInput.dataset.auto) return;
   keyInput.value = slugifyFieldKey(labelInput.value);
 };
 
