@@ -61,17 +61,10 @@
       text-decoration: none;
     }
 
-    .nav-logo-icon {
-      width: 36px;
-      height: 36px;
-      background: var(--orange);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      font-weight: 900;
-      color: #fff;
+    .nav-logo-img {
+      height: 40px;
+      width: auto;
+      display: block;
     }
 
     .nav-logo-text {
@@ -373,6 +366,14 @@
       z-index: 1;
     }
 
+    .story-logo-img {
+      height: 120px;
+      width: auto;
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 8px 32px rgba(255,107,0,0.35));
+    }
+
     .story-stat-row {
       display: flex;
       gap: 24px;
@@ -664,17 +665,10 @@
       text-decoration: none;
     }
 
-    .footer-logo-icon {
-      width: 32px;
+    .footer-logo-img {
       height: 32px;
-      background: var(--orange);
-      border-radius: 9px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-      font-weight: 900;
-      color: #fff;
+      width: auto;
+      display: block;
     }
 
     .footer-logo-text {
@@ -744,7 +738,7 @@
   <!-- NAV -->
   <nav>
     <a class="nav-logo" href="#">
-      <div class="nav-logo-icon">J</div>
+      <img class="nav-logo-img" src="/landing/logo.png" alt="Já!" />
       <span class="nav-logo-text">Chame<span>Já!</span></span>
     </a>
     <a class="nav-instagram" href="https://instagram.com/chame_ja" target="_blank" rel="noopener">
@@ -834,7 +828,7 @@
       </div>
 
       <div class="story-visual reveal">
-        <div class="story-icon-big">🏡</div>
+        <img class="story-logo-img" src="/landing/logo.png" alt="Já!" />
         <div class="story-stat-row">
           <div class="story-stat">
             <div class="story-stat-num">100%</div>
@@ -995,7 +989,7 @@
   <!-- FOOTER -->
   <footer>
     <a class="footer-logo" href="#">
-      <div class="footer-logo-icon">J</div>
+      <img class="footer-logo-img" src="/landing/logo.png" alt="Já!" />
       <span class="footer-logo-text">Chame Já!</span>
     </a>
     <p class="footer-copy">© 2026 Já! Tecnologia. Todos os direitos reservados.</p>
