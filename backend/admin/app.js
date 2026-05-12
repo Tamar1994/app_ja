@@ -3532,15 +3532,15 @@ const buildCheckoutFieldRows = (fields = []) => {
           <input class="form-input stf-default" placeholder="${defPlaceholder}" value="${escHtml(String(field.defaultValue ?? ''))}" />
         </div>
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding-top:10px;border-top:1px solid #E8EAF0;">
-          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;color:#1A2340;font-weight:500;">
             <input type="checkbox" class="stf-required" ${field.required ? 'checked' : ''} /> Obrigatório
           </label>
-          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;color:#1A2340;font-weight:500;">
             <input type="checkbox" class="stf-pricing-enabled" ${field.pricingEnabled ? 'checked' : ''} onchange="stfTogglePricing(this)" /> Afeta preço
           </label>
           <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
             <span style="font-size:11px;color:#7A84A0;">Ordem</span>
-            <input class="form-input stf-order" type="number" value="${field.sortOrder ?? idx}" style="width:60px;text-align:center;padding:4px 6px;" />
+            <input class="form-input stf-order" type="number" value="${field.sortOrder ?? idx}" style="width:60px;text-align:center;padding:4px 6px;color:#1A2340;" />
           </div>
         </div>
         <div class="stf-pricing-section" style="display:${isPricingEnabled ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding:10px;background:#FFFBF0;border-radius:8px;border:1px solid #FFE082;">
@@ -3762,7 +3762,7 @@ const openNewServiceTypeModal = () => {
           </div>
           <div class="form-group" style="margin:0;">
             <label class="form-label">Slug (ID único) <span style="color:#e53935;">*</span></label>
-            <input id="st-slug" class="form-input" placeholder="gerado automaticamente" style="font-family:monospace;background:#F5F6FA;" data-auto="1" oninput="delete this.dataset.auto" />
+            <input id="st-slug" class="form-input" placeholder="gerado automaticamente" style="font-family:monospace;background:#F5F6FA;color:#1A2340;" data-auto="1" oninput="delete this.dataset.auto" />
           </div>
         </div>
         <div class="form-group" style="margin-top:12px;margin-bottom:0;">
