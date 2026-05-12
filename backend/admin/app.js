@@ -3734,40 +3734,144 @@ const collectCheckoutFields = (listId) => {
 const openNewServiceTypeModal = () => {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal">
-    <div class="modal-header"><h3>➕ Nova Profissão</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
-    <div class="modal-body">
-      <div class="form-group"><label class="form-label">Nome</label><input id="st-name" class="form-input" placeholder="ex: Diarista" /></div>
-      <div class="form-group"><label class="form-label">Slug (identificador único)</label><input id="st-slug" class="form-input" placeholder="ex: diarista" /></div>
-      <div class="form-group"><label class="form-label">Descrição</label><input id="st-desc" class="form-input" placeholder="Breve descrição" /></div>
-      <div class="form-group"><label class="form-label">Ícone fallback (Ionicon/emoji)</label><input id="st-icon" class="form-input" placeholder="ex: briefcase-outline" /></div>
-      <div class="form-group"><label class="form-label">Upload do ícone (PNG/WEBP transparente)</label><input id="st-image" class="form-input" type="file" accept=".png,.webp" /></div>
-      <div class="form-group"><label class="form-label">Status</label>
-        <select id="st-status" class="form-select">
-          <option value="enabled">Ativo (aparece no app)</option>
-          <option value="disabled" selected>Desativado</option>
-        </select>
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:680px;width:95vw;">
+    <div class="modal-header" style="background:linear-gradient(135deg,#1565C0,#1976D2);padding:20px 24px;border-radius:16px 16px 0 0;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:38px;height:38px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">➕</div>
+        <div>
+          <h3 style="margin:0;color:#fff;font-size:17px;font-weight:700;">Nova Profissão / Serviço</h3>
+          <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">Preencha as informações para criar um novo tipo de serviço</p>
+        </div>
       </div>
-      <div class="form-group"><label class="form-label">Opções de duração (minutos)</label><input id="st-hours-options" class="form-input" placeholder="ex: 30, 60, 90, 120, 180, 240" value="120,180,240,300,360,480" /></div>
-      <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="st-price-minute" class="form-input" type="number" min="0.01" step="0.01" placeholder="Ex: 0.90" /></div>
-      <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="st-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="Ex: 15" /></div>
-      <div class="form-group" style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
-          <input type="checkbox" id="st-location-tracking" />
-          Exige rastreamento de localização durante o serviço
-        </label>
-        <span style="font-size:12px;color:#7A84A0;">(ex: pet walker)</span>
-      </div>
-        <div class="stf-fields-list" id="st-fields-list">${buildCheckoutFieldRows([])}</div>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('st-fields-list')">+ Adicionar campo</button>
-      </div>
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()" style="color:#fff;opacity:0.8;">✕</button>
     </div>
-    <div class="modal-footer">
+
+    <div class="modal-body" style="padding:0;max-height:72vh;overflow-y:auto;">
+
+      <!-- SEÇÃO 1: Identificação -->
+      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <div style="width:6px;height:18px;background:#1565C0;border-radius:3px;"></div>
+          <span style="font-size:12px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.8px;">Identificação</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Nome <span style="color:#e53935;">*</span></label>
+            <input id="st-name" class="form-input" placeholder="ex: Diarista" oninput="stAutoSlug(this)" />
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Slug (ID único) <span style="color:#e53935;">*</span></label>
+            <input id="st-slug" class="form-input" placeholder="gerado automaticamente" style="font-family:monospace;background:#F5F6FA;" data-auto="1" oninput="delete this.dataset.auto" />
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+          <label class="form-label">Descrição <span style="color:#7A84A0;font-weight:400;">(opcional — exibida no app)</span></label>
+          <input id="st-desc" class="form-input" placeholder="ex: Limpeza residencial completa com profissional verificado" />
+        </div>
+      </div>
+
+      <!-- SEÇÃO 2: Visual -->
+      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <div style="width:6px;height:18px;background:#FF6B00;border-radius:3px;"></div>
+          <span style="font-size:12px;font-weight:700;color:#FF6B00;text-transform:uppercase;letter-spacing:0.8px;">Visual &amp; Status</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Ícone fallback <span style="color:#7A84A0;font-weight:400;">(nome Ionicon ou emoji)</span></label>
+            <input id="st-icon" class="form-input" placeholder="ex: briefcase-outline" />
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Status no app</label>
+            <select id="st-status" class="form-select">
+              <option value="disabled" selected>⏸ Desativado (rascunho)</option>
+              <option value="enabled">✅ Ativo (visível no app)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+          <label class="form-label">Imagem do ícone <span style="color:#7A84A0;font-weight:400;">PNG ou WEBP com fundo transparente</span></label>
+          <div style="position:relative;">
+            <input id="st-image" type="file" accept=".png,.webp" style="width:100%;padding:10px 12px;border:2px dashed #C5CAD8;border-radius:10px;background:#F9FAFF;cursor:pointer;font-size:13px;color:#4A5568;" />
+          </div>
+        </div>
+      </div>
+
+      <!-- SEÇÃO 3: Duração e Preço -->
+      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
+          <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Duração &amp; Preço</span>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label">Opções de duração em minutos <span style="color:#e53935;">*</span></label>
+          <input id="st-hours-options" class="form-input" placeholder="ex: 60, 90, 120, 180, 240, 300" value="120,180,240,300,360,480" />
+          <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Separe por vírgula. O cliente escolhe entre essas opções no app.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Valor por minuto (R$) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
+            <div style="position:relative;">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">R$</span>
+              <input id="st-price-minute" class="form-input" type="number" min="0.01" step="0.01" placeholder="0,90" style="padding-left:34px;" />
+            </div>
+            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para usar o valor global da plataforma.</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Taxa da plataforma (%) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
+            <div style="position:relative;">
+              <input id="st-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="15" style="padding-right:30px;" />
+              <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">%</span>
+            </div>
+            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para usar a taxa global.</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:#F0F4FF;border-radius:10px;border:1px solid #C5D5F5;">
+            <input type="checkbox" id="st-location-tracking" style="margin-top:2px;width:16px;height:16px;accent-color:#1565C0;flex-shrink:0;" />
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#1A2340;">Exige rastreamento de localização durante o serviço</div>
+              <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Ative para serviços onde o profissional se desloca (ex: passeador de cães)</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- SEÇÃO 4: Campos personalizados do checkout -->
+      <div style="padding:20px 24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:6px;height:18px;background:#7C3AED;border-radius:3px;"></div>
+            <span style="font-size:12px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:0.8px;">Campos do Formulário (opcional)</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('st-fields-list')" style="font-size:12px;color:#7C3AED;border-color:#7C3AED;">+ Adicionar campo</button>
+        </div>
+        <div style="font-size:12px;color:#7A84A0;margin-bottom:12px;">Campos extras que o cliente preenche ao contratar esse serviço (ex: número de cômodos, tipo de animal, etc.)</div>
+        <div class="stf-fields-list" id="st-fields-list">${buildCheckoutFieldRows([])}</div>
+      </div>
+
+    </div>
+
+    <div class="modal-footer" style="padding:16px 24px;display:flex;justify-content:flex-end;gap:10px;background:#F9FAFF;border-top:1px solid #E8EAF0;border-radius:0 0 16px 16px;">
       <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
-      <button class="btn btn-primary" onclick="createServiceType()">Criar Profissão</button>
+      <button class="btn btn-primary" onclick="createServiceType()" style="min-width:140px;">
+        <span>✓ Criar Profissão</span>
+      </button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
+};
+
+const stAutoSlug = (nameInput) => {
+  const slugInput = document.getElementById('st-slug');
+  if (!slugInput || !slugInput.dataset.auto) return;
+  slugInput.value = nameInput.value
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
 };
 
 const createServiceType = async () => {
@@ -3781,6 +3885,9 @@ const createServiceType = async () => {
   const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
   const requiresLocationTracking = document.getElementById('st-location-tracking').checked;
   const imageFile = document.getElementById('st-image').files?.[0] || null;
+
+  if (!name) { showAlert('Informe o nome da profissão.'); return; }
+  if (!slug) { showAlert('Informe o slug (identificador único) da profissão.'); return; }
 
   const hoursOptions = hoursOptionsRaw
     .split(',')
@@ -3821,6 +3928,7 @@ const createServiceType = async () => {
     formData.append('durationUnit', 'minutes');
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
+    await stMultipartReq('POST', '', formData);
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Profissão criada!', 'success');
     renderServiceTypes();
