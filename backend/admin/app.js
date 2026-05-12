@@ -3936,41 +3936,136 @@ const createServiceType = async () => {
 };
 
 const openEditServiceTypeModal = (t) => {
+  const hoursVal = escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '120,180,240,300,360,480');
+  const priceVal = Number.isFinite(Number(t.pricePerMinute)) ? Number(t.pricePerMinute) : '';
+  const feeVal = Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : '';
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `<div class="modal">
-    <div class="modal-header"><h3>✏️ Editar Profissão</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
-    <div class="modal-body">
-      <div class="form-group"><label class="form-label">Nome</label><input id="ste-name" class="form-input" value="${escHtml(t.name)}" /></div>
-      <div class="form-group"><label class="form-label">Descrição</label><input id="ste-desc" class="form-input" value="${escHtml(t.description||'')}" /></div>
-      <div class="form-group"><label class="form-label">Ícone fallback (Ionicon/emoji)</label><input id="ste-icon" class="form-input" value="${escHtml(t.icon||'')}" /></div>
-      <div class="form-group"><label class="form-label">Ícone atual</label><div style="font-size:12px;color:#7A84A0;">${t.imageUrl ? `Arquivo enviado: ${escHtml(t.imageUrl)}` : 'Nenhum arquivo enviado'}</div></div>
-      <div class="form-group"><label class="form-label">Trocar ícone (PNG/WEBP transparente)</label><input id="ste-image" class="form-input" type="file" accept=".png,.webp" /></div>
-      <div class="form-group"><label class="form-label">Ordem de exibição</label><input id="ste-order" class="form-input" type="number" value="${t.sortOrder||0}" /></div>
-      <div class="form-group"><label class="form-label">Status</label>
-        <select id="ste-status" class="form-select">
-          <option value="enabled" ${t.status==='enabled'?'selected':''}>Ativo</option>
-          <option value="disabled" ${t.status==='disabled'?'selected':''}>Desativado</option>
-        </select>
+  overlay.innerHTML = `
+  <div class="modal" style="max-width:680px;width:95vw;">
+    <div class="modal-header" style="background:linear-gradient(135deg,#1565C0,#1976D2);padding:20px 24px;border-radius:16px 16px 0 0;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:38px;height:38px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">✏️</div>
+        <div>
+          <h3 style="margin:0;color:#fff;font-size:17px;font-weight:700;">Editar Profissão</h3>
+          <p style="margin:0;color:rgba(255,255,255,0.7);font-size:12px;">${escHtml(t.name)} · slug: <code style="background:rgba(255,255,255,0.15);padding:1px 6px;border-radius:4px;">${escHtml(t.slug)}</code></p>
+        </div>
       </div>
-      <div class="form-group"><label class="form-label">Opções de duração (minutos)</label><input id="ste-hours-options" class="form-input" placeholder="ex: 30, 60, 90, 120" value="${escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '120,180,240,300,360,480')}" /></div>
-      <div class="form-group"><label class="form-label">Valor por minuto (R$)</label><input id="ste-price-minute" class="form-input" type="number" min="0.01" step="0.01" value="${Number.isFinite(Number(t.pricePerMinute)) ? Number(t.pricePerMinute) : ''}" placeholder="padrão global" /></div>
-      <div class="form-group"><label class="form-label">Taxa da plataforma (%)</label><input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : ''}" placeholder="padrão global" /></div>
-      <div class="form-group" style="display:flex;align-items:center;gap:12px;">
-        <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer;">
-          <input type="checkbox" id="ste-location-tracking" ${t.requiresLocationTracking ? 'checked' : ''} />
-          Exige rastreamento de localização durante o serviço
-        </label>
-        <span style="font-size:12px;color:#7A84A0;">(ex: pet walker)</span>
-      </div>
-        <div class="stf-fields-list" id="ste-fields-list">${buildCheckoutFieldRows(t.checkoutFields || [])}</div>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('ste-fields-list')">+ Adicionar campo</button>
-      </div>
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()" style="color:#fff;opacity:0.8;">✕</button>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteServiceType('${t._id}')">Excluir</button>
-      <button class="btn btn-primary" onclick="updateServiceType('${t._id}')">Salvar</button>
+
+    <div class="modal-body" style="padding:0;max-height:72vh;overflow-y:auto;">
+
+      <!-- SEÇÃO 1: Identificação -->
+      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <div style="width:6px;height:18px;background:#1565C0;border-radius:3px;"></div>
+          <span style="font-size:12px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.8px;">Identificação</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Nome <span style="color:#e53935;">*</span></label>
+            <input id="ste-name" class="form-input" value="${escHtml(t.name)}" />
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Ordem de exibição</label>
+            <input id="ste-order" class="form-input" type="number" value="${t.sortOrder || 0}" style="color:#1A2340;" />
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+          <label class="form-label">Descrição <span style="color:#7A84A0;font-weight:400;">(opcional — exibida no app)</span></label>
+          <input id="ste-desc" class="form-input" value="${escHtml(t.description || '')}" />
+        </div>
+      </div>
+
+      <!-- SEÇÃO 2: Visual -->
+      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <div style="width:6px;height:18px;background:#FF6B00;border-radius:3px;"></div>
+          <span style="font-size:12px;font-weight:700;color:#FF6B00;text-transform:uppercase;letter-spacing:0.8px;">Visual &amp; Status</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Ícone fallback <span style="color:#7A84A0;font-weight:400;">(Ionicon ou emoji)</span></label>
+            <input id="ste-icon" class="form-input" value="${escHtml(t.icon || '')}" />
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Status no app</label>
+            <select id="ste-status" class="form-select">
+              <option value="enabled" ${t.status === 'enabled' ? 'selected' : ''}>✅ Ativo (visível no app)</option>
+              <option value="disabled" ${t.status === 'disabled' ? 'selected' : ''}>⏸ Desativado (rascunho)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+          <label class="form-label">
+            ${t.imageUrl
+              ? `Trocar ícone <span style="color:#7A84A0;font-weight:400;">— atual: <code style="font-size:11px;">${escHtml(t.imageUrl)}</code></span>`
+              : `Imagem do ícone <span style="color:#7A84A0;font-weight:400;">PNG ou WEBP com fundo transparente</span>`
+            }
+          </label>
+          <input id="ste-image" type="file" accept=".png,.webp" style="width:100%;padding:10px 12px;border:2px dashed #C5CAD8;border-radius:10px;background:#F9FAFF;cursor:pointer;font-size:13px;color:#4A5568;" />
+        </div>
+      </div>
+
+      <!-- SEÇÃO 3: Duração e Preço -->
+      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
+          <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Duração &amp; Preço</span>
+        </div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label class="form-label">Opções de duração em minutos <span style="color:#e53935;">*</span></label>
+          <input id="ste-hours-options" class="form-input" value="${hoursVal}" placeholder="ex: 60, 90, 120, 180, 240, 300" />
+          <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Separe por vírgula. O cliente escolhe entre essas opções no app.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Valor por minuto (R$) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
+            <div style="position:relative;">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">R$</span>
+              <input id="ste-price-minute" class="form-input" type="number" min="0.01" step="0.01" value="${priceVal}" placeholder="padrão global" style="padding-left:34px;" />
+            </div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Taxa da plataforma (%) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
+            <div style="position:relative;">
+              <input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${feeVal}" placeholder="padrão global" style="padding-right:30px;" />
+              <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">%</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:#F0F4FF;border-radius:10px;border:1px solid #C5D5F5;">
+            <input type="checkbox" id="ste-location-tracking" ${t.requiresLocationTracking ? 'checked' : ''} style="margin-top:2px;width:16px;height:16px;accent-color:#1565C0;flex-shrink:0;" />
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#1A2340;">Exige rastreamento de localização durante o serviço</div>
+              <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Ative para serviços onde o profissional se desloca (ex: passeador de cães)</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- SEÇÃO 4: Campos personalizados -->
+      <div style="padding:20px 24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:6px;height:18px;background:#7C3AED;border-radius:3px;"></div>
+            <span style="font-size:12px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:0.8px;">Campos do Formulário (opcional)</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('ste-fields-list')" style="font-size:12px;color:#7C3AED;border-color:#7C3AED;">+ Adicionar campo</button>
+        </div>
+        <div class="stf-fields-list" id="ste-fields-list">${buildCheckoutFieldRows(t.checkoutFields || [])}</div>
+      </div>
+
+    </div>
+
+    <div class="modal-footer" style="padding:16px 24px;display:flex;justify-content:space-between;align-items:center;background:#F9FAFF;border-top:1px solid #E8EAF0;border-radius:0 0 16px 16px;">
+      <button class="btn btn-danger btn-sm" onclick="deleteServiceType('${t._id}')" style="opacity:0.85;">🗑 Excluir profissão</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+        <button class="btn btn-primary" onclick="updateServiceType('${t._id}')" style="min-width:120px;">✓ Salvar</button>
+      </div>
     </div>
   </div>`;
   document.body.appendChild(overlay);
