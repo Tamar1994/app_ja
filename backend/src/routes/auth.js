@@ -38,6 +38,9 @@ const buildAuthUserPayload = (user) => ({
   documentUrl: user.documentUrl || null,
   documentBackUrl: user.documentBackUrl || null,
   residenceProofUrl: user.residenceProofUrl || null,
+  // Campos obrigatórios para ProfileSwitcher e ban check no frontend
+  banStatus: user.banStatus || null,
+  professionalVerification: user.professionalVerification || null,
 });
 
 // POST /api/auth/register

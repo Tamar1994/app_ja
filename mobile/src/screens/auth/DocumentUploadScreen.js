@@ -19,6 +19,7 @@ export default function DocumentUploadScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   const setters = { selfie: setSelfie, document: setDocument, documentBack: setDocumentBack, residenceProof: setResidenceProof };
+  const isProfessional = (user?.activeProfile || user?.userType) === 'professional';
 
   const pickImage = async (type) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -58,7 +59,6 @@ export default function DocumentUploadScreen({ navigation }) {
   };
 
   const handleUpload = async () => {
-    const isProfessional = (user?.activeProfile || user?.userType) === 'professional';
     if (!selfie || !document || !documentBack) {
       Alert.alert('Atenção', 'Envie a selfie, a frente e o verso do documento.');
       return;
@@ -73,7 +73,7 @@ export default function DocumentUploadScreen({ navigation }) {
       formData.append('selfie', { uri: selfie.uri, type: 'image/jpeg', name: 'selfie.jpg' });
       formData.append('document', { uri: document.uri, type: 'image/jpeg', name: 'document.jpg' });
       formData.append('documentBack', { uri: documentBack.uri, type: 'image/jpeg', name: 'documentBack.jpg' });
-      if (residenceProof) {
+      if (isProfessional && residenceProof) {
         const isImage = residenceProof.mimeType ? residenceProof.mimeType.startsWith('image/') : !residenceProof.uri.endsWith('.pdf');
         formData.append('residenceProof', {
           uri: residenceProof.uri,
@@ -82,23 +82,20 @@ export default function DocumentUploadScreen({ navigation }) {
         });
       }
       const res = await uploadDocuments(formData);
-      // uploadDocuments agora já retorna res.data diretamente
       if (setUser && res?.user) {
         setUser(prev => ({ ...prev, ...res.user }));
       } else if (setUser) {
         const { data } = await userAPI.getMe();
         setUser(data.user);
       }
-      if (navigation) {
-        if (isProfessional) navigation.replace('PendingApproval');
-      }
+      if (navigation) navigation.replace('PendingApproval');
     } catch (err) {
       // Verificar se upload chegou ao servidor mesmo com erro de rede
       try {
         const { data } = await userAPI.getMe();
         if (data.user?.selfieUrl) {
           if (setUser) setUser(data.user);
-          if (navigation && isProfessional) navigation.replace('PendingApproval');
+          if (navigation) navigation.replace('PendingApproval');
           return;
         }
       } catch {}
@@ -134,8 +131,6 @@ export default function DocumentUploadScreen({ navigation }) {
       </TouchableOpacity>
     </View>
   );
-
-  const isProfessional = (user?.activeProfile || user?.userType) === 'professional';
 
   return (
     <View style={styles.container}>
@@ -190,13 +185,15 @@ export default function DocumentUploadScreen({ navigation }) {
             icon="card-outline"
           />
 
-          <PhotoCard
-            type="residenceProof"
-            image={residenceProof}
-            label={isProfessional ? '🏠 Comprovante de residência (obrigatório)' : '🏠 Comprovante de residência (opcional)'}
-            hint="Conta de água, luz, gás, etc. — Foto ou PDF"
-            icon="document-outline"
-          />
+          {isProfessional && (
+            <PhotoCard
+              type="residenceProof"
+              image={residenceProof}
+              label="🏠 Comprovante de residência (obrigatório)"
+              hint="Conta de água, luz, gás, etc. — Foto ou PDF"
+              icon="document-outline"
+            />
+          )}
 
           <TouchableOpacity
             style={[styles.btn, (!selfie || !document || !documentBack || (isProfessional && !residenceProof) || loading) && styles.btnDisabled]}

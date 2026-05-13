@@ -53,8 +53,13 @@ export default function RootNavigator() {
     const activeMode = user.activeProfile || user.userType;
 
     // Clientes também precisam enviar selfie + documento antes de usar o app
-    if (activeMode === 'client' && !user.selfieUrl) {
+    if (activeMode === 'client' && (!user.selfieUrl || user.verificationStatus === 'pending_documents')) {
       return <DocumentUploadScreen />;
+    }
+
+    // Cliente aguardando revisão de documentos
+    if (activeMode === 'client' && (user.verificationStatus === 'pending_review' || user.verificationStatus === 'rejected')) {
+      return <PendingApprovalScreen />;
     }
 
     // Verificação de documentos só é necessária quando o modo profissional está ativo

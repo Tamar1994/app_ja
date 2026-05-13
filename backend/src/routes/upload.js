@@ -70,8 +70,8 @@ router.post('/documents', auth, upload.fields([
     const previousDocumentUrl = existingUser?.documentUrl || null;
     const previousDocumentBackUrl = existingUser?.documentBackUrl || null;
 
-    // Clientes são aprovados automaticamente; profissionais aguardam revisão
-    const newVerificationStatus = isProfessional ? 'pending_review' : 'approved';
+    // Todos aguardam revisão da equipe antes de usar a plataforma
+    const newVerificationStatus = 'pending_review';
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
