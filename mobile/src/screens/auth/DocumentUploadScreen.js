@@ -78,7 +78,9 @@ export default function DocumentUploadScreen({ navigation }) {
       }
       const res = await uploadDocuments(formData);
       if (setUser) setUser(prev => ({ ...prev, verificationStatus: 'pending_review' }));
-      navigation.replace('PendingApproval');
+      // navigation pode ser undefined quando renderizado diretamente pelo RootNavigator
+      // Nesse caso, setUser() já dispara re-render automático para PendingApprovalScreen
+      if (navigation) navigation.replace('PendingApproval');
     } catch (err) {
       // Antes de mostrar erro: verificar se o upload chegou ao servidor
       // (pode ocorrer timeout de rede mesmo com upload bem-sucedido)
@@ -86,7 +88,7 @@ export default function DocumentUploadScreen({ navigation }) {
         const { data } = await userAPI.getMe();
         if (data.user?.verificationStatus === 'pending_review') {
           if (setUser) setUser(data.user);
-          navigation.replace('PendingApproval');
+          if (navigation) navigation.replace('PendingApproval');
           return;
         }
       } catch {}

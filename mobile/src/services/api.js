@@ -20,6 +20,7 @@ export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   verifyEmail: (email, code) => api.post('/auth/verify-email', { email, code }),
   resendVerification: (email) => api.post('/auth/resend-verification', { email }),
+  saveProfessionalAddress: (address) => api.post('/auth/professional-address', address),
 };
 
 // Usuário

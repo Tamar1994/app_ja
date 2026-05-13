@@ -13,6 +13,7 @@ import ProfessionalNavigator from './ProfessionalNavigator';
 import DocumentUploadScreen from '../screens/auth/DocumentUploadScreen';
 import PendingApprovalScreen from '../screens/auth/PendingApprovalScreen';
 import AcceptTermsScreen from '../screens/auth/AcceptTermsScreen';
+import ProfessionalAddressScreen from '../screens/auth/ProfessionalAddressScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -53,7 +54,14 @@ export default function RootNavigator() {
 
     // Verificação de documentos só é necessária quando o modo profissional está ativo
     if (activeMode === 'professional') {
+      // 1) Endereço residencial — obrigatório antes do envio de documentos
+      const hasAddress = user.professionalAddress?.city;
+      if (!hasAddress) return <ProfessionalAddressScreen />;
+
+      // 2) Envio de documentos — apenas se ainda não enviou
       if (user.verificationStatus === 'pending_documents') return <DocumentUploadScreen />;
+
+      // 3) Aguardando revisão ou rejeitado
       if (user.verificationStatus === 'pending_review') return <PendingApprovalScreen />;
       if (user.verificationStatus === 'rejected') return <PendingApprovalScreen />;
     }

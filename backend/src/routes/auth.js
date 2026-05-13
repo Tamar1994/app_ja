@@ -32,6 +32,12 @@ const buildAuthUserPayload = (user) => ({
   wallet: user.wallet,
   clientWallet: user.clientWallet,
   termsAcceptedAt: user.termsAcceptedAt || null,
+  professionalAddress: user.professionalAddress || null,
+  // URLs de documentos já enviados (para evitar reenvio no onboarding)
+  selfieUrl: user.selfieUrl || null,
+  documentUrl: user.documentUrl || null,
+  documentBackUrl: user.documentBackUrl || null,
+  residenceProofUrl: user.residenceProofUrl || null,
 });
 
 // POST /api/auth/register
@@ -225,6 +231,35 @@ router.post('/accept-terms', auth, async (req, res) => {
     res.json({ user: buildAuthUserPayload(user) });
   } catch {
     res.status(500).json({ message: 'Erro ao registrar aceite dos termos' });
+  }
+});
+
+// POST /api/auth/professional-address — salva endereço do profissional no onboarding
+router.post('/professional-address', auth, async (req, res) => {
+  const { street, neighborhood, city, state, zipCode, complement } = req.body;
+
+  if (!street || !city || !state || !zipCode) {
+    return res.status(400).json({ message: 'Preencha os campos obrigatórios: rua, cidade, estado e CEP.' });
+  }
+
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        professionalAddress: {
+          street:       String(street).trim(),
+          neighborhood: String(neighborhood || '').trim(),
+          city:         String(city).trim(),
+          state:        String(state).trim().toUpperCase().slice(0, 2),
+          zipCode:      String(zipCode).replace(/\D/g, ''),
+          complement:   String(complement || '').trim(),
+        },
+      },
+      { new: true }
+    );
+    res.json({ user: buildAuthUserPayload(user) });
+  } catch {
+    res.status(500).json({ message: 'Erro ao salvar endereço' });
   }
 });
 

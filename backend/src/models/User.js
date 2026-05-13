@@ -166,6 +166,15 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  // Endereço residencial do profissional (exigido no onboarding)
+  professionalAddress: {
+    street:       { type: String, default: '' },
+    neighborhood: { type: String, default: '' },
+    city:         { type: String, default: '' },
+    state:        { type: String, default: '' },
+    zipCode:      { type: String, default: '' },
+    complement:   { type: String, default: '' },
+  },
 }, { timestamps: true });
 
 // Índice geoespacial para busca por proximidade

@@ -7,7 +7,15 @@ const router = express.Router();
 
 // GET /api/users/me — perfil do usuário logado
 router.get('/me', auth, async (req, res) => {
-  res.json({ user: req.user });
+  // req.user vem do middleware auth — mas pode não ter os novos campos (professionalAddress, selfieUrl, etc.)
+  // Busca fresh para garantir que todos os campos estejam presentes
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
+    res.json({ user });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar perfil' });
+  }
 });
 
 // POST /api/users/me/profiles — habilita um perfil adicional (client/professional)
