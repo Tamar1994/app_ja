@@ -1,4 +1,4 @@
-// ── CONFIG ─────────────────────────────────────────────────────────
+﻿// ── CONFIG ─────────────────────────────────────────────────────────
 const API = '/api/admin';
 const API_ST = '/api/service-types';
 const API_PAYMENTS = '/api/payments';
@@ -3041,52 +3041,52 @@ const renderPayments = async () => {
       </div>` : ''}
 
       <div class="card" style="max-width:580px;">
-        <h3 style="margin:0 0 6px;font-size:18px;color:#1A1A2E;">Modo de Pagamento Stripe</h3>
-        <p style="color:#666;margin:0 0 24px;font-size:14px;">
+        <h3 style="margin:0 0 6px;font-size:18px;color:#EDF0FF;">Modo de Pagamento Stripe</h3>
+        <p style="color:#8C97BC;margin:0 0 24px;font-size:14px;">
           Controla qual par de chaves é usado para processar pagamentos.
           Somente super_admin pode alterar este modo.
         </p>
 
         <div style="display:flex;gap:16px;margin-bottom:24px;">
           <div onclick="${isSuperAdmin ? "setStripeMode('test')" : ''}"
-               style="flex:1;border:2px solid ${!isProd?'#FF6B00':'#e0e0e0'};border-radius:12px;padding:20px;cursor:${isSuperAdmin?'pointer':'default'};background:${!isProd?'#fff8f4':'#fafafa'};transition:all .2s;">
+               style="flex:1;border:2px solid ${!isProd?'#FF6B00':'rgba(255,255,255,0.14)'};border-radius:12px;padding:20px;cursor:${isSuperAdmin?'pointer':'default'};background:${!isProd?'rgba(255,107,0,0.10)':'rgba(255,255,255,0.04)'};transition:all .2s;">
             <div style="font-size:28px;margin-bottom:8px;">🧪</div>
-            <div style="font-weight:700;font-size:16px;color:${!isProd?'#FF6B00':'#888'};">TESTE</div>
-            <div style="font-size:12px;color:#999;margin-top:4px;">Chaves sk_test / pk_test</div>
-            <div style="font-size:12px;color:#999;">Nenhuma cobrança real</div>
+            <div style="font-weight:700;font-size:16px;color:${!isProd?'#FF8C38':'#8C97BC'};">TESTE</div>
+            <div style="font-size:12px;color:#8C97BC;margin-top:4px;">Chaves sk_test / pk_test</div>
+            <div style="font-size:12px;color:#8C97BC;">Nenhuma cobrança real</div>
             ${!isProd ? `<div style="margin-top:10px;display:inline-block;background:#FF6B00;color:#fff;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;">● ATIVO</div>` : ''}
-            <div style="margin-top:8px;font-size:12px;color:${data.hasTestKeys?'#2e7d32':'#c62828'};">${data.hasTestKeys?'✓ Chaves configuradas':'✗ Chaves não encontradas'}</div>
+            <div style="margin-top:8px;font-size:12px;color:${data.hasTestKeys?'#22C55E':'#EF4444'};">  ${data.hasTestKeys?'✓ Chaves configuradas':'✗ Chaves não encontradas'}</div>
           </div>
 
           <div onclick="${isSuperAdmin && canSwitchToProd ? "setStripeMode('production')" : ''}"
-               style="flex:1;border:2px solid ${isProd?'#b71c1c':'#e0e0e0'};border-radius:12px;padding:20px;cursor:${isSuperAdmin && canSwitchToProd?'pointer':'default'};background:${isProd?'#fff8f8':'#fafafa'};transition:all .2s;${!canSwitchToProd?'opacity:0.5;':''}" >
+               style="flex:1;border:2px solid ${isProd?'#EF4444':'rgba(255,255,255,0.14)'};border-radius:12px;padding:20px;cursor:${isSuperAdmin && canSwitchToProd?'pointer':'default'};background:${isProd?'rgba(239,68,68,0.10)':'rgba(255,255,255,0.04)'};transition:all .2s;${!canSwitchToProd?'opacity:0.5;':''}" >
             <div style="font-size:28px;margin-bottom:8px;">🚀</div>
-            <div style="font-weight:700;font-size:16px;color:${isProd?'#b71c1c':'#888'};">PRODUÇÃO</div>
-            <div style="font-size:12px;color:#999;margin-top:4px;">Chaves sk_live / pk_live</div>
-            <div style="font-size:12px;color:#999;">Cobranças reais</div>
+            <div style="font-weight:700;font-size:16px;color:${isProd?'#EF4444':'#8C97BC'};">PRODUÇÃO</div>
+            <div style="font-size:12px;color:#8C97BC;margin-top:4px;">Chaves sk_live / pk_live</div>
+            <div style="font-size:12px;color:#8C97BC;">Cobranças reais</div>
             ${isProd ? `<div style="margin-top:10px;display:inline-block;background:#b71c1c;color:#fff;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;">● ATIVO</div>` : ''}
-            <div style="margin-top:8px;font-size:12px;color:${data.hasProdKeys?'#2e7d32':'#c62828'};">${data.hasProdKeys?'✓ Chaves configuradas':'✗ Chaves não encontradas no servidor'}</div>
+            <div style="margin-top:8px;font-size:12px;color:${data.hasProdKeys?'#22C55E':'#EF4444'};">  ${data.hasProdKeys?'✓ Chaves configuradas':'✗ Chaves não encontradas no servidor'}</div>
           </div>
         </div>
 
-        ${!isSuperAdmin ? `<div style="background:#fff3e0;border:1px solid #FF6B00;border-radius:8px;padding:12px 16px;font-size:13px;color:#e65100;">
+        ${!isSuperAdmin ? `<div style="background:rgba(255,107,0,0.10);border:1px solid rgba(255,107,0,0.30);border-radius:8px;padding:12px 16px;font-size:13px;color:#FF8C38;">
           🔒 Apenas super_admin pode alterar o modo de pagamento.
         </div>` : ''}
 
         ${data.updatedBy ? `
-        <div style="margin-top:16px;font-size:12px;color:#999;border-top:1px solid #f0f0f0;padding-top:12px;">
+        <div style="margin-top:16px;font-size:12px;color:#8C97BC;border-top:1px solid rgba(255,255,255,0.07);padding-top:12px;">
           Última alteração por <strong>${escHtml(data.updatedBy)}</strong>
           ${data.updatedAt ? ' em ' + new Date(data.updatedAt).toLocaleString('pt-BR') : ''}
         </div>` : ''}
       </div>
 
-      <div class="card" style="max-width:580px;margin-top:20px;background:#f9f9fb;">
-        <h4 style="margin:0 0 10px;font-size:15px;color:#1A1A2E;">📋 Como configurar as chaves de produção</h4>
-        <ol style="margin:0;padding-left:20px;color:#555;font-size:13px;line-height:1.8;">
+      <div class="card" style="max-width:580px;margin-top:20px;">
+        <h4 style="margin:0 0 10px;font-size:15px;color:#EDF0FF;">📋 Como configurar as chaves de produção</h4>
+        <ol style="margin:0;padding-left:20px;color:#8C97BC;font-size:13px;line-height:1.8;">
           <li>Acesse o <strong>Render Dashboard</strong> → Serviço backend → <em>Environment</em></li>
           <li>Adicione as variáveis:<br>
-            <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">STRIPE_SECRET_KEY_PROD</code> = sk_live_...<br>
-            <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">STRIPE_PUBLISHABLE_KEY_PROD</code> = pk_live_...
+            <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">STRIPE_SECRET_KEY_PROD</code> = sk_live_...<br>
+            <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">STRIPE_PUBLISHABLE_KEY_PROD</code> = pk_live_...
           </li>
           <li>Salve e aguarde o redeploy automático</li>
           <li>Volte aqui e ative o modo <strong>PRODUÇÃO</strong></li>
@@ -3094,8 +3094,8 @@ const renderPayments = async () => {
       </div>
 
       <div class="card" style="max-width:760px;margin-top:20px;">
-        <h3 style="margin:0 0 6px;font-size:18px;color:#1A1A2E;">🔔 Webhook Cora PIX</h3>
-        <p style="color:#666;margin:0 0 16px;font-size:14px;">
+        <h3 style="margin:0 0 6px;font-size:18px;color:#EDF0FF;">🔔 Webhook Cora PIX</h3>
+        <p style="color:#8C97BC;margin:0 0 16px;font-size:14px;">
           Use esta URL no Cora Web para receber eventos de pagamento PIX e liberar o pedido automaticamente no app.
         </p>
 
@@ -3109,16 +3109,16 @@ const renderPayments = async () => {
           <button id="btn-register-cora-webhook" class="btn btn-ghost" onclick="registerCoraInvoicePaidWebhook()">Registrar endpoint invoice.paid</button>
         </div>
 
-        <div style="font-size:12px;color:#666;line-height:1.7;">
+        <div style="font-size:12px;color:#8C97BC;line-height:1.7;">
           <strong>Eventos sugeridos:</strong>
           ${suggestedEvents.length
-    ? suggestedEvents.map((e) => `<code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;margin-right:6px;">${escHtml(`${e.resource}.${e.trigger}`)}</code>`).join('')
-    : '<code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">invoice.paid</code>'}
+    ? suggestedEvents.map((e) => `<code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;margin-right:6px;">${escHtml(`${e.resource}.${e.trigger}`)}</code>`).join('')
+    : '<code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">invoice.paid</code>'}
         </div>
       </div>
     `;
   } catch (err) {
-    c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar configuração Stripe: ${escHtml(err.message)}</p></div>`;
+    c.innerHTML = `<div class="card"><p style="color:#EF4444;">Erro ao carregar configuração Stripe: ${escHtml(err.message)}</p></div>`;
   }
 };
 
@@ -3256,7 +3256,7 @@ const renderWithdrawalsQueue = async () => {
       </div>
     `;
   } catch (err) {
-    c.innerHTML = `<div class="card"><p style="color:#c62828;">Erro ao carregar fila de saques: ${escHtml(err.message)}</p></div>`;
+    c.innerHTML = `<div class="card"><p style="color:#EF4444;">Erro ao carregar fila de saques: ${escHtml(err.message)}</p></div>`;
   }
 };
 
@@ -3493,11 +3493,11 @@ const buildCheckoutFieldRows = (fields = []) => {
     const isPricingEnabled = !!field.pricingEnabled;
     const typeBtn = (t, emoji, label) => {
       const active = type === t;
-      return `<button type="button" onclick="stfSelectType(this,'${t}')" class="stf-type-btn" data-type="${t}" style="padding:4px 10px;border-radius:16px;border:1.5px solid ${active ? '#6C63FF' : '#E0E3ED'};background:${active ? '#6C63FF' : 'transparent'};color:${active ? '#fff' : '#5C6B7A'};font-size:12px;cursor:pointer;font-weight:500;">${emoji} ${label}</button>`;
+      return `<button type="button" onclick="stfSelectType(this,'${t}')" class="stf-type-btn" data-type="${t}" style="padding:4px 10px;border-radius:16px;border:1.5px solid ${active ? '#FF6B00' : 'rgba(255,255,255,0.14)'};background:${active ? '#FF6B00' : 'rgba(255,255,255,0.06)'};color:${active ? '#fff' : '#8C97BC'};font-size:12px;cursor:pointer;font-weight:500;">${emoji} ${label}</button>`;
     };
     const defPlaceholder = type === 'boolean' ? '"sim" ou "não"' : type === 'number' ? 'Ex: 1' : 'Texto padrão (opcional)';
     return `
-      <div class="stf-row" style="border:1px solid #E0E3ED;border-radius:14px;padding:14px;margin-bottom:10px;background:#F9FAFF;">
+      <div class="stf-row">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <span style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.8px;">Campo ${idx + 1}</span>
           <button class="btn btn-ghost btn-sm" type="button" style="color:#e53935;padding:2px 8px;" onclick="this.closest('.stf-row').remove();refreshCheckoutFieldEmptyState()">✕ Remover</button>
@@ -3549,16 +3549,16 @@ const buildCheckoutFieldRows = (fields = []) => {
           <div style="font-size:11px;font-weight:700;color:#7A84A0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Valor padrão</div>
           <input class="form-input stf-default" placeholder="${defPlaceholder}" value="${escHtml(String(field.defaultValue ?? ''))}" />
         </div>
-        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding-top:10px;border-top:1px solid #E8EAF0;">
-          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;color:#1A2340;font-weight:500;">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding-top:10px;border-top:1px solid rgba(255,255,255,0.07);">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;color:#EDF0FF;font-weight:500;">
             <input type="checkbox" class="stf-required" ${field.required ? 'checked' : ''} /> Obrigatório
           </label>
-          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;color:#1A2340;font-weight:500;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;cursor:pointer;color:#EDF0FF;font-weight:500;">
             <input type="checkbox" class="stf-pricing-enabled" ${field.pricingEnabled ? 'checked' : ''} onchange="stfTogglePricing(this)" /> Afeta preço
           </label>
           <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
             <span style="font-size:11px;color:#7A84A0;">Ordem</span>
-            <input class="form-input stf-order" type="number" value="${field.sortOrder ?? idx}" style="width:60px;text-align:center;padding:4px 6px;color:#1A2340;" />
+            <input class="form-input stf-order" type="number" value="${field.sortOrder ?? idx}" style="width:60px;text-align:center;padding:4px 6px;color:#EDF0FF;" />
           </div>
         </div>
         <div class="stf-pricing-section" style="display:${isPricingEnabled ? 'grid' : 'none'};grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;padding:10px;background:#FFFBF0;border-radius:8px;border:1px solid #FFE082;">
@@ -3608,13 +3608,13 @@ const addCheckoutFieldRow = (listId) => {
 const stfSelectType = (btn, type) => {
   const row = btn.closest('.stf-row');
   row.querySelectorAll('.stf-type-btn').forEach(b => {
-    b.style.background = 'transparent';
-    b.style.color = '#5C6B7A';
-    b.style.borderColor = '#E0E3ED';
+    b.style.background = 'rgba(255,255,255,0.06)';
+    b.style.color = '#8C97BC';
+    b.style.borderColor = 'rgba(255,255,255,0.14)';
   });
-  btn.style.background = '#6C63FF';
+  btn.style.background = '#FF6B00';
   btn.style.color = '#fff';
-  btn.style.borderColor = '#6C63FF';
+  btn.style.borderColor = '#FF6B00';
   row.querySelector('.stf-type').value = type;
   const numFields = row.querySelector('.stf-number-fields');
   const selFields = row.querySelector('.stf-select-fields');
@@ -3768,7 +3768,7 @@ const openNewServiceTypeModal = () => {
     <div class="modal-body" style="padding:0;max-height:72vh;overflow-y:auto;">
 
       <!-- SEÇÃO 1: Identificação -->
-      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+      <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
           <div style="width:6px;height:18px;background:#1565C0;border-radius:3px;"></div>
           <span style="font-size:12px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.8px;">Identificação</span>
@@ -3780,7 +3780,7 @@ const openNewServiceTypeModal = () => {
           </div>
           <div class="form-group" style="margin:0;">
             <label class="form-label">Slug (ID único) <span style="color:#e53935;">*</span></label>
-            <input id="st-slug" class="form-input" placeholder="gerado automaticamente" style="font-family:monospace;background:#F5F6FA;color:#1A2340;" data-auto="1" oninput="delete this.dataset.auto" />
+            <input id="st-slug" class="form-input" placeholder="gerado automaticamente" style="font-family:monospace;background:#F5F6FA;color:#EDF0FF;" data-auto="1" oninput="delete this.dataset.auto" />
           </div>
         </div>
         <div class="form-group" style="margin-top:12px;margin-bottom:0;">
@@ -3790,7 +3790,7 @@ const openNewServiceTypeModal = () => {
       </div>
 
       <!-- SEÇÃO 2: Visual -->
-      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+      <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
           <div style="width:6px;height:18px;background:#FF6B00;border-radius:3px;"></div>
           <span style="font-size:12px;font-weight:700;color:#FF6B00;text-transform:uppercase;letter-spacing:0.8px;">Visual &amp; Status</span>
@@ -3811,13 +3811,13 @@ const openNewServiceTypeModal = () => {
         <div class="form-group" style="margin-top:12px;margin-bottom:0;">
           <label class="form-label">Imagem do ícone <span style="color:#7A84A0;font-weight:400;">PNG ou WEBP com fundo transparente</span></label>
           <div style="position:relative;">
-            <input id="st-image" type="file" accept=".png,.webp" style="width:100%;padding:10px 12px;border:2px dashed #C5CAD8;border-radius:10px;background:#F9FAFF;cursor:pointer;font-size:13px;color:#4A5568;" />
+            <input id="st-image" type="file" accept=".png,.webp" style="width:100%;padding:10px 12px;border:2px dashed rgba(255,255,255,0.15);border-radius:10px;background:var(--bg-input,#0A0C14);cursor:pointer;font-size:13px;color:#8C97BC;" />
           </div>
         </div>
       </div>
 
       <!-- SEÇÃO 3: Duração e Preço -->
-      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+      <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
           <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
           <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Duração &amp; Preço</span>
@@ -3846,10 +3846,10 @@ const openNewServiceTypeModal = () => {
           </div>
         </div>
         <div style="margin-top:14px;">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:#F0F4FF;border-radius:10px;border:1px solid #C5D5F5;">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.10);">
             <input type="checkbox" id="st-location-tracking" style="margin-top:2px;width:16px;height:16px;accent-color:#1565C0;flex-shrink:0;" />
             <div>
-              <div style="font-size:13px;font-weight:600;color:#1A2340;">Exige rastreamento de localização durante o serviço</div>
+              <div style="font-size:13px;font-weight:600;color:#EDF0FF;">Exige rastreamento de localização durante o serviço</div>
               <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Ative para serviços onde o profissional se desloca (ex: passeador de cães)</div>
             </div>
           </label>
@@ -3871,7 +3871,7 @@ const openNewServiceTypeModal = () => {
 
     </div>
 
-    <div class="modal-footer" style="padding:16px 24px;display:flex;justify-content:flex-end;gap:10px;background:#F9FAFF;border-top:1px solid #E8EAF0;border-radius:0 0 16px 16px;">
+    <div class="modal-footer" style="padding:16px 24px;display:flex;justify-content:flex-end;gap:10px;">
       <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
       <button class="btn btn-primary" onclick="createServiceType()" style="min-width:140px;">
         <span>✓ Criar Profissão</span>
@@ -3975,7 +3975,7 @@ const openEditServiceTypeModal = (t) => {
     <div class="modal-body" style="padding:0;max-height:72vh;overflow-y:auto;">
 
       <!-- SEÇÃO 1: Identificação -->
-      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+      <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
           <div style="width:6px;height:18px;background:#1565C0;border-radius:3px;"></div>
           <span style="font-size:12px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.8px;">Identificação</span>
@@ -3987,7 +3987,7 @@ const openEditServiceTypeModal = (t) => {
           </div>
           <div class="form-group" style="margin:0;">
             <label class="form-label">Ordem de exibição</label>
-            <input id="ste-order" class="form-input" type="number" value="${t.sortOrder || 0}" style="color:#1A2340;" />
+            <input id="ste-order" class="form-input" type="number" value="${t.sortOrder || 0}" style="color:#EDF0FF;" />
           </div>
         </div>
         <div class="form-group" style="margin-top:12px;margin-bottom:0;">
@@ -3997,7 +3997,7 @@ const openEditServiceTypeModal = (t) => {
       </div>
 
       <!-- SEÇÃO 2: Visual -->
-      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+      <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
           <div style="width:6px;height:18px;background:#FF6B00;border-radius:3px;"></div>
           <span style="font-size:12px;font-weight:700;color:#FF6B00;text-transform:uppercase;letter-spacing:0.8px;">Visual &amp; Status</span>
@@ -4022,12 +4022,12 @@ const openEditServiceTypeModal = (t) => {
               : `Imagem do ícone <span style="color:#7A84A0;font-weight:400;">PNG ou WEBP com fundo transparente</span>`
             }
           </label>
-          <input id="ste-image" type="file" accept=".png,.webp" style="width:100%;padding:10px 12px;border:2px dashed #C5CAD8;border-radius:10px;background:#F9FAFF;cursor:pointer;font-size:13px;color:#4A5568;" />
+          <input id="ste-image" type="file" accept=".png,.webp" style="width:100%;padding:10px 12px;border:2px dashed rgba(255,255,255,0.15);border-radius:10px;background:var(--bg-input,#0A0C14);cursor:pointer;font-size:13px;color:#8C97BC;" />
         </div>
       </div>
 
       <!-- SEÇÃO 3: Duração e Preço -->
-      <div style="padding:20px 24px;border-bottom:1px solid #E8EAF0;">
+      <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
           <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
           <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Duração &amp; Preço</span>
@@ -4054,10 +4054,10 @@ const openEditServiceTypeModal = (t) => {
           </div>
         </div>
         <div style="margin-top:14px;">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:#F0F4FF;border-radius:10px;border:1px solid #C5D5F5;">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.10);">
             <input type="checkbox" id="ste-location-tracking" ${t.requiresLocationTracking ? 'checked' : ''} style="margin-top:2px;width:16px;height:16px;accent-color:#1565C0;flex-shrink:0;" />
             <div>
-              <div style="font-size:13px;font-weight:600;color:#1A2340;">Exige rastreamento de localização durante o serviço</div>
+              <div style="font-size:13px;font-weight:600;color:#EDF0FF;">Exige rastreamento de localização durante o serviço</div>
               <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Ative para serviços onde o profissional se desloca (ex: passeador de cães)</div>
             </div>
           </label>
@@ -4078,7 +4078,7 @@ const openEditServiceTypeModal = (t) => {
 
     </div>
 
-    <div class="modal-footer" style="padding:16px 24px;display:flex;justify-content:space-between;align-items:center;background:#F9FAFF;border-top:1px solid #E8EAF0;border-radius:0 0 16px 16px;">
+    <div class="modal-footer" style="padding:16px 24px;display:flex;justify-content:space-between;align-items:center;">
       <button class="btn btn-danger btn-sm" onclick="deleteServiceType('${t._id}')" style="opacity:0.85;">🗑 Excluir profissão</button>
       <div style="display:flex;gap:10px;">
         <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
@@ -4159,3 +4159,4 @@ const deleteServiceType = async (id) => {
 
 // ── INIT ───────────────────────────────────────────────────────────
 render();
+
