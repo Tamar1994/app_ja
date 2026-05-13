@@ -2359,11 +2359,13 @@ router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USE
     // Envia em lotes de 100 (limite recomendado da Expo Push API)
     const BATCH = 100;
     let sent = 0;
+    let errors = 0;
     for (let i = 0; i < tokens.length; i += BATCH) {
       const batch = tokens.slice(i, i + BATCH);
-      batch.forEach((token) => {
-        sendExpoPush(token, title, body, extraData || {});
-        sent++;
+      const results = await Promise.all(batch.map((token) => sendExpoPush(token, title, body, extraData || {})));
+      results.forEach((ticket) => {
+        if (ticket?.status === 'error') errors++;
+        else sent++;
       });
     }
 
@@ -2373,10 +2375,10 @@ router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USE
       actorType: 'admin',
       actorAdminId: req.admin._id,
       severity: 'medium',
-      message: `Campanha push enviada → público: ${audience} | destinatários: ${sent} | título: "${title}"`,
+      message: `Campanha push enviada → público: ${audience} | destinatários: ${sent} | erros: ${errors} | título: "${title}"`,
     });
 
-    res.json({ sent, audience, title, body });
+    res.json({ sent, errors, audience, title, body });
   } catch (err) {
     console.error('[push-campaign]', err);
     res.status(500).json({ message: 'Erro ao enviar campanha push.' });

@@ -10,3 +10,9 @@ web-build/
 *.key
 *.mobileprovision
 *.orig.*
+# Firebase / Google credentials (NUNCA commitar)
+google-services.json
+*service-account*.json
+*serviceaccount*.json
+firebase-adminsdk*.json
+appja-85578-firebase-adminsdk-fbsvc-6f77d2e256.json

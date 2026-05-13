@@ -4141,11 +4141,15 @@ const sendPushCampaign = async () => {
 
   try {
     const res = await req('POST', '/push-campaign', { title, body, audience });
-    const entry = { title, body, audience, sent: res.sent, sentAt: new Date().toISOString() };
+    const entry = { title, body, audience, sent: res.sent, errors: res.errors, sentAt: new Date().toISOString() };
     pushHistory.unshift(entry);
 
+    const errorsHtml = res.errors > 0
+      ? `<div style="margin-top:8px;font-size:12px;color:#FCA5A5;">⚠️ ${res.errors} token(s) com erro de entrega — verifique os logs do servidor para detalhes.</div>`
+      : '';
+
     resultEl.style.display = 'block';
-    resultEl.innerHTML = `<div style="background:rgba(0,200,83,0.1);border:1px solid rgba(0,200,83,0.3);border-radius:10px;padding:14px;color:#4ADE80;font-size:14px;font-weight:600;text-align:center;">✅ Campanha enviada para <strong>${res.sent}</strong> dispositivos!</div>`;
+    resultEl.innerHTML = `<div style="background:rgba(0,200,83,0.1);border:1px solid rgba(0,200,83,0.3);border-radius:10px;padding:14px;color:#4ADE80;font-size:14px;font-weight:600;text-align:center;">✅ Campanha enviada para <strong>${res.sent}</strong> dispositivo(s)!${errorsHtml}</div>`;
 
     // Limpa campos
     document.getElementById('push-title').value = '';

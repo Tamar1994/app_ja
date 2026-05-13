@@ -47,20 +47,35 @@ function sendExpoPush(pushToken, title, body, data = {}) {
     },
   };
 
-  const req = https.request(options, (res) => {
-    let data = '';
-    res.on('data', chunk => { data += chunk; });
-    res.on('end', () => {
-      console.log(`📲 Push enviado → ${pushToken.slice(-10)} | status ${res.statusCode}`);
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      let raw = '';
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          const ticket = Array.isArray(json.data) ? json.data[0] : json.data;
+          if (ticket?.status === 'error') {
+            console.error(`❌ Push FALHOU → ${String(pushToken).slice(-10)} | erro: ${ticket.message} | detalhe: ${JSON.stringify(ticket.details)}`);
+          } else {
+            console.log(`📲 Push OK → ${String(pushToken).slice(-10)} | id: ${ticket?.id}`);
+          }
+          resolve(ticket);
+        } catch {
+          console.log(`📲 Push → ${String(pushToken).slice(-10)} | HTTP ${res.statusCode} | body: ${raw}`);
+          resolve(null);
+        }
+      });
     });
-  });
 
-  req.on('error', (err) => {
-    console.error('Erro ao enviar push:', err.message);
-  });
+    req.on('error', (err) => {
+      console.error('Erro ao enviar push:', err.message);
+      resolve(null);
+    });
 
-  req.write(payload);
-  req.end();
+    req.write(payload);
+    req.end();
+  });
 }
 
 /**
