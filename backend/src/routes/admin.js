@@ -37,7 +37,7 @@ const {
 } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
-const { clearRequestTimer } = require('../utils/requestQueue');
+const { clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
 const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadCleanup');
 const { logAudit } = require('../utils/auditLog');
@@ -628,6 +628,10 @@ router.patch('/approvals/:id/approve', adminAuth, async (req, res) => {
     await sendApprovalEmail(user.email, user.name);
     const io = req.app.get('io');
     if (io) io.to(`user_${user._id}`).emit('account_approved', { userId: user._id });
+    // Push de aprovação
+    if (user.pushToken) {
+      sendExpoPush(user.pushToken, '✅ Conta aprovada!', 'Sua conta foi aprovada. Bem-vindo ao Já! Você já pode começar a atender.', { screen: 'Dashboard' });
+    }
     res.json({ message: 'Usuário aprovado', user });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao aprovar usuário' });
@@ -648,6 +652,10 @@ router.patch('/approvals/:id/reject', adminAuth, async (req, res) => {
     await sendRejectionEmail(user.email, user.name, reason);
     const io = req.app.get('io');
     if (io) io.to(`user_${user._id}`).emit('account_rejected', { userId: user._id, reason });
+    // Push de rejeição
+    if (user.pushToken) {
+      sendExpoPush(user.pushToken, '⚠️ Verificação recusada', 'Sua documentação foi recusada. Acesse o app para ver o motivo e reenviar.', { screen: 'PendingApproval' });
+    }
     res.json({ message: 'Usuário rejeitado', user });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao rejeitar usuário' });

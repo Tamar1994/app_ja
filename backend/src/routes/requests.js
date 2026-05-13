@@ -10,7 +10,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const CouponRedemption = require('../models/CouponRedemption');
 const ServiceCoverageCity = require('../models/ServiceCoverageCity');
-const { dispatchToNextProfessional, clearRequestTimer } = require('../utils/requestQueue');
+const { dispatchToNextProfessional, clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
@@ -397,6 +397,13 @@ router.patch('/:id/professional-preparing', auth, async (req, res) => {
       io.to(`user_${request.client}`).emit('request_status_updated', { request });
     }
 
+    // Push para o cliente: profissional está se preparando
+    User.findById(request.client).select('pushToken name').then((client) => {
+      if (client?.pushToken) {
+        sendExpoPush(client.pushToken, '🔧 Profissional se preparando', 'Seu profissional está se preparando para o atendimento.', { requestId: String(request._id), screen: 'Tracking' });
+      }
+    }).catch(() => {});
+
     res.json({ request });
   } catch {
     res.status(500).json({ message: 'Erro ao atualizar status para preparação' });
@@ -430,6 +437,13 @@ router.patch('/:id/professional-on-the-way', auth, async (req, res) => {
     if (io) {
       io.to(`user_${request.client}`).emit('request_status_updated', { request });
     }
+
+    // Push para o cliente: profissional a caminho
+    User.findById(request.client).select('pushToken').then((client) => {
+      if (client?.pushToken) {
+        sendExpoPush(client.pushToken, '🚗 Profissional a caminho!', 'Seu profissional saiu e está se deslocando até você.', { requestId: String(request._id), screen: 'Tracking' });
+      }
+    }).catch(() => {});
 
     res.json({ request });
   } catch {
@@ -502,7 +516,7 @@ router.patch('/:id/accept', auth, async (req, res) => {
         $unset: { currentAssignedTo: '' },
       },
       { new: true }
-    ).populate('client', 'name avatar phone');
+    ).populate('client', 'name avatar phone pushToken');
 
     if (!request) {
       return res.status(400).json({ message: 'Solicitação não disponível' });
@@ -533,6 +547,11 @@ router.patch('/:id/accept', auth, async (req, res) => {
         requestId: request._id,
         status: request.status,
       });
+    }
+
+    // Push para o cliente: profissional encontrado
+    if (request.client?.pushToken) {
+      sendExpoPush(request.client.pushToken, '✅ Profissional encontrado!', `${professional.name} aceitou seu pedido. Confirme para continuar.`, { requestId: String(request._id), screen: 'ProfessionalFound' });
     }
 
     res.json({ request });
@@ -664,6 +683,13 @@ router.patch('/:id/start', auth, async (req, res) => {
       io.to(`user_${request.client}`).emit('service_started', { requestId: request._id });
     }
 
+    // Push para o cliente: serviço iniciado
+    User.findById(request.client).select('pushToken').then((client) => {
+      if (client?.pushToken) {
+        sendExpoPush(client.pushToken, '⚡ Serviço iniciado!', 'Seu profissional começou o atendimento.', { requestId: String(request._id), screen: 'Tracking' });
+      }
+    }).catch(() => {});
+
     res.json({ request });
   } catch {
     res.status(500).json({ message: 'Erro ao iniciar serviço' });
@@ -693,6 +719,13 @@ router.patch('/:id/complete', auth, async (req, res) => {
       io.to(`user_${request.client}`).emit('service_completed', { requestId: request._id });
     }
     closeServiceChatForRequest(request._id, 'Serviço concluído').catch(() => {});
+
+    // Push para o cliente: serviço concluído
+    User.findById(request.client).select('pushToken').then((client) => {
+      if (client?.pushToken) {
+        sendExpoPush(client.pushToken, '🎉 Serviço concluído!', 'Que tal deixar uma avaliação para o profissional?', { requestId: String(request._id), screen: 'Review' });
+      }
+    }).catch(() => {});
 
     // Processar pagamento e carteira de forma isolada para não bloquear o response
     let rewardApplied = { couponCode: null, rewardType: null, totalBenefit: 0, bonusAmount: 0, platformFeeDiscountAmount: 0, platformFeePercentApplied: 15 };
@@ -797,6 +830,21 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     // Limpar timer da fila ao cancelar
     clearRequestTimer(req.params.id);
     await closeServiceChatForRequest(req.params.id, req.body.reason || 'Serviço cancelado');
+
+    // Push para o outro lado: notificar sobre cancelamento
+    if (req.user.userType === 'client' && request.professional) {
+      User.findById(request.professional).select('pushToken').then((pro) => {
+        if (pro?.pushToken) {
+          sendExpoPush(pro.pushToken, '❌ Pedido cancelado', 'O cliente cancelou a solicitação de serviço.', { requestId: String(request._id) });
+        }
+      }).catch(() => {});
+    } else if (req.user.userType === 'professional') {
+      User.findById(request.client).select('pushToken').then((client) => {
+        if (client?.pushToken) {
+          sendExpoPush(client.pushToken, '❌ Pedido cancelado', 'O profissional cancelou o atendimento. Buscando outro profissional.', { requestId: String(request._id) });
+        }
+      }).catch(() => {});
+    }
 
     res.json({ request });
   } catch {
