@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  ScrollView, TouchableOpacity, Alert, ActivityIndicator, Platform,
+  ScrollView, TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,6 +68,7 @@ export default function TrackingScreen({ navigation, route }) {
   const lastSeenPeerMsgCount = useRef(null);
   const chatPollRef = useRef(null);
   const geocodingAttempted = useRef(false);
+  const mapRef = useRef(null);
 
   // Polling para badges de mensagens não lidas do profissional
   const checkChatUnread = async () => {
@@ -251,6 +252,32 @@ export default function TrackingScreen({ navigation, route }) {
   }, [clientCoords, professionalCoords]);
 
   const canRenderMap = request?.status === 'on_the_way' && (clientCoords || professionalCoords);
+
+  // Ajusta câmera do mapa quando as coordenadas chegam/atualizam
+  const fitMap = useCallback(() => {
+    if (!mapRef.current) return;
+    const pts = [clientCoords, professionalCoords].filter(Boolean);
+    if (pts.length === 0) return;
+    if (pts.length === 1) {
+      mapRef.current.animateToRegion({
+        ...pts[0],
+        latitudeDelta: 0.015,
+        longitudeDelta: 0.015,
+      }, 400);
+    } else {
+      mapRef.current.fitToCoordinates(pts, {
+        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+        animated: true,
+      });
+    }
+  }, [clientCoords, professionalCoords]);
+
+  useEffect(() => {
+    if (canRenderMap) {
+      const t = setTimeout(fitMap, 600);
+      return () => clearTimeout(t);
+    }
+  }, [canRenderMap, fitMap]);
   const requestHours = Number.isFinite(toFiniteNumber(request?.details?.hours)) ? Number(request.details.hours) : null;
   const requestStreet = request?.address?.street || 'Endereço não informado';
   const requestCity = request?.address?.city || 'Cidade não informada';
@@ -377,13 +404,31 @@ export default function TrackingScreen({ navigation, route }) {
             </View>
 
             {canRenderMap ? (
-              <MapView style={styles.map} initialRegion={mapRegion} liteMode={Platform.OS === 'android'}>
+              <MapView
+                ref={mapRef}
+                style={styles.map}
+                initialRegion={mapRegion}
+              >
                 {clientCoords && (
-                  <Marker coordinate={clientCoords} title="Sua casa" description="Endereço do atendimento" pinColor={colors.primary} />
+                  <Marker
+                    coordinate={clientCoords}
+                    title="Sua casa"
+                    description="Endereço do atendimento"
+                    anchor={{ x: 0.5, y: 1 }}
+                  >
+                    <View style={styles.homeMarker}>
+                      <Ionicons name="home" size={16} color={colors.white} />
+                    </View>
+                  </Marker>
                 )}
 
                 {professionalCoords && (
-                  <Marker coordinate={professionalCoords} title={request?.professional?.name || 'Profissional'} description="Profissional a caminho" pinColor={colors.secondary} />
+                  <Marker
+                    coordinate={professionalCoords}
+                    title={request?.professional?.name || 'Profissional'}
+                    description="Profissional a caminho"
+                    pinColor={colors.secondary}
+                  />
                 )}
               </MapView>
             ) : (
@@ -397,10 +442,16 @@ export default function TrackingScreen({ navigation, route }) {
               <View style={styles.etaChip}>
                 <Ionicons name="time-outline" size={14} color={colors.primary} />
                 <Text style={styles.etaChipText}>
-                  {etaMinutes ? `ETA aproximado: ${etaMinutes} min` : 'ETA indisponível no momento'}
+                  {etaMinutes
+                    ? `ETA aproximado: ${etaMinutes} min`
+                    : professionalCoords
+                      ? 'Calculando ETA...'
+                      : 'Aguardando posição do profissional'}
                 </Text>
               </View>
-              <Text style={styles.etaHint}>Estimativa aproximada com base na distância atual.</Text>
+              {etaMinutes ? (
+                <Text style={styles.etaHint}>Estimativa aproximada com base na distância atual.</Text>
+              ) : null}
             </View>
           </View>
         )}

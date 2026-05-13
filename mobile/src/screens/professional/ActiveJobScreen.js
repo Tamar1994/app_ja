@@ -82,8 +82,9 @@ export default function ActiveJobScreen({ navigation, route }) {
       return;
     }
 
-    // Rastreamento de localização só para tipos de serviço que exigem
-    if (!request.requiresLocationTracking) return;
+    // Quando o profissional está a caminho, SEMPRE rastreamos a localização
+    // independentemente do tipo de serviço (requiresLocationTracking é para o rastreamento
+    // durante a execução do serviço, não para o deslocamento até o cliente)
 
     let stopped = false;
     const start = async () => {
