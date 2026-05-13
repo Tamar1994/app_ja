@@ -27,7 +27,8 @@ function buildInitialCustomFormData(fields = []) {
   const initial = {};
   (fields || []).forEach((field) => {
     if (field.inputType === 'number') {
-      const min = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
+      const minRaw = field.min !== null && field.min !== undefined && field.min !== '' ? Number(field.min) : NaN;
+      const min = Number.isFinite(minRaw) ? minRaw : 1;
       const dv = field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== ''
         ? Number(field.defaultValue)
         : NaN;
@@ -298,9 +299,12 @@ export default function RequestServiceScreen({ navigation, route }) {
     let value = rawValue;
     if (field.inputType === 'number') {
       const num = Number(rawValue);
-      value = Number.isFinite(num) ? num : 0;
-      if (Number.isFinite(Number(field.min))) value = Math.max(Number(field.min), value);
-      if (Number.isFinite(Number(field.max))) value = Math.min(Number(field.max), value);
+      value = Number.isFinite(num) ? num : 1;
+      const minRaw = field.min !== null && field.min !== undefined && field.min !== '' ? Number(field.min) : NaN;
+      const maxRaw = field.max !== null && field.max !== undefined && field.max !== '' ? Number(field.max) : NaN;
+      const fieldMin = Number.isFinite(minRaw) ? minRaw : 1;
+      value = Math.max(fieldMin, value);
+      if (Number.isFinite(maxRaw)) value = Math.min(maxRaw, value);
     }
 
     setCustomFormData((prev) => ({ ...prev, [field.key]: value }));
@@ -436,8 +440,10 @@ export default function RequestServiceScreen({ navigation, route }) {
                   }
 
                   if (field.inputType === 'number') {
-                    const min = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
-                    const max = Number.isFinite(Number(field.max)) ? Number(field.max) : Number.MAX_SAFE_INTEGER;
+                    const minRaw = field.min !== null && field.min !== undefined && field.min !== '' ? Number(field.min) : NaN;
+                    const maxRaw = field.max !== null && field.max !== undefined && field.max !== '' ? Number(field.max) : NaN;
+                    const min = Number.isFinite(minRaw) ? minRaw : 1;
+                    const max = Number.isFinite(maxRaw) ? maxRaw : Number.MAX_SAFE_INTEGER;
                     const stepSize = Number.isFinite(Number(field.step)) ? Number(field.step) : 1;
                     // Usa nullish coalescing para não tratar 0 como falsy
                     const current = Number(value ?? min);
