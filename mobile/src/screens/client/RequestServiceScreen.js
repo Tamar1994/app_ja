@@ -885,7 +885,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     padding: spacing.md,
     borderWidth: 1.5,
-    borderColor: colors.border,
+    borderColor: 'transparent',
     marginTop: 12,
     ...shadows.sm,
   },

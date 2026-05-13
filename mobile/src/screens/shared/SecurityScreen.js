@@ -204,18 +204,21 @@ export default function SecurityScreen({ navigation }) {
                 { icon: 'camera-outline', label: 'Câmera', desc: 'Usada para envio de documentos' },
                 { icon: 'notifications-outline', label: 'Notificações', desc: 'Para avisos de pedidos e atualizações' },
               ].map((item, i, arr) => (
-                <View key={i} style={[styles.privacyRow, i < arr.length - 1 && styles.divider]}>
-                  <View style={styles.privacyIcon}>
-                    <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+                <React.Fragment key={i}>
+                  <View style={styles.privacyRow}>
+                    <View style={styles.privacyIcon}>
+                      <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+                    </View>
+                    <View style={styles.privacyContent}>
+                      <Text style={styles.privacyLabel}>{item.label}</Text>
+                      <Text style={styles.privacyDesc}>{item.desc}</Text>
+                    </View>
+                    <View style={styles.privacyBadge}>
+                      <Text style={styles.privacyBadgeText}>Ativo</Text>
+                    </View>
                   </View>
-                  <View style={styles.privacyContent}>
-                    <Text style={styles.privacyLabel}>{item.label}</Text>
-                    <Text style={styles.privacyDesc}>{item.desc}</Text>
-                  </View>
-                  <View style={styles.privacyBadge}>
-                    <Text style={styles.privacyBadgeText}>Ativo</Text>
-                  </View>
-                </View>
+                  {i < arr.length - 1 && <View style={styles.divider} />}
+                </React.Fragment>
               ))}
             </View>
           </View>

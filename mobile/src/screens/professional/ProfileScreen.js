@@ -171,7 +171,6 @@ export default function ProfessionalProfileScreen({ navigation }) {
             {[
               { icon: 'star', value: user.professional?.rating?.toFixed(1) || '—', label: 'Avaliação', color: colors.warning },
               { icon: 'checkmark-circle', value: user.professional?.totalServicesCompleted || 0, label: 'Serviços', color: colors.success },
-              { icon: 'cash-outline', value: `R$${user.professional?.pricePerHour || 35}/h`, label: 'Valor', color: '#90CAF9' },
             ].map((s, i) => (
               <View key={i} style={styles.statCard}>
                 <Ionicons name={s.icon} size={18} color={s.color} />
@@ -381,7 +380,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
     borderWidth: 2,
-    borderColor: colors.border,
+    borderColor: 'transparent',
     ...shadows.md,
   },
   availCardActive: {
