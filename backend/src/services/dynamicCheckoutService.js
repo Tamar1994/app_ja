@@ -1,4 +1,3 @@
-const PricingConfig = require('../models/PricingConfig');
 const ServiceType = require('../models/ServiceType');
 
 function toObject(value) {
@@ -127,36 +126,35 @@ function formatSummaryValue(field, value) {
   return String(value);
 }
 
+// Fallbacks globais usados quando o ServiceType não define o campo
+const FALLBACK_MIN_HOURS        = 2;
+const FALLBACK_MAX_HOURS        = 12;
+const FALLBACK_PLATFORM_FEE_PCT = 15;
+const FALLBACK_BASE_PRICE_HOUR  = 35;
+const FALLBACK_PRODUCTS_SURCHARGE = 5;
+
 async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = null, customFormData = {} }) {
-  const cfg = await PricingConfig.getSingleton();
   const serviceType = serviceTypeSlug
     ? await ServiceType.findOne({ slug: serviceTypeSlug }).select('slug name checkoutFields status minHours maxHours hoursOptions pricePerMinute platformFeePercent')
     : null;
 
   const resolvedMinHours = Number.isFinite(Number(serviceType?.minHours))
     ? Number(serviceType.minHours)
-    : Number(cfg.minHours);
+    : FALLBACK_MIN_HOURS;
   const resolvedMaxHours = Number.isFinite(Number(serviceType?.maxHours))
     ? Number(serviceType.maxHours)
-    : Number(cfg.maxHours);
+    : FALLBACK_MAX_HOURS;
   const safeHours = normalizeNumber(hours, 0);
   if (!safeHours || safeHours < resolvedMinHours || safeHours > resolvedMaxHours) {
     throw new Error(`Horas devem ser entre ${resolvedMinHours} e ${resolvedMaxHours}`);
   }
 
-  const serviceBasePrices = cfg.serviceBasePrices instanceof Map
-    ? Object.fromEntries(cfg.serviceBasePrices)
-    : (cfg.serviceBasePrices || {});
-  const serviceBase = serviceTypeSlug && serviceBasePrices[serviceTypeSlug] !== undefined
-    ? Number(serviceBasePrices[serviceTypeSlug])
-    : null;
-
   const servicePricePerMinute = Number(serviceType?.pricePerMinute);
   let pricePerHour = Number.isFinite(servicePricePerMinute) && servicePricePerMinute > 0
     ? servicePricePerMinute * 60
-    : (Number.isFinite(serviceBase) ? serviceBase : cfg.basePricePerHour);
+    : FALLBACK_BASE_PRICE_HOUR;
   const supportsProducts = !serviceTypeSlug || serviceTypeSlug === 'diarista';
-  if (supportsProducts && !hasProducts) pricePerHour += cfg.productsSurcharge;
+  if (supportsProducts && !hasProducts) pricePerHour += FALLBACK_PRODUCTS_SURCHARGE;
 
   const fields = Array.isArray(serviceType?.checkoutFields)
     ? [...serviceType.checkoutFields].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
@@ -191,11 +189,10 @@ async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = 
   const estimated = (adjustedPricePerHour * safeHours) + dynamic.extraTotal;
   const resolvedPlatformFeePercent = Number.isFinite(Number(serviceType?.platformFeePercent))
     ? Number(serviceType.platformFeePercent)
-    : Number(cfg.platformFeePercent);
+    : FALLBACK_PLATFORM_FEE_PCT;
   const platformFee = (estimated * resolvedPlatformFeePercent) / 100;
 
   return {
-    config: cfg,
     serviceType,
     fields,
     normalizedCustomFormData,

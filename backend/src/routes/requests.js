@@ -731,9 +731,16 @@ router.patch('/:id/complete', auth, async (req, res) => {
     let rewardApplied = { couponCode: null, rewardType: null, totalBenefit: 0, bonusAmount: 0, platformFeeDiscountAmount: 0, platformFeePercentApplied: 15 };
     let updatedRequest = request;
     try {
-      const pricingConfig = await PricingConfig.getSingleton();
+      // Obter platformFeePercent do ServiceType cadastrado (não mais do PricingConfig global)
+      let defaultFeePercent = 15;
+      if (request.serviceTypeSlug) {
+        const ServiceType = require('../models/ServiceType');
+        const st = await ServiceType.findOne({ slug: request.serviceTypeSlug }).select('platformFeePercent').lean();
+        if (Number.isFinite(Number(st?.platformFeePercent))) {
+          defaultFeePercent = Number(st.platformFeePercent);
+        }
+      }
       const grossAmount = request.pricing.estimated;
-      const defaultFeePercent = Number(pricingConfig.platformFeePercent || 15);
       const reward = await resolveProfessionalRewardForCompletion({
         professionalUser: req.user,
         serviceRequest: request,

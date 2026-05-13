@@ -15,7 +15,6 @@ const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ServiceType = require('../models/ServiceType');
 const ServiceCoverageCity = require('../models/ServiceCoverageCity');
 const HelpTopic = require('../models/HelpTopic');
-const PricingConfig = require('../models/PricingConfig');
 const StripeConfig = require('../models/StripeConfig');
 const TermsOfUse = require('../models/TermsOfUse');
 const Waitlist = require('../models/Waitlist');
@@ -1754,50 +1753,9 @@ router.delete('/help/:id/items/:itemId', adminAuth, async (req, res) => {
   }
 });
 
-// ── CONFIGURAÇÃO DE PREÇOS ──────────────────────────────────────────────────
-// GET /api/admin/pricing
-router.get('/pricing', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
-  try {
-    const config = await PricingConfig.getSingleton();
-    res.json({ config });
-  } catch {
-    res.status(500).json({ message: 'Erro ao buscar configurações de preço' });
-  }
-});
-
-// PATCH /api/admin/pricing
-router.patch('/pricing', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
-  const {
-    basePricePerHour,
-    serviceBasePrices,
-    platformFeePercent,
-    productsSurcharge,
-    minHours,
-    maxHours,
-    hoursOptions,
-  } = req.body;
-  try {
-    const config = await PricingConfig.getSingleton();
-    if (basePricePerHour !== undefined) config.basePricePerHour = basePricePerHour;
-    if (serviceBasePrices !== undefined && typeof serviceBasePrices === 'object' && serviceBasePrices !== null) {
-      const cleanMap = {};
-      Object.entries(serviceBasePrices).forEach(([slug, value]) => {
-        const n = Number(value);
-        if (!Number.isNaN(n) && n > 0) cleanMap[slug] = n;
-      });
-      config.serviceBasePrices = cleanMap;
-    }
-    if (platformFeePercent !== undefined) config.platformFeePercent = platformFeePercent;
-    if (productsSurcharge !== undefined) config.productsSurcharge = productsSurcharge;
-    if (minHours !== undefined) config.minHours = minHours;
-    if (maxHours !== undefined) config.maxHours = maxHours;
-    if (hoursOptions !== undefined) config.hoursOptions = hoursOptions;
-    await config.save();
-    res.json({ message: 'Configuração salva', config });
-  } catch {
-    res.status(500).json({ message: 'Erro ao salvar configurações de preço' });
-  }
-});
+// ── CONFIGURAÇÃO DE PREÇOS — REMOVIDA ────────────────────────────────────────
+// Preços agora são gerenciados diretamente em cada Profissão (ServiceType).
+// As rotas GET/PATCH /pricing foram removidas intencionalmente.
 
 // ── STRIPE CONFIG ────────────────────────────────────────────────
 // GET /api/admin/stripe-config

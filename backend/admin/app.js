@@ -345,10 +345,7 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='termos'?'active':''}" onclick="navTo('termos')">
             <span class="icon">📄</span> Termos de Uso
           </div>` : ''}
-          ${hasPermission(PERMISSIONS.FINANCIAL) ? `
-          <div class="nav-item ${currentPage==='precos'?'active':''}" onclick="navTo('precos')">
-            <span class="icon">💰</span> Configurar Preços
-          </div>` : ''}
+
           ${hasPermission(PERMISSIONS.COUPON_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='cupons'?'active':''}" onclick="navTo('cupons')">
             <span class="icon">🎟️</span> Cupons
@@ -429,7 +426,6 @@ const navTo = (page) => {
     suporte: [PERMISSIONS.SUPPORT_CHAT],
     ajuda: [PERMISSIONS.CONTENT_MANAGEMENT],
     termos: [PERMISSIONS.CONTENT_MANAGEMENT],
-    precos: [PERMISSIONS.FINANCIAL],
     cupons: [PERMISSIONS.COUPON_MANAGEMENT],
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
@@ -457,7 +453,6 @@ const navTo = (page) => {
     suporte: 'Suporte ao Vivo',
     ajuda: 'Central de Ajuda',
     termos: 'Termos de Uso',
-    precos: 'Configuração de Preços',
     cupons: 'Cupons de Desconto',
     pagamentos: 'Pagamentos & Stripe',
     saques: 'Fila de Saques PIX',
@@ -478,7 +473,6 @@ const renderPage = () => {
     suporte: [PERMISSIONS.SUPPORT_CHAT],
     ajuda: [PERMISSIONS.CONTENT_MANAGEMENT],
     termos: [PERMISSIONS.CONTENT_MANAGEMENT],
-    precos: [PERMISSIONS.FINANCIAL],
     cupons: [PERMISSIONS.COUPON_MANAGEMENT],
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
@@ -492,7 +486,7 @@ const renderPage = () => {
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -1560,185 +1554,6 @@ const deleteHelpItem = async (topicId, itemId) => {
     await req('DELETE', `/help/${topicId}/items/${itemId}`);
     showAlert('Item removido.', 'success');
     renderHelpCenter();
-  } catch (err) { showAlert(err.message); }
-};
-
-// ── CONFIGURAÇÃO DE PREÇOS ────────────────────────────────────────
-const renderPricing = async () => {
-  const c = document.getElementById('page-content');
-  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
-  try {
-    const [{ config }, stData] = await Promise.all([
-      req('GET', '/pricing'),
-      stReq('GET', '/'),
-    ]);
-    const serviceTypes = (stData.serviceTypes || []).sort((a, b) => (a.sortOrder ?? 99) - (b.sortOrder ?? 99));
-    const serviceBasePrices = config.serviceBasePrices || {};
-
-    const serviceRows = serviceTypes.length
-      ? serviceTypes.map((st) => {
-        const custom = serviceBasePrices[st.slug] !== undefined && serviceBasePrices[st.slug] !== null;
-        const value = custom ? Number(serviceBasePrices[st.slug]) : Number(config.basePricePerHour || 35);
-        return `
-          <tr>
-            <td>
-              <strong>${escHtml(st.name)}</strong>
-              <div style="font-size:12px;color:#7A84A0;margin-top:3px">slug: ${escHtml(st.slug)}</div>
-            </td>
-            <td>
-              <span class="badge ${st.status === 'enabled' ? 'badge-approved' : 'badge-rejected'}">
-                ${st.status === 'enabled' ? 'Ativo' : 'Desativado'}
-              </span>
-            </td>
-            <td>
-              <input
-                id="pr-svc-${escHtml(st.slug)}"
-                data-service-price="1"
-                data-slug="${escHtml(st.slug)}"
-                type="number"
-                class="form-input"
-                value="${value}"
-                min="1"
-                max="1000"
-                step="1"
-                style="max-width:160px"
-              />
-            </td>
-            <td style="font-size:12px;color:#7A84A0">
-              ${custom ? 'Preço personalizado' : 'Usando base global'}
-            </td>
-          </tr>`;
-      }).join('')
-      : `<tr><td colspan="4" style="text-align:center;color:#7A84A0">Nenhum tipo de serviço cadastrado.</td></tr>`;
-
-    c.innerHTML = `
-      <div class="section-header">
-        <h2>💰 Configuração de Preços</h2>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr;gap:18px;max-width:1040px">
-        <div class="section-card">
-          <div class="section-header"><h2>Parâmetros Globais</h2></div>
-          <div style="padding:18px 22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Preço base por hora (R$)</label>
-              <input id="pr-base" type="number" class="form-input" value="${config.basePricePerHour}" min="10" max="1000" step="1" />
-            </div>
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Taxa da plataforma (%)</label>
-              <input id="pr-fee" type="number" class="form-input" value="${config.platformFeePercent}" min="0" max="50" step="0.5" />
-            </div>
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Adicional com produtos (R$/h)</label>
-              <input id="pr-surcharge" type="number" class="form-input" value="${config.productsSurcharge}" min="0" max="200" step="1" />
-            </div>
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Mínimo de horas</label>
-              <input id="pr-min" type="number" class="form-input" value="${config.minHours}" min="1" max="12" />
-            </div>
-            <div class="form-group" style="margin-bottom:0">
-              <label class="form-label">Máximo de horas</label>
-              <input id="pr-max" type="number" class="form-input" value="${config.maxHours}" min="2" max="24" />
-            </div>
-            <div class="form-group" style="margin-bottom:0;grid-column:1 / -1">
-              <label class="form-label">Opções de horas (separado por vírgula)</label>
-              <input id="pr-options" type="text" class="form-input" value="${config.hoursOptions.join(', ')}" placeholder="2, 3, 4, 5, 6, 8" />
-            </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-header">
-            <h2>Preço Base por Tipo de Serviço</h2>
-            <span style="font-size:12px;color:#7A84A0">Se não alterar, usa o preço global</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Serviço</th>
-                  <th>Status</th>
-                  <th>Preço Base (R$/h)</th>
-                  <th>Regra</th>
-                </tr>
-              </thead>
-              <tbody>${serviceRows}</tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-header"><h2>Pré-visualização</h2></div>
-          <div style="padding:18px 22px;display:flex;flex-direction:column;gap:8px">
-            <div id="pr-preview" style="font-size:14px;color:#B0B8D0;line-height:1.7">—</div>
-          </div>
-        </div>
-
-        <div style="display:flex;justify-content:flex-end;gap:10px">
-          <button class="btn btn-primary" onclick="savePricing()">Salvar configurações</button>
-        </div>
-      </div>`;
-
-    // Preview dinâmico
-    const updatePreview = () => {
-      const base = parseFloat(document.getElementById('pr-base').value) || 35;
-      const fee = parseFloat(document.getElementById('pr-fee').value) || 15;
-      const s = parseFloat(document.getElementById('pr-surcharge').value) || 5;
-      const firstServiceInput = document.querySelector('[data-service-price="1"]');
-      const serviceName = firstServiceInput?.closest('tr')?.querySelector('strong')?.textContent || 'Serviço selecionado';
-      const servicePrice = firstServiceInput ? (parseFloat(firstServiceInput.value) || base) : base;
-      const priceWith = servicePrice + s;
-      const total4 = servicePrice * 4;
-      document.getElementById('pr-preview').innerHTML =
-        '<b>' + escHtml(serviceName) + '</b><br>' +
-        'Sem produtos: R$ ' + servicePrice + '/h → 4h = <b>R$ ' + total4.toFixed(2) + '</b><br>' +
-        'Com produtos do prof.: R$ ' + priceWith + '/h → 4h = <b>R$ ' + (priceWith * 4).toFixed(2) + '</b><br>' +
-        'Taxa plataforma: ' + fee + '% = R$ ' + (total4 * fee / 100).toFixed(2) +
-        ' (prof. recebe R$ ' + (total4 * (1 - fee / 100)).toFixed(2) + ')';
-    };
-    ['pr-base', 'pr-fee', 'pr-surcharge'].forEach(id =>
-      document.getElementById(id).addEventListener('input', updatePreview));
-    document.querySelectorAll('[data-service-price="1"]').forEach(el => {
-      el.addEventListener('input', updatePreview);
-    });
-    updatePreview();
-  } catch (err) { c.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`; }
-};
-
-const savePricing = async () => {
-  const base = parseFloat(document.getElementById('pr-base').value);
-  const fee = parseFloat(document.getElementById('pr-fee').value);
-  const surcharge = parseFloat(document.getElementById('pr-surcharge').value);
-  const minH = parseInt(document.getElementById('pr-min').value);
-  const maxH = parseInt(document.getElementById('pr-max').value);
-  const optStr = document.getElementById('pr-options').value;
-  const serviceBasePrices = {};
-
-  document.querySelectorAll('[data-service-price="1"]').forEach((el) => {
-    const slug = el.getAttribute('data-slug');
-    const n = parseFloat(el.value);
-    if (slug && Number.isFinite(n) && n > 0) {
-      serviceBasePrices[slug] = n;
-    }
-  });
-
-  const hoursOptions = optStr.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-  if (!Number.isFinite(base) || base < 10 || !Number.isFinite(fee) || fee < 0 || minH < 1 || maxH < 2 || hoursOptions.length === 0) {
-    showAlert('Verifique os valores inseridos.'); return;
-  }
-  if (minH > maxH) {
-    showAlert('Mín. horas não pode ser maior que Máx. horas.'); return;
-  }
-  try {
-    await req('PATCH', '/pricing', {
-      basePricePerHour: base,
-      serviceBasePrices,
-      platformFeePercent: fee,
-      productsSurcharge: surcharge,
-      minHours: minH,
-      maxHours: maxH,
-      hoursOptions,
-    });
-    showAlert('Configurações salvas com sucesso!', 'success');
   } catch (err) { showAlert(err.message); }
 };
 
