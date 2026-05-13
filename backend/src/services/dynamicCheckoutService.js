@@ -31,7 +31,13 @@ function normalizeFieldValue(field, rawValue) {
     }
 
     if (Number.isFinite(field.min) && numberValue < field.min) {
-      return { ok: false, error: `${field.label} deve ser >= ${field.min}` };
+      if (field.required) {
+        return { ok: false, error: `${field.label} deve ser >= ${field.min}` };
+      }
+      // Não obrigatório: clamp para o mínimo (ou usa defaultValue se >= min)
+      const dv = Number(field.defaultValue);
+      const fallback = Number.isFinite(dv) && dv >= field.min ? dv : field.min;
+      return { ok: true, value: fallback };
     }
     if (Number.isFinite(field.max) && numberValue > field.max) {
       return { ok: false, error: `${field.label} deve ser <= ${field.max}` };

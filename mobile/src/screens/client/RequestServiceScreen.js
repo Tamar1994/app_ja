@@ -26,12 +26,20 @@ function getDateLabel(date) {
 function buildInitialCustomFormData(fields = []) {
   const initial = {};
   (fields || []).forEach((field) => {
+    if (field.inputType === 'number') {
+      const min = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
+      const dv = field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== ''
+        ? Number(field.defaultValue)
+        : NaN;
+      // Usa defaultValue se for um número válido e >= min; caso contrário usa min
+      initial[field.key] = Number.isFinite(dv) && dv >= min ? dv : min;
+      return;
+    }
     if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
       initial[field.key] = field.defaultValue;
       return;
     }
     if (field.inputType === 'boolean') initial[field.key] = false;
-    if (field.inputType === 'number') initial[field.key] = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
     if (field.inputType === 'text') initial[field.key] = '';
     if (field.inputType === 'select') {
       const first = Array.isArray(field.options) && field.options.length ? field.options[0].value : '';
@@ -428,10 +436,11 @@ export default function RequestServiceScreen({ navigation, route }) {
                   }
 
                   if (field.inputType === 'number') {
-                    const current = Number(value || 0);
                     const min = Number.isFinite(Number(field.min)) ? Number(field.min) : 0;
                     const max = Number.isFinite(Number(field.max)) ? Number(field.max) : Number.MAX_SAFE_INTEGER;
                     const stepSize = Number.isFinite(Number(field.step)) ? Number(field.step) : 1;
+                    // Usa nullish coalescing para não tratar 0 como falsy
+                    const current = Number(value ?? min);
 
                     return (
                       <View key={field.key} style={styles.counterCard}>
