@@ -711,7 +711,7 @@ router.patch('/specialist-certificates/:id/approve', adminAuth, requirePermissio
     await logAudit({
       module: 'financial',
       action: 'specialist_certificate_approved',
-      severity: 'medium',
+      severity: 'normal',
       actorType: 'admin',
       actorAdminId: req.admin._id,
       targetType: 'user',
@@ -2374,7 +2374,7 @@ router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USE
       action: 'push_campaign_sent',
       actorType: 'admin',
       actorAdminId: req.admin._id,
-      severity: 'medium',
+      severity: 'normal',
       message: `Campanha push enviada → público: ${audience} | destinatários: ${sent} | erros: ${errors} | título: "${title}"`,
     });
 
