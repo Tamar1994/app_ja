@@ -51,6 +51,14 @@ router.post('/documents', auth, upload.fields([
       return res.status(400).json({ message: 'Envie a selfie, a frente e o verso do documento.' });
     }
 
+    const isProfessional = req.user.userType === 'professional';
+
+    // Comprovante de residência é obrigatório para profissionais
+    if (isProfessional && !req.files?.residenceProof && !existingUser?.residenceProofUrl) {
+      await cleanupRequestUploads(req);
+      return res.status(400).json({ message: 'Profissionais devem enviar o comprovante de residência.' });
+    }
+
     const selfieUrl = `/uploads/${req.files.selfie[0].filename}`;
     const documentUrl = `/uploads/${req.files.document[0].filename}`;
     const documentBackUrl = `/uploads/${req.files.documentBack[0].filename}`;
@@ -62,15 +70,21 @@ router.post('/documents', auth, upload.fields([
     const previousDocumentUrl = existingUser?.documentUrl || null;
     const previousDocumentBackUrl = existingUser?.documentBackUrl || null;
 
-    await User.findByIdAndUpdate(req.user._id, {
-      selfieUrl,
-      documentUrl,
-      documentBackUrl,
-      residenceProofUrl,
-      // Selfie vira foto de perfil automaticamente
-      avatar: selfieUrl,
-      verificationStatus: 'pending_review',
-    });
+    // Clientes são aprovados automaticamente; profissionais aguardam revisão
+    const newVerificationStatus = isProfessional ? 'pending_review' : 'approved';
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        selfieUrl,
+        documentUrl,
+        documentBackUrl,
+        residenceProofUrl,
+        avatar: selfieUrl,
+        verificationStatus: newVerificationStatus,
+      },
+      { new: true }
+    ).select('selfieUrl documentUrl documentBackUrl residenceProofUrl avatar verificationStatus userType activeProfile name email');
 
     try {
       await deleteUploadFiles([previousSelfieUrl, previousDocumentUrl, previousDocumentBackUrl]);
@@ -78,7 +92,10 @@ router.post('/documents', auth, upload.fields([
       console.error('Erro ao remover documentos antigos:', cleanupError);
     }
 
-    res.json({ message: 'Documentos enviados com sucesso. Sua conta está em análise.' });
+    const msg = isProfessional
+      ? 'Documentos enviados com sucesso. Sua conta está em análise.'
+      : 'Documentos enviados com sucesso!';
+    res.json({ message: msg, user: updatedUser });
   } catch (err) {
     await cleanupRequestUploads(req);
     console.error(err);

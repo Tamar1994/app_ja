@@ -205,7 +205,7 @@ async function calculateCheckoutPricing({ hours, hasProducts, serviceTypeSlug = 
     estimated,
     platformFee,
     amountCents: Math.round(estimated * 100),
-    usedServiceBasePrice: Number.isFinite(serviceBase),
+    usedServiceBasePrice: false,
     usedServiceMinutePrice: Number.isFinite(servicePricePerMinute) && servicePricePerMinute > 0,
     platformFeePercent: resolvedPlatformFeePercent,
     minHours: resolvedMinHours,

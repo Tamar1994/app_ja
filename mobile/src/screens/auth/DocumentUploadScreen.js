@@ -58,8 +58,13 @@ export default function DocumentUploadScreen({ navigation }) {
   };
 
   const handleUpload = async () => {
+    const isProfessional = (user?.activeProfile || user?.userType) === 'professional';
     if (!selfie || !document || !documentBack) {
       Alert.alert('Atenção', 'Envie a selfie, a frente e o verso do documento.');
+      return;
+    }
+    if (isProfessional && !residenceProof) {
+      Alert.alert('Atenção', 'Profissionais devem enviar o comprovante de residência.');
       return;
     }
     setLoading(true);
@@ -77,18 +82,26 @@ export default function DocumentUploadScreen({ navigation }) {
         });
       }
       const res = await uploadDocuments(formData);
-      if (setUser) setUser(prev => ({ ...prev, verificationStatus: 'pending_review' }));
-      // navigation pode ser undefined quando renderizado diretamente pelo RootNavigator
-      // Nesse caso, setUser() já dispara re-render automático para PendingApprovalScreen
-      if (navigation) navigation.replace('PendingApproval');
+      // Atualiza o estado com os dados retornados pelo servidor
+      // O RootNavigator vai redirecionar automaticamente baseado no novo estado
+      if (setUser && res?.user) {
+        setUser(prev => ({ ...prev, ...res.user }));
+      } else if (setUser) {
+        // fallback: buscar dados frescos
+        const { data } = await userAPI.getMe();
+        setUser(data.user);
+      }
+      // navegação explícita só se nav prop estiver disponível (fluxo do AuthNavigator)
+      if (navigation) {
+        if (isProfessional) navigation.replace('PendingApproval');
+      }
     } catch (err) {
-      // Antes de mostrar erro: verificar se o upload chegou ao servidor
-      // (pode ocorrer timeout de rede mesmo com upload bem-sucedido)
+      // Verificar se upload chegou ao servidor mesmo com erro de rede
       try {
         const { data } = await userAPI.getMe();
-        if (data.user?.verificationStatus === 'pending_review') {
+        if (data.user?.selfieUrl) {
           if (setUser) setUser(data.user);
-          if (navigation) navigation.replace('PendingApproval');
+          if (navigation && isProfessional) navigation.replace('PendingApproval');
           return;
         }
       } catch {}
@@ -124,6 +137,8 @@ export default function DocumentUploadScreen({ navigation }) {
       </TouchableOpacity>
     </View>
   );
+
+  const isProfessional = (user?.activeProfile || user?.userType) === 'professional';
 
   return (
     <View style={styles.container}>
@@ -181,19 +196,19 @@ export default function DocumentUploadScreen({ navigation }) {
           <PhotoCard
             type="residenceProof"
             image={residenceProof}
-            label="🏠 Comprovante de residência (opcional)"
+            label={isProfessional ? '🏠 Comprovante de residência (obrigatório)' : '🏠 Comprovante de residência (opcional)'}
             hint="Conta de água, luz, gás, etc. — Foto ou PDF"
             icon="document-outline"
           />
 
           <TouchableOpacity
-            style={[styles.btn, (!selfie || !document || !documentBack || loading) && styles.btnDisabled]}
+            style={[styles.btn, (!selfie || !document || !documentBack || (isProfessional && !residenceProof) || loading) && styles.btnDisabled]}
             onPress={handleUpload}
-            disabled={!selfie || !document || !documentBack || loading}
+            disabled={!selfie || !document || !documentBack || (isProfessional && !residenceProof) || loading}
             activeOpacity={0.85}
           >
             <LinearGradient
-              colors={(!selfie || !document || !documentBack || loading) ? ['#ccc', '#bbb'] : colors.gradientPrimary}
+              colors={(!selfie || !document || !documentBack || (isProfessional && !residenceProof) || loading) ? ['#ccc', '#bbb'] : colors.gradientPrimary}
               style={styles.btnGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}

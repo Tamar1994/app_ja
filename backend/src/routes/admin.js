@@ -592,7 +592,7 @@ router.get('/approvals', adminAuth, async (req, res) => {
   const limit = parseInt(req.query.limit) || 20;
   try {
     const users = await User.find({ verificationStatus: 'pending_review' })
-      .select('name email phone userType cpf birthDate selfieUrl documentUrl createdAt')
+      .select('name email phone userType cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl createdAt')
       .sort({ createdAt: 1 }) // mais antigo primeiro
       .skip((page - 1) * limit)
       .limit(limit);
@@ -607,7 +607,7 @@ router.get('/approvals', adminAuth, async (req, res) => {
 router.get('/approvals/:id', adminAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .select('name email phone userType cpf birthDate selfieUrl documentUrl createdAt verificationStatus');
+      .select('name email phone userType cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl createdAt verificationStatus');
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
     res.json(user);
   } catch (err) {

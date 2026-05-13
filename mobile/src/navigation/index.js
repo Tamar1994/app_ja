@@ -52,6 +52,11 @@ export default function RootNavigator() {
     // Determina qual perfil está ativo no momento
     const activeMode = user.activeProfile || user.userType;
 
+    // Clientes também precisam enviar selfie + documento antes de usar o app
+    if (activeMode === 'client' && !user.selfieUrl) {
+      return <DocumentUploadScreen />;
+    }
+
     // Verificação de documentos só é necessária quando o modo profissional está ativo
     if (activeMode === 'professional') {
       // 1) Endereço residencial — obrigatório antes do envio de documentos

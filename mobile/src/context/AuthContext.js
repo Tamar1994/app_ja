@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { authAPI, userAPI } from '../services/api';
+import { registerForPushNotifications } from '../services/notifications';
 
 const AuthContext = createContext(null);
 
@@ -9,10 +10,22 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [networkError, setNetworkError] = useState(false);
+  const pushRegisteredRef = useRef(false);
 
   useEffect(() => {
     loadStoredAuth();
   }, []);
+
+  // Registrar token de push para TODOS os tipos de usuário assim que logar
+  useEffect(() => {
+    if (!user || pushRegisteredRef.current) return;
+    pushRegisteredRef.current = true;
+    registerForPushNotifications()
+      .then((pushToken) => {
+        if (pushToken) userAPI.savePushToken(pushToken).catch(() => {});
+      })
+      .catch(() => {});
+  }, [user?._id]);
 
   const loadStoredAuth = async () => {
     setNetworkError(false);
