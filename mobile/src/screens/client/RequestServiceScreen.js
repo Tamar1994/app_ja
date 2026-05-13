@@ -75,6 +75,8 @@ export default function RequestServiceScreen({ navigation, route }) {
     street: '', neighborhood: '', city: '', state: '', zipCode: '', complement: '',
     coordinates: [0, 0],
   });
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepError, setCepError] = useState('');
   const [estimate, setEstimate] = useState(null);
   const [loadingEstimate, setLoadingEstimate] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
@@ -130,6 +132,35 @@ export default function RequestServiceScreen({ navigation, route }) {
   useEffect(() => {
     if (coverageNotice) setCoverageNotice('');
   }, [address.city, address.state]);
+
+  const fetchViaCep = async (rawCep) => {
+    const cep = rawCep.replace(/\D/g, '');
+    if (cep.length !== 8) {
+      setCepError('');
+      return;
+    }
+    setCepLoading(true);
+    setCepError('');
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await response.json();
+      if (data.erro) {
+        setCepError('CEP não encontrado.');
+        return;
+      }
+      setAddress((prev) => ({
+        ...prev,
+        street: data.logradouro || prev.street,
+        neighborhood: data.bairro || prev.neighborhood,
+        city: data.localidade || prev.city,
+        state: data.uf || prev.state,
+      }));
+    } catch {
+      setCepError('Não foi possível consultar o CEP. Verifique sua conexão.');
+    } finally {
+      setCepLoading(false);
+    }
+  };
 
   const fetchEstimate = async () => {
     setLoadingEstimate(true);
@@ -614,8 +645,36 @@ export default function RequestServiceScreen({ navigation, route }) {
               </LinearGradient>
             </TouchableOpacity>
 
+            {/* CEP com auto-preenchimento ViaCEP */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>CEP</Text>
+              <View style={styles.cepRow}>
+                <TextInput
+                  style={[styles.inputField, styles.cepInput]}
+                  placeholder="00000-000"
+                  placeholderTextColor={colors.textLight}
+                  keyboardType="numeric"
+                  maxLength={9}
+                  value={address.zipCode}
+                  onChangeText={(v) => {
+                    setAddress((prev) => ({ ...prev, zipCode: v }));
+                    fetchViaCep(v);
+                  }}
+                />
+                {cepLoading && (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.primary}
+                    style={styles.cepSpinner}
+                  />
+                )}
+              </View>
+              {!!cepError && (
+                <Text style={styles.cepErrorText}>{cepError}</Text>
+              )}
+            </View>
+
             {[
-              { label: 'CEP', key: 'zipCode', keyboard: 'numeric', placeholder: '00000-000' },
               { label: 'Rua / Logradouro', key: 'street', placeholder: 'Rua das Flores, 123' },
               { label: 'Bairro', key: 'neighborhood', placeholder: 'Centro' },
               { label: 'Cidade', key: 'city', placeholder: 'São Paulo' },
@@ -628,7 +687,6 @@ export default function RequestServiceScreen({ navigation, route }) {
                   style={styles.inputField}
                   placeholder={field.placeholder}
                   placeholderTextColor={colors.textLight}
-                  keyboardType={field.keyboard || 'default'}
                   value={address[field.key]}
                   onChangeText={(v) => setAddress((prev) => ({ ...prev, [field.key]: v }))}
                 />
@@ -875,6 +933,23 @@ const styles = StyleSheet.create({
   },
   locationBtnText: { color: colors.white, fontWeight: '700', fontSize: typography.fontSizes.md },
   inputGroup: {},
+  cepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cepInput: {
+    flex: 1,
+  },
+  cepSpinner: {
+    position: 'absolute',
+    right: 14,
+  },
+  cepErrorText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.error,
+    marginTop: 4,
+    marginLeft: 4,
+  },
   inputField: {
     backgroundColor: colors.white,
     borderRadius: borderRadius.xl,
