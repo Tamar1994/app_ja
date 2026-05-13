@@ -2,7 +2,9 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const ServiceRequest = require('../models/ServiceRequest');
 const ServiceChat = require('../models/ServiceChat');
+const User = require('../models/User');
 const { ensureServiceChatForRequest } = require('../utils/serviceChat');
+const { sendExpoPush } = require('../utils/requestQueue');
 
 const router = express.Router();
 
@@ -54,6 +56,26 @@ router.post('/request/:requestId/message', auth, async (req, res) => {
       text: text.trim(),
     });
     await chat.save();
+
+    // Notificar o outro participante via push notification
+    try {
+      const senderType = req.user.userType === 'professional' ? 'professional' : 'client';
+      const recipientId = senderType === 'client'
+        ? serviceRequest.professional?._id
+        : serviceRequest.client?._id;
+      if (recipientId) {
+        const recipient = await User.findById(recipientId).select('pushToken name');
+        if (recipient?.pushToken) {
+          const senderName = req.user.name || (senderType === 'client' ? 'Cliente' : 'Profissional');
+          sendExpoPush(
+            recipient.pushToken,
+            `💬 ${senderName}`,
+            text.trim().length > 80 ? text.trim().substring(0, 80) + '…' : text.trim(),
+            { type: 'chat_message', requestId: serviceRequest._id.toString() }
+          );
+        }
+      }
+    } catch { /* push é melhor esforço */ }
 
     res.json({ message: 'Mensagem enviada', chat });
   } catch {

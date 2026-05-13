@@ -7,6 +7,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, userAPI } from '../../services/api';
@@ -48,6 +49,24 @@ export default function DashboardScreen({ navigation }) {
         if (token) userAPI.savePushToken(token).catch(() => {});
       })
       .catch(() => {});
+
+    // Solicitar permissão de localização — necessária para receber pedidos próximos
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Localização necessária',
+          'O Já! precisa da sua localização para enviar pedidos próximos a você. Ative a permissão de localização nas configurações do dispositivo.',
+          [{ text: 'Entendido' }]
+        );
+      } else {
+        // Enviar localização atual ao servidor imediatamente
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          userAPI.updateLocation(loc.coords.longitude, loc.coords.latitude).catch(() => {});
+        } catch { /* não-crítico */ }
+      }
+    })();
 
     // Quando chega novo pedido: mostrar modal tipo ligação
     const unsub = on('new_request', (data) => {
@@ -91,7 +110,12 @@ export default function DashboardScreen({ navigation }) {
       const pending = getPendingNotification();
       if (pending) {
         clearPendingNotification();
-        setTimeout(() => setIncomingJob(pending), 300);
+        if (pending.type === 'chat_message' && pending.requestId) {
+          // Abrir chat da mensagem recebida
+          setTimeout(() => navigation.navigate('ServiceChat', { requestId: pending.requestId, role: 'professional' }), 300);
+        } else {
+          setTimeout(() => setIncomingJob(pending), 300);
+        }
       }
       loadRequests();
       return () => {

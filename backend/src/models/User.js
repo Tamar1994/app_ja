@@ -161,6 +161,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Data em que o usuário aceitou os Termos de Uso
+  termsAcceptedAt: {
+    type: Date,
+    default: null,
+  },
 }, { timestamps: true });
 
 // Índice geoespacial para busca por proximidade

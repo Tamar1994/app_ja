@@ -217,4 +217,4 @@ function clearRequestTimer(requestId) {
   }
 }
 
-module.exports = { dispatchToNextProfessional, clearRequestTimer };
+module.exports = { dispatchToNextProfessional, clearRequestTimer, sendExpoPush };

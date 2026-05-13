@@ -151,6 +151,7 @@ export const serviceTypeAPI = {
 
 export const termsAPI = {
   get: () => api.get('/terms'),
+  accept: () => api.post('/auth/accept-terms'),
 };
 
 export const uploadAPI = {

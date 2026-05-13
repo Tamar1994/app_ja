@@ -633,11 +633,29 @@ const openApprovalModal = async (id) => {
           </div>
         </div>
         <div>
-          <div class="doc-img-label">🪪 Documento</div>
+          <div class="doc-img-label">🪪 Documento — Frente</div>
           <div class="doc-img-wrap" ${u.documentUrl ? `onclick="openImageZoom('${u.documentUrl}')"` : ''}>
             ${u.documentUrl
-              ? `<img src="${u.documentUrl}" alt="Documento" /><span class="doc-img-zoom-hint">🔍 Clique para ampliar</span>`
+              ? `<img src="${u.documentUrl}" alt="Documento frente" /><span class="doc-img-zoom-hint">🔍 Clique para ampliar</span>`
               : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#3D4460;font-size:13px;">Sem imagem</div>'}
+          </div>
+        </div>
+        <div>
+          <div class="doc-img-label">🪪 Documento — Verso</div>
+          <div class="doc-img-wrap" ${u.documentBackUrl ? `onclick="openImageZoom('${u.documentBackUrl}')"` : ''}>
+            ${u.documentBackUrl
+              ? `<img src="${u.documentBackUrl}" alt="Documento verso" /><span class="doc-img-zoom-hint">🔍 Clique para ampliar</span>`
+              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#3D4460;font-size:13px;">Sem imagem</div>'}
+          </div>
+        </div>
+        <div>
+          <div class="doc-img-label">🏠 Comprovante de Residência</div>
+          <div class="doc-img-wrap" ${u.residenceProofUrl ? `onclick="openImageZoom('${u.residenceProofUrl}')"` : ''} style="grid-column:span 2;">
+            ${u.residenceProofUrl
+              ? (u.residenceProofUrl.endsWith('.pdf')
+                  ? `<a href="${u.residenceProofUrl}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#FF6B00;gap:8px;text-decoration:none;"><span style="font-size:36px;">📄</span><span style="font-size:13px;font-weight:600;">Abrir PDF</span></a>`
+                  : `<img src="${u.residenceProofUrl}" alt="Comprovante de residência" /><span class="doc-img-zoom-hint">🔍 Clique para ampliar</span>`)
+              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#3D4460;font-size:13px;">Não enviado (opcional)</div>'}
           </div>
         </div>
       </div>

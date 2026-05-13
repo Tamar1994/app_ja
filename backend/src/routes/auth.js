@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
+const auth = require('../middleware/auth');
 const { sendVerificationEmail } = require('../services/emailService');
 
 const router = express.Router();
@@ -30,6 +31,7 @@ const buildAuthUserPayload = (user) => ({
   professional: user.professional,
   wallet: user.wallet,
   clientWallet: user.clientWallet,
+  termsAcceptedAt: user.termsAcceptedAt || null,
 });
 
 // POST /api/auth/register
@@ -209,6 +211,20 @@ router.post('/login', [
     });
   } catch {
     res.status(500).json({ message: 'Erro ao fazer login' });
+  }
+});
+
+// POST /api/auth/accept-terms — registra aceite dos Termos de Uso
+router.post('/accept-terms', auth, async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { termsAcceptedAt: new Date() },
+      { new: true }
+    );
+    res.json({ user: buildAuthUserPayload(user) });
+  } catch {
+    res.status(500).json({ message: 'Erro ao registrar aceite dos termos' });
   }
 });
 

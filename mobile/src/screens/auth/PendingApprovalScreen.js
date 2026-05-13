@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, AppState,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,17 @@ export default function PendingApprovalScreen() {
   const { user, logout, setUser } = useAuth();
   const { on } = useSocket();
   const isRejected = user?.verificationStatus === 'rejected';
+  const pollRef = useRef(null);
+  const appStateRef = useRef(AppState.currentState);
+
+  const refreshStatus = async () => {
+    try {
+      const { data } = await userAPI.getMe();
+      if (data.user && (data.user.verificationStatus === 'approved' || data.user.verificationStatus === 'rejected')) {
+        if (setUser) setUser(data.user);
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     const unsubApproved = on('account_approved', async () => {
@@ -27,7 +38,24 @@ export default function PendingApprovalScreen() {
         if (setUser) setUser({ ...(data.user || user), verificationStatus: 'rejected', rejectionReason: reason });
       } catch {}
     });
-    return () => { unsubApproved && unsubApproved(); unsubRejected && unsubRejected(); };
+
+    // Polling a cada 30s — fallback caso socket não esteja conectado
+    pollRef.current = setInterval(refreshStatus, 30000);
+
+    // Recarregar ao voltar para foreground
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
+        refreshStatus();
+      }
+      appStateRef.current = nextState;
+    });
+
+    return () => {
+      unsubApproved && unsubApproved();
+      unsubRejected && unsubRejected();
+      clearInterval(pollRef.current);
+      appStateSub.remove();
+    };
   }, []);
 
   return (

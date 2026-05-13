@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { requestAPI, userAPI } from '../../services/api';
+import { requestAPI, userAPI, serviceChatAPI } from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { formatHours } from '../../utils/format';
@@ -18,7 +18,29 @@ export default function ActiveJobScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [clientConfirmed, setClientConfirmed] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [unreadChat, setUnreadChat] = useState(0);
+  const lastSeenPeerMsgCount = useRef(null);
+  const chatPollRef = useRef(null);
   const locationIntervalRef = useRef(null);
+
+  // Polling para badge de mensagens não lidas do cliente
+  const checkChatUnread = async () => {
+    try {
+      const res = await serviceChatAPI.getByRequest(requestId);
+      const msgs = res.data.chat?.messages || [];
+      const peerCount = msgs.filter(m => m.sender === 'client').length;
+      if (lastSeenPeerMsgCount.current === null) {
+        lastSeenPeerMsgCount.current = peerCount;
+      } else if (peerCount > lastSeenPeerMsgCount.current) {
+        setUnreadChat(peerCount - lastSeenPeerMsgCount.current);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    chatPollRef.current = setInterval(checkChatUnread, 15000);
+    return () => clearInterval(chatPollRef.current);
+  }, [requestId]);
 
   useEffect(() => {
     loadRequest();
@@ -280,11 +302,20 @@ export default function ActiveJobScreen({ navigation, route }) {
             {clientConfirmed && (
               <TouchableOpacity
                 style={styles.callBtn}
-                onPress={() => navigation.navigate('ServiceChat', { requestId, peerName: request.client.name, role: 'professional' })}
+                onPress={() => {
+                  lastSeenPeerMsgCount.current = null;
+                  setUnreadChat(0);
+                  navigation.navigate('ServiceChat', { requestId, peerName: request.client.name, role: 'professional' });
+                }}
               >
                 <LinearGradient colors={colors.gradientSecondary} style={styles.callBtnGrad}>
                   <Ionicons name="chatbubble-ellipses" size={18} color={colors.white} />
                 </LinearGradient>
+                {unreadChat > 0 && (
+                  <View style={styles.chatBadge}>
+                    <Text style={styles.chatBadgeText}>{unreadChat > 9 ? '9+' : unreadChat}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             )}
           </View>
@@ -476,11 +507,20 @@ const styles = StyleSheet.create({
   clientInfo: { flex: 1 },
   clientName: { fontSize: typography.fontSizes.lg, fontWeight: '700', color: colors.textPrimary },
   clientPhone: { fontSize: typography.fontSizes.sm, color: colors.textSecondary, marginTop: 2 },
-  callBtn: { borderRadius: 22, overflow: 'hidden' },
+  callBtn: { borderRadius: 22, overflow: 'visible', position: 'relative' },
   callBtnGrad: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
+  chatBadge: {
+    position: 'absolute', top: -4, right: -4,
+    backgroundColor: '#E53935',
+    borderRadius: 10, minWidth: 18, height: 18,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, zIndex: 10,
+    borderWidth: 1.5, borderColor: colors.white,
+  },
+  chatBadgeText: { color: colors.white, fontSize: 10, fontWeight: '700' },
   detailsCard: {
     backgroundColor: colors.white,
     borderRadius: borderRadius.xl,

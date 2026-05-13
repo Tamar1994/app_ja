@@ -80,17 +80,17 @@ export default function DocumentUploadScreen({ navigation }) {
       if (setUser) setUser(prev => ({ ...prev, verificationStatus: 'pending_review' }));
       navigation.replace('PendingApproval');
     } catch (err) {
-      if (!err.response) {
-        try {
-          const { data } = await userAPI.getMe();
-          if (data.user?.verificationStatus === 'pending_review') {
-            if (setUser) setUser(data.user);
-            navigation.replace('PendingApproval');
-            return;
-          }
-        } catch {}
-      }
-      Alert.alert('Erro', err.response?.data?.message || 'Erro ao enviar documentos. Tente novamente.');
+      // Antes de mostrar erro: verificar se o upload chegou ao servidor
+      // (pode ocorrer timeout de rede mesmo com upload bem-sucedido)
+      try {
+        const { data } = await userAPI.getMe();
+        if (data.user?.verificationStatus === 'pending_review') {
+          if (setUser) setUser(data.user);
+          navigation.replace('PendingApproval');
+          return;
+        }
+      } catch {}
+      Alert.alert('Erro', err.response?.data?.message || 'Erro ao enviar documentos. Verifique sua conexão e tente novamente.');
     } finally {
       setLoading(false);
     }

@@ -12,6 +12,7 @@ import ClientNavigator from './ClientNavigator';
 import ProfessionalNavigator from './ProfessionalNavigator';
 import DocumentUploadScreen from '../screens/auth/DocumentUploadScreen';
 import PendingApprovalScreen from '../screens/auth/PendingApprovalScreen';
+import AcceptTermsScreen from '../screens/auth/AcceptTermsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -43,11 +44,22 @@ export default function RootNavigator() {
   const renderMain = () => {
     if (!user) return <AuthNavigator />;
     if (!user.isEmailVerified) return <AuthNavigator />;
-    if (user.verificationStatus === 'pending_documents') return <DocumentUploadScreen />;
-    if (user.verificationStatus === 'pending_review') return <PendingApprovalScreen />;
-    if (user.verificationStatus === 'rejected') return <PendingApprovalScreen />;
-    // approved
-    return user.userType === 'client' ? <ClientNavigator /> : <ProfessionalNavigator />;
+
+    // Aceite dos Termos de Uso — obrigatório antes de qualquer outra etapa
+    if (!user.termsAcceptedAt) return <AcceptTermsScreen />;
+
+    // Determina qual perfil está ativo no momento
+    const activeMode = user.activeProfile || user.userType;
+
+    // Verificação de documentos só é necessária quando o modo profissional está ativo
+    if (activeMode === 'professional') {
+      if (user.verificationStatus === 'pending_documents') return <DocumentUploadScreen />;
+      if (user.verificationStatus === 'pending_review') return <PendingApprovalScreen />;
+      if (user.verificationStatus === 'rejected') return <PendingApprovalScreen />;
+    }
+
+    // Navega conforme perfil ativo
+    return activeMode === 'client' ? <ClientNavigator /> : <ProfessionalNavigator />;
   };
 
   return (

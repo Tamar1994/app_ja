@@ -284,21 +284,39 @@ export default function RegisterScreen({ navigation }) {
               {userType === 'professional' && (
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Suas profissões *</Text>
+                  <Text style={styles.profHint}>Selecione uma ou mais áreas de atuação</Text>
                   {loadingTypes ? (
-                    <ActivityIndicator color={colors.secondary} style={{ marginTop: 8 }} />
+                    <ActivityIndicator color={colors.secondary} style={{ marginTop: 12 }} />
                   ) : serviceTypes.length === 0 ? (
                     <Text style={styles.profEmpty}>Nenhuma profissão disponível no momento.</Text>
                   ) : (
-                    <View>
-                      {serviceTypes.map((item) => (
-                        <TouchableOpacity
-                          key={item._id}
-                          style={[styles.professionItem, selectedProfessions.includes(item._id) && styles.professionItemSelected]}
-                          onPress={() => toggleProfession(item._id)}
-                        >
-                          <Text style={styles.professionText}>{item.name}</Text>
-                        </TouchableOpacity>
-                      ))}
+                    <View style={styles.profGrid}>
+                      {serviceTypes.map((item) => {
+                        const selected = selectedProfessions.includes(item._id);
+                        return (
+                          <TouchableOpacity
+                            key={item._id}
+                            style={[styles.profBox, selected && styles.profBoxSelected]}
+                            onPress={() => toggleProfession(item._id)}
+                            activeOpacity={0.75}
+                          >
+                            {selected && (
+                              <View style={styles.profCheckBadge}>
+                                <Ionicons name="checkmark" size={11} color="#fff" />
+                              </View>
+                            )}
+                            <Ionicons
+                              name={item.icon || 'briefcase-outline'}
+                              size={26}
+                              color={selected ? colors.secondary : colors.textLight}
+                              style={{ marginBottom: 6 }}
+                            />
+                            <Text style={[styles.profBoxText, selected && styles.profBoxTextSelected]}>
+                              {item.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   )}
                 </View>
@@ -517,6 +535,48 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   profCheck: { position: 'absolute', top: 8, right: 8 },
-  profHint: { fontSize: 11, color: colors.primary, marginTop: 4, marginLeft: 2 },
+  profHint: { fontSize: 12, color: colors.textLight, marginTop: 2, marginBottom: 10 },
   profEmpty: { fontSize: typography.fontSizes.sm, color: colors.textLight, marginTop: 6 },
+  profGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 4,
+  },
+  profBox: {
+    width: '47%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#E0E3ED',
+    backgroundColor: '#F9FAFF',
+    position: 'relative',
+  },
+  profBoxSelected: {
+    borderColor: colors.secondary,
+    backgroundColor: '#EEF4FF',
+  },
+  profBoxText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  profBoxTextSelected: {
+    color: colors.secondary,
+  },
+  profCheckBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

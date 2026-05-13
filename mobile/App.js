@@ -56,6 +56,10 @@ function App() {
             timeoutAt: data.timeoutAt,
           });
         }
+        // Notificação de mensagem de chat — será tratada pelo navigator quando montar
+        if (data?.type === 'chat_message' && data?.requestId) {
+          setPendingNotification({ type: 'chat_message', requestId: data.requestId });
+        }
       }
     );
 
