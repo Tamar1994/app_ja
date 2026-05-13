@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   ActivityIndicator, Alert, Image, StatusBar,
@@ -17,6 +17,13 @@ export default function DocumentUploadScreen({ navigation }) {
   const [documentBack, setDocumentBack] = useState(null);
   const [residenceProof, setResidenceProof] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // Aquece o servidor ao montar a tela (Render free tier hiberna após inatividade).
+  // Usuários novos nunca chamaram getMe() antes do upload — isso garante que o
+  // servidor esteja acordado quando o usuário clicar em "Enviar para análise".
+  useEffect(() => {
+    userAPI.getMe().catch(() => {});
+  }, []);
 
   const setters = { selfie: setSelfie, document: setDocument, documentBack: setDocumentBack, residenceProof: setResidenceProof };
   const isProfessional = (user?.activeProfile || user?.userType) === 'professional';

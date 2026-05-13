@@ -20,9 +20,9 @@ export default function ProfileSwitcher({ onSwitch, navigation }) {
 
   const switchTo = async (profile) => {
     if (profile === active) return;
-    if (profile === 'professional' && user?.userType === 'client') {
-      if (pvStatus !== 'approved') return;
-    }
+    // Se hasProfessional é true, o usuário já tem o perfil habilitado — deixa o backend validar.
+    // Só bloqueia se tentar ir para profissional sem ter o perfil ativo (cliente puro sem upgrade).
+    if (profile === 'professional' && !hasProfessional) return;
     setLoading(true);
     try {
       const { data } = await userAPI.switchProfile(profile);

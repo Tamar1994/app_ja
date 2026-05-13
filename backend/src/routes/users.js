@@ -81,7 +81,6 @@ router.patch('/me/active-profile', auth, async (req, res) => {
     }
 
     latestUser.activeProfile = profile;
-    latestUser.userType = profile;
     await latestUser.save();
 
     res.json({ user: latestUser });
