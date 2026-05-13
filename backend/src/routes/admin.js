@@ -2309,6 +2309,21 @@ router.delete('/waitlist/:id', adminAuth, async (req, res) => {
 });
 
 // ── PUSH CAMPAIGNS ───────────────────────────────────────────────
+// GET /api/admin/push-stats — diagnóstico de tokens registrados
+router.get('/push-stats', adminAuth, requirePermission(ADMIN_PERMISSIONS.USER_MANAGEMENT), async (req, res) => {
+  try {
+    const [total, withToken, clients, professionals] = await Promise.all([
+      User.countDocuments({}),
+      User.countDocuments({ pushToken: { $ne: null, $exists: true, $type: 'string' } }),
+      User.countDocuments({ userType: 'client', pushToken: { $ne: null, $exists: true, $type: 'string' } }),
+      User.countDocuments({ userType: 'professional', pushToken: { $ne: null, $exists: true, $type: 'string' } }),
+    ]);
+    res.json({ total, withToken, clients, professionals });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
 // POST /api/admin/push-campaign — envia notificação em massa
 router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USER_MANAGEMENT), async (req, res) => {
   const { title, body, audience, data: extraData } = req.body;
@@ -2322,10 +2337,12 @@ router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USE
 
   try {
     // Monta filtro de audiência
-    const filter = { pushToken: { $ne: null }, isActive: true };
+    // Usa $ne: false em vez de == true para incluir usuários com isActive:null (registros antigos)
+    const filter = {
+      pushToken: { $ne: null, $exists: true, $type: 'string' },
+      isActive: { $ne: false },
+    };
     if (audience === 'clients') {
-      filter.$or = [{ userType: 'client' }, { activeProfile: 'client' }];
-      // Exclui quem é só profissional
       filter.userType = 'client';
     } else if (audience === 'professionals') {
       filter.userType = 'professional';

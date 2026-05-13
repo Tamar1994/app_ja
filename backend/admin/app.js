@@ -3982,9 +3982,32 @@ const deleteServiceType = async (id) => {
 // ── PUSH CAMPAIGNS ────────────────────────────────────────────────
 let pushHistory = [];
 
-const renderPushCampaigns = () => {
+const renderPushCampaigns = async () => {
   const c = document.getElementById('page-content');
-  c.innerHTML = `
+
+  // Carregar estatísticas de tokens
+  let stats = null;
+  try {
+    const d = await req('GET', '/push-stats');
+    stats = d;
+  } catch {}
+
+  const statsHtml = stats
+    ? `<div class="section-card" style="margin-bottom:20px;">
+        <div style="padding:16px 22px;display:flex;gap:32px;flex-wrap:wrap;align-items:center;">
+          <div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;">Usuários com push ativo</div>
+            <div style="font-size:28px;font-weight:800;color:var(--accent);">${stats.withToken} <span style="font-size:14px;color:var(--text-secondary);font-weight:400;">/ ${stats.total}</span></div>
+          </div>
+          <div style="width:1px;height:40px;background:rgba(255,255,255,0.08);"></div>
+          <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;">Clientes</div><div style="font-size:22px;font-weight:700;color:var(--text-primary);">${stats.clients}</div></div>
+          <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;">Profissionais</div><div style="font-size:22px;font-weight:700;color:var(--text-primary);">${stats.professionals}</div></div>
+          ${stats.withToken === 0 ? `<div style="background:rgba(255,80,80,.1);border:1px solid rgba(255,80,80,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:#FF6B6B;"><b>⚠️ Nenhum usuário com token registrado.</b> Os usuários precisam abrir o app (versão atualizada) para registrar o token de push.</div>` : ''}
+        </div>
+      </div>`
+    : '';
+
+  c.innerHTML = statsHtml + `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
 
       <!-- FORMULÁRIO -->
