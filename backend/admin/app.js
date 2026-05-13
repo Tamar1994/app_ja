@@ -587,15 +587,17 @@ const renderApprovals = async (page = 1) => {
         </div>
         <div class="table-wrap"><table>
           <thead><tr><th>#</th><th>Nome</th><th>Tipo</th><th>CPF</th><th>Nasc.</th><th>Enviado em</th><th>Ação</th></tr></thead>
-          <tbody>${data.users.map((u, i) => `<tr>
+          <tbody>${data.users.map((u, i) => {
+            const isUpgrade = u.professionalVerification?.status === 'pending_review';
+            return `<tr>
             <td style="color:#3D4460;">${(page-1)*15+i+1}</td>
             <td><strong>${escHtml(u.name)}</strong><br/><span style="font-size:11px;color:#5C6B7A;">${escHtml(u.email)}</span></td>
-            <td>${typeBadge(u.userType)}</td>
+            <td>${typeBadge(u.userType)}${isUpgrade ? ' <span style="font-size:10px;background:#6B46FE;color:#fff;border-radius:4px;padding:1px 5px;vertical-align:middle;">Upgrade Pro</span>' : ''}</td>
             <td>${fmtCPF(u.cpf)}</td>
             <td>${fmtDate(u.birthDate)}</td>
             <td>${fmtDatetime(u.createdAt)}</td>
             <td><button class="btn btn-primary btn-sm" onclick="openApprovalModal('${u._id}')">🔍 Analisar</button></td>
-          </tr>`).join('')}</tbody>
+          </tr>`;}).join('')}</tbody>
         </table></div>
         <div class="pagination">${renderPagination(page, data.pages, 'renderApprovals')}</div>
       </div>`;
@@ -611,9 +613,17 @@ const openApprovalModal = async (id) => {
   document.body.appendChild(overlay);
   try {
     const u = await req('GET', `/approvals/${id}`);
+    const isUpgrade = u.professionalVerification?.status === 'pending_review';
     const body = overlay.querySelector('.modal-body');
     const BASE = '';
+    const addressHtml = isUpgrade && u.professionalAddress ? `
+      <div class="info-item" style="grid-column:span 2;"><div class="lbl">📍 Endereço Profissional</div>
+      <div class="val">${escHtml(u.professionalAddress.street||'')}${u.professionalAddress.neighborhood?', '+escHtml(u.professionalAddress.neighborhood):''} — ${escHtml(u.professionalAddress.city||'')}/${escHtml(u.professionalAddress.state||'')} — CEP: ${escHtml(u.professionalAddress.zipCode||'')}</div></div>` : '';
     body.innerHTML = `
+      <div style="margin-bottom:12px;padding:8px 12px;border-radius:6px;background:${isUpgrade ? 'rgba(107,70,254,0.12)' : 'rgba(255,107,0,0.08)'};border:1px solid ${isUpgrade ? 'rgba(107,70,254,0.3)' : 'rgba(255,107,0,0.2)'};">
+        <strong>${isUpgrade ? '⬆️ Upgrade de Perfil Profissional' : u.userType === 'professional' ? '🔧 Cadastro de Profissional' : '👤 Cadastro de Cliente'}</strong>
+        ${isUpgrade ? '<br><span style="font-size:12px;color:#aaa;">Cliente solicitando ativação do perfil profissional</span>' : ''}
+      </div>
       <div class="user-info-grid">
         <div class="info-item"><div class="lbl">Nome</div><div class="val">${escHtml(u.name)}</div></div>
         <div class="info-item"><div class="lbl">Tipo</div><div class="val">${u.userType === 'professional' ? '🔧 Profissional' : '👤 Cliente'}</div></div>
@@ -623,6 +633,7 @@ const openApprovalModal = async (id) => {
         <div class="info-item"><div class="lbl">Nascimento</div><div class="val">${fmtDate(u.birthDate)}</div></div>
         <div class="info-item"><div class="lbl">Cadastrado</div><div class="val">${fmtDatetime(u.createdAt)}</div></div>
         <div class="info-item"><div class="lbl">Status</div><div class="val">${statusBadge(u.verificationStatus)}</div></div>
+        ${addressHtml}
       </div>
       <div class="doc-images">
         <div>
@@ -656,16 +667,38 @@ const openApprovalModal = async (id) => {
               ? (u.residenceProofUrl.endsWith('.pdf')
                   ? `<a href="${u.residenceProofUrl}" target="_blank" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#FF6B00;gap:8px;text-decoration:none;"><span style="font-size:36px;">📄</span><span style="font-size:13px;font-weight:600;">Abrir PDF</span></a>`
                   : `<img src="${u.residenceProofUrl}" alt="Comprovante de residência" /><span class="doc-img-zoom-hint">🔍 Clique para ampliar</span>`)
-              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#3D4460;font-size:13px;">Não enviado (opcional)</div>'}
+              : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#3D4460;font-size:13px;">Não enviado</div>'}
           </div>
         </div>
       </div>
       <div id="reject-section" style="display:none;">
-        <div class="form-group">
-          <label class="form-label">Motivo da Rejeição</label>
-          <textarea id="reject-reason" class="form-textarea" placeholder="Descreva o motivo para rejeitar o cadastro..."></textarea>
+        ${isUpgrade ? `
+        <div style="margin-bottom:12px;display:flex;gap:8px;">
+          <button id="reject-full-btn" class="btn btn-danger btn-sm" onclick="selectRejectType('full')" style="flex:1;">🚫 Rejeição Total (ban 90 dias)</button>
+          <button id="reject-partial-btn" class="btn btn-ghost btn-sm" onclick="selectRejectType('partial')" style="flex:1;">⚠️ Rejeição Parcial (reenvio)</button>
+        </div>
+        <div id="partial-docs-section" style="display:none;margin-bottom:12px;">
+          <div class="form-label" style="margin-bottom:6px;">Documentos a reenviar:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${['selfie','document','documentBack','residenceProof'].map(d => `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" name="resubmit-doc" value="${d}"> ${d==='selfie'?'Selfie':d==='document'?'Doc. Frente':d==='documentBack'?'Doc. Verso':'Comp. Residência'}</label>`).join('')}
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label class="form-label">Mensagem para o usuário</label>
+            <textarea id="resubmit-message" class="form-textarea" placeholder="Explique o que precisa ser corrigido..."></textarea>
+          </div>
+        </div>` : ''}
+        <div id="reject-reason-section">
+          <div class="form-group">
+            <label class="form-label">Motivo da Rejeição</label>
+            <textarea id="reject-reason" class="form-textarea" placeholder="Descreva o motivo..."></textarea>
+          </div>
         </div>
       </div>`;
+
+    // Store isUpgrade on modal
+    overlay.dataset.isUpgrade = isUpgrade ? '1' : '0';
+    overlay.dataset.userId = id;
+
     const footer = overlay.querySelector('.modal-footer') || (() => {
       const f = document.createElement('div'); f.className = 'modal-footer'; overlay.querySelector('.modal').appendChild(f); return f;
     })();
@@ -678,29 +711,41 @@ const openApprovalModal = async (id) => {
   }
 };
 
+const selectRejectType = (type) => {
+  const fullBtn = document.getElementById('reject-full-btn');
+  const partBtn = document.getElementById('reject-partial-btn');
+  const partDocs = document.getElementById('partial-docs-section');
+  const reasonSection = document.getElementById('reject-reason-section');
+  if (type === 'full') {
+    fullBtn.className = 'btn btn-danger btn-sm'; partBtn.className = 'btn btn-ghost btn-sm';
+    partDocs.style.display = 'none'; reasonSection.style.display = '';
+  } else {
+    partBtn.className = 'btn btn-warning btn-sm'; fullBtn.className = 'btn btn-ghost btn-sm';
+    partDocs.style.display = ''; reasonSection.style.display = 'none';
+  }
+  document.querySelector('.modal-overlay').dataset.rejectType = type;
+};
+
 const toggleReject = (btn) => {
   const section = document.getElementById('reject-section');
   const approveBtn = document.getElementById('approve-btn');
+  const overlay = btn.closest('.modal-overlay');
+  const isUpgrade = overlay?.dataset.isUpgrade === '1';
+  const id = overlay?.dataset.userId;
   if (section.style.display === 'none') {
     section.style.display = 'block';
+    // Default reject type: full for upgrade, N/A for pure pro
+    if (isUpgrade) { overlay.dataset.rejectType = 'full'; }
     btn.textContent = '↩ Cancelar';
     approveBtn.textContent = '❌ Confirmar Rejeição';
     approveBtn.className = 'btn btn-danger';
-    approveBtn.onclick = () => {
-      const id = approveBtn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-    };
-    // Re-bind approve btn to reject
-    const idMatch = approveBtn.getAttribute('onclick')?.match(/'([^']+)'/);
-    if (idMatch) approveBtn.setAttribute('onclick', `doReject('${idMatch[1]}')`);
+    approveBtn.setAttribute('onclick', `doReject('${id}')`);
   } else {
     section.style.display = 'none';
     btn.textContent = '❌ Rejeitar';
-    const idMatch = approveBtn.getAttribute('onclick')?.match(/'([^']+)'/);
-    if (idMatch) {
-      approveBtn.textContent = '✅ Aprovar';
-      approveBtn.className = 'btn btn-success';
-      approveBtn.setAttribute('onclick', `doApprove('${idMatch[1]}')`);
-    }
+    approveBtn.textContent = '✅ Aprovar';
+    approveBtn.className = 'btn btn-success';
+    approveBtn.setAttribute('onclick', `doApprove('${id}')`);
   }
 };
 
@@ -717,15 +762,33 @@ const doApprove = async (id) => {
 };
 
 const doReject = async (id) => {
-  const reason = document.getElementById('reject-reason')?.value?.trim();
-  if (!reason) { alert('Informe o motivo da rejeição.'); return; }
-  try {
-    await req('PATCH', `/approvals/${id}/reject`, { reason });
-    document.querySelector('.modal-overlay')?.remove();
-    showAlert('Cadastro rejeitado. E-mail enviado ao usuário.', 'success');
-    renderApprovals(approvalsPage);
-  } catch (err) {
-    showAlert(err.message);
+  const overlay = document.querySelector('.modal-overlay');
+  const isUpgrade = overlay?.dataset.isUpgrade === '1';
+  const rejectType = overlay?.dataset.rejectType || 'full';
+
+  if (isUpgrade && rejectType === 'partial') {
+    // Rejeição parcial — reenvio de documentos
+    const checkedDocs = [...document.querySelectorAll('input[name="resubmit-doc"]:checked')].map(e => e.value);
+    const message = document.getElementById('resubmit-message')?.value?.trim();
+    if (!checkedDocs.length) { alert('Selecione ao menos um documento para reenvio.'); return; }
+    if (!message) { alert('Escreva uma mensagem explicando o que precisa ser corrigido.'); return; }
+    try {
+      await req('PATCH', `/approvals/${id}/request-resubmit`, { message, requiredDocuments: checkedDocs });
+      overlay.remove();
+      showAlert('Reenvio de documentos solicitado com sucesso.', 'success');
+      renderApprovals(approvalsPage);
+    } catch (err) { showAlert(err.message); }
+  } else {
+    // Rejeição total
+    const reason = document.getElementById('reject-reason')?.value?.trim();
+    if (!reason) { alert('Informe o motivo da rejeição.'); return; }
+    const rejectionType = isUpgrade ? 'full' : undefined;
+    try {
+      await req('PATCH', `/approvals/${id}/reject`, { reason, ...(rejectionType && { rejectionType }) });
+      overlay.remove();
+      showAlert('Cadastro rejeitado. Usuário notificado.', 'success');
+      renderApprovals(approvalsPage);
+    } catch (err) { showAlert(err.message); }
   }
 };
 

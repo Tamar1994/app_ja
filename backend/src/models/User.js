@@ -175,6 +175,36 @@ const userSchema = new mongoose.Schema({
     zipCode:      { type: String, default: '' },
     complement:   { type: String, default: '' },
   },
+
+  // Verificação específica de perfil profissional (usado quando cliente ativa perfil profissional)
+  // Para profissionais puros (userType='professional'), continua usando verificationStatus acima.
+  professionalVerification: {
+    // not_started → pending_review → approved | rejected | resubmit_requested
+    status: {
+      type: String,
+      enum: ['not_started', 'pending_review', 'approved', 'rejected', 'resubmit_requested'],
+      default: 'not_started',
+    },
+    submittedAt:    { type: Date, default: null },
+    approvedAt:     { type: Date, default: null },
+    rejectionType:  { type: String, enum: ['full', 'partial', null], default: null },
+    rejectionReason:{ type: String, default: '' },
+    // Pedido de reenvio parcial de documentos
+    resubmitRequest: {
+      requestedAt:        { type: Date, default: null },
+      message:            { type: String, default: '' },
+      // quais docs precisam ser reenviados: 'selfie'|'document'|'documentBack'|'residenceProof'
+      requiredDocuments:  { type: [String], default: [] },
+    },
+  },
+
+  // Banimento por rejeição total (90 dias)
+  banStatus: {
+    isBanned:     { type: Boolean, default: false },
+    bannedAt:     { type: Date, default: null },
+    banExpiresAt: { type: Date, default: null },
+    banReason:    { type: String, default: '' },
+  },
 }, { timestamps: true });
 
 // Índice geoespacial para busca por proximidade

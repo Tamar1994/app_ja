@@ -73,7 +73,13 @@ export const requestAPI = {
 export const uploadDocuments = (formData) =>
   api.post('/upload/documents', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  }).then((r) => r.data);
+
+// Upload para upgrade de cliente → profissional (comprovante de residência + docs solicitados em reenvio)
+export const uploadProfessionalUpgrade = (formData) =>
+  api.post('/upload/professional-upgrade', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then((r) => r.data);
 
 export const uploadResidenceProof = (formData) =>
   api.post('/upload/residence-proof', formData, {

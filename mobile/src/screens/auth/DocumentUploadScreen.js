@@ -82,16 +82,13 @@ export default function DocumentUploadScreen({ navigation }) {
         });
       }
       const res = await uploadDocuments(formData);
-      // Atualiza o estado com os dados retornados pelo servidor
-      // O RootNavigator vai redirecionar automaticamente baseado no novo estado
+      // uploadDocuments agora já retorna res.data diretamente
       if (setUser && res?.user) {
         setUser(prev => ({ ...prev, ...res.user }));
       } else if (setUser) {
-        // fallback: buscar dados frescos
         const { data } = await userAPI.getMe();
         setUser(data.user);
       }
-      // navegação explícita só se nav prop estiver disponível (fluxo do AuthNavigator)
       if (navigation) {
         if (isProfessional) navigation.replace('PendingApproval');
       }

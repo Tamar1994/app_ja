@@ -26,18 +26,32 @@ router.post('/me/profiles', auth, async (req, res) => {
   }
 
   try {
-    const updates = { [`profileModes.${profile}`]: true };
+    const currentUser = await User.findById(req.user._id);
+    if (!currentUser) return res.status(404).json({ message: 'Usuário não encontrado' });
 
-    if (profile === 'professional' && !req.user.profileModes?.professional) {
-      updates.verificationStatus = 'pending_documents';
+    if (profile === 'professional') {
+      if (currentUser.userType === 'client') {
+        // Cliente ativando perfil profissional: verificar se professionalVerification foi aprovada
+        if (currentUser.professionalVerification?.status === 'approved') {
+          currentUser.profileModes.professional = true;
+          await currentUser.save();
+          return res.json({ user: currentUser });
+        }
+        return res.status(403).json({
+          message: 'Perfil profissional ainda não aprovado. Envie os documentos necessários.',
+          professionalVerificationStatus: currentUser.professionalVerification?.status || 'not_started',
+        });
+      }
+      // Profissional puro — fluxo existente
+      if (!currentUser.profileModes?.professional) {
+        currentUser.verificationStatus = 'pending_documents';
+      }
     }
 
-    const user = await User.findByIdAndUpdate(req.user._id, updates, {
-      new: true,
-      runValidators: true,
-    });
+    currentUser.profileModes[profile] = true;
+    await currentUser.save();
 
-    res.json({ user });
+    res.json({ user: currentUser });
   } catch {
     res.status(500).json({ message: 'Erro ao habilitar perfil' });
   }

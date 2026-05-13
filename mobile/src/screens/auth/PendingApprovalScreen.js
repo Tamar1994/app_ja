@@ -9,10 +9,15 @@ import { useSocket } from '../../context/SocketContext';
 import { userAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 
-export default function PendingApprovalScreen() {
+export default function PendingApprovalScreen({ navigation }) {
   const { user, logout, setUser } = useAuth();
   const { on } = useSocket();
   const isRejected = user?.verificationStatus === 'rejected';
+  const isBanned = user?.banStatus?.isBanned;
+  const banExpires = user?.banStatus?.banExpiresAt;
+  const pvStatus = user?.professionalVerification?.status;
+  const isResubmit = pvStatus === 'resubmit_requested';
+  const resubmitMessage = user?.professionalVerification?.resubmitRequest?.message;
   const pollRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
 
@@ -71,32 +76,52 @@ export default function PendingApprovalScreen() {
           <View style={[styles.iconRing, isRejected && styles.iconRingRejected]}>
             <View style={[styles.iconInner, isRejected && styles.iconInnerRejected]}>
               <Ionicons
-                name={isRejected ? 'close-circle-outline' : 'shield-checkmark-outline'}
+                name={isBanned ? 'ban-outline' : isRejected ? 'close-circle-outline' : isResubmit ? 'refresh-circle-outline' : 'shield-checkmark-outline'}
                 size={52}
-                color={isRejected ? '#FF6B00' : '#fff'}
+                color={isBanned ? '#FF3333' : isRejected ? '#FF6B00' : isResubmit ? '#FFA500' : '#fff'}
               />
             </View>
           </View>
 
           <Text style={styles.title}>
-            {isRejected ? 'Cadastro não aprovado' : 'Verificação em andamento'}
+            {isBanned
+              ? 'Conta suspensa'
+              : isRejected
+              ? 'Cadastro não aprovado'
+              : isResubmit
+              ? 'Documentos precisam de atenção'
+              : 'Verificação em andamento'}
           </Text>
 
           <Text style={styles.subtitle}>
-            {isRejected
+            {isBanned
+              ? 'Sua conta foi suspensa temporariamente. Entre em contato com o suporte caso tenha dúvidas.'
+              : isRejected
               ? 'Infelizmente seu cadastro não pôde ser aprovado neste momento.'
+              : isResubmit
+              ? 'Nossa equipe solicitou o reenvio de alguns documentos.'
               : 'Estamos verificando sua identidade para garantir a segurança de todos na plataforma.'}
           </Text>
 
-          {isRejected && user?.rejectionReason && (
-            <View style={styles.reasonBox}>
-              <Ionicons name="information-circle-outline" size={18} color="#FF6B00" />
-              <Text style={styles.reasonText}>
-                <Text style={{ fontWeight: '700' }}>Motivo: </Text>
-                {user.rejectionReason}
+          {isBanned && banExpires && (
+            <View style={[styles.reasonBox, { borderColor: '#FF3333', backgroundColor: 'rgba(255,50,50,0.08)' }]}>
+              <Ionicons name="time-outline" size={18} color="#FF3333" />
+              <Text style={[styles.reasonText, { color: '#FF3333' }]}>
+                <Text style={{ fontWeight: '700' }}>Suspensão até: </Text>
+                {new Date(banExpires).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
               </Text>
             </View>
           )}
+
+          {isResubmit && resubmitMessage ? (
+            <View style={[styles.reasonBox, { borderColor: '#FFA500', backgroundColor: 'rgba(255,165,0,0.08)' }]}>
+              <Ionicons name="information-circle-outline" size={18} color="#FFA500" />
+              <Text style={[styles.reasonText, { color: '#FFA500' }]}>
+                <Text style={{ fontWeight: '700' }}>Mensagem: </Text>
+                {resubmitMessage}
+              </Text>
+            </View>
+          ) : null}
 
           {!isRejected && (
             <>
@@ -117,7 +142,7 @@ export default function PendingApprovalScreen() {
             </>
           )}
 
-          {isRejected && (
+          {isRejected && !isBanned && (
             <TouchableOpacity
               style={styles.retryBtn}
               onPress={() => setUser(prev => ({ ...prev, verificationStatus: 'pending_documents' }))}
@@ -131,6 +156,24 @@ export default function PendingApprovalScreen() {
               >
                 <Ionicons name="reload-outline" size={18} color="#fff" />
                 <Text style={styles.retryText}>Reenviar documentos</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
+          {isResubmit && (
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => navigation?.navigate('ProfessionalUpgrade')}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#FFA500', '#FF6B00']}
+                style={styles.retryGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+                <Text style={styles.retryText}>Reenviar documentos solicitados</Text>
               </LinearGradient>
             </TouchableOpacity>
           )}

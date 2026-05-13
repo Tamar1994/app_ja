@@ -25,6 +25,8 @@ import TermsScreen from '../screens/shared/TermsScreen';
 import CouponWalletScreen from '../screens/shared/CouponWalletScreen';
 import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 import RequestDetailsScreen from '../screens/shared/RequestDetailsScreen';
+import ProfessionalUpgradeScreen from '../screens/auth/ProfessionalUpgradeScreen';
+import ProfessionalAddressScreen from '../screens/auth/ProfessionalAddressScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -72,6 +74,8 @@ export default function ClientNavigator() {
         <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
         <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
         <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
+        <Stack.Screen name="ProfessionalUpgrade" component={ProfessionalUpgradeScreen} />
+        <Stack.Screen name="ProfessionalAddress" component={ProfessionalAddressScreen} />
       </Stack.Navigator>
     );
   }

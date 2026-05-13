@@ -210,6 +210,23 @@ router.post('/login', [
       return res.status(403).json({ message: 'Verifique seu e-mail antes de entrar.', needsVerification: true, email });
     }
 
+    // Verificar banimento ativo
+    if (user.banStatus?.isBanned) {
+      const now = new Date();
+      if (user.banStatus.banExpiresAt && user.banStatus.banExpiresAt > now) {
+        const daysLeft = Math.ceil((user.banStatus.banExpiresAt - now) / (1000 * 60 * 60 * 24));
+        return res.status(403).json({
+          message: `Sua conta foi suspensa por violação das nossas políticas. Você poderá tentar novamente em ${daysLeft} dia(s).`,
+          isBanned: true,
+          banExpiresAt: user.banStatus.banExpiresAt,
+        });
+      }
+      // Ban expirado — reativar automaticamente
+      user.isActive         = true;
+      user.banStatus.isBanned = false;
+      await user.save();
+    }
+
     const token = generateToken(user._id);
     res.json({
       token,

@@ -11,8 +11,10 @@ import { useAuth } from '../../context/AuthContext';
 import { authAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 
-export default function ProfessionalAddressScreen() {
+export default function ProfessionalAddressScreen({ navigation, route }) {
   const { setUser } = useAuth();
+  // upgradeMode=true quando é um CLIENTE ativando perfil profissional
+  const upgradeMode = route?.params?.upgradeMode === true;
 
   const [zipCode, setZipCode]         = useState('');
   const [street, setStreet]           = useState('');
@@ -68,7 +70,11 @@ export default function ProfessionalAddressScreen() {
         zipCode, street, neighborhood, city, state, complement,
       });
       if (setUser) setUser(data.user);
-      // RootNavigator re-renderiza automaticamente ao detectar professionalAddress preenchido
+      if (upgradeMode && navigation) {
+        // Cliente no fluxo de upgrade → vai direto para enviar comprovante de residência
+        navigation.replace('ProfessionalUpgrade');
+      }
+      // Profissional puro: RootNavigator re-renderiza automaticamente
     } catch (err) {
       Alert.alert('Erro', err.response?.data?.message || 'Não foi possível salvar o endereço. Tente novamente.');
     } finally {

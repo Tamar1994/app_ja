@@ -587,16 +587,24 @@ router.post('/withdrawals/:id/proof', adminAuth, requirePermission(ADMIN_PERMISS
 
 // ── FILA DE APROVAÇÃO ─────────────────────────────────────────────
 // GET /api/admin/approvals?page=1&limit=20
+// Retorna tanto profissionais puros (verificationStatus=pending_review)
+// quanto clientes que ativaram perfil profissional (professionalVerification.status=pending_review)
 router.get('/approvals', adminAuth, async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   try {
-    const users = await User.find({ verificationStatus: 'pending_review' })
-      .select('name email phone userType cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl createdAt')
-      .sort({ createdAt: 1 }) // mais antigo primeiro
+    const query = {
+      $or: [
+        { verificationStatus: 'pending_review' },
+        { 'professionalVerification.status': 'pending_review' },
+      ],
+    };
+    const users = await User.find(query)
+      .select('name email phone userType cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl createdAt verificationStatus professionalVerification professionalAddress')
+      .sort({ createdAt: 1 })
       .skip((page - 1) * limit)
       .limit(limit);
-    const total = await User.countDocuments({ verificationStatus: 'pending_review' });
+    const total = await User.countDocuments(query);
     res.json({ users, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao buscar fila' });
@@ -607,7 +615,7 @@ router.get('/approvals', adminAuth, async (req, res) => {
 router.get('/approvals/:id', adminAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .select('name email phone userType cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl createdAt verificationStatus');
+      .select('name email phone userType cpf birthDate selfieUrl documentUrl documentBackUrl residenceProofUrl createdAt verificationStatus professionalVerification professionalAddress banStatus rejectionReason');
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
     res.json(user);
   } catch (err) {
@@ -620,17 +628,34 @@ router.patch('/approvals/:id/approve', adminAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
-    user.verificationStatus = 'approved';
-    // Selfie vira foto de perfil
-    if (user.selfieUrl) user.avatar = user.selfieUrl;
+
+    // Detecta qual fluxo de aprovação se aplica
+    const isProfessionalUpgrade = user.professionalVerification?.status === 'pending_review';
+
+    if (isProfessionalUpgrade) {
+      // Cliente ativando perfil profissional
+      user.professionalVerification.status    = 'approved';
+      user.professionalVerification.approvedAt = new Date();
+      user.profileModes.professional          = true;
+    } else {
+      // Profissional puro
+      user.verificationStatus = 'approved';
+      if (user.selfieUrl) user.avatar = user.selfieUrl;
+    }
+
     await user.save();
     await sendApprovalEmail(user.email, user.name);
+
     const io = req.app.get('io');
-    if (io) io.to(`user_${user._id}`).emit('account_approved', { userId: user._id });
-    // Push de aprovação
+    if (io) io.to(`user_${user._id}`).emit('account_approved', { userId: user._id, isProfessionalUpgrade });
+
     if (user.pushToken) {
-      sendExpoPush(user.pushToken, '✅ Conta aprovada!', 'Sua conta foi aprovada. Bem-vindo ao Já! Você já pode começar a atender.', { screen: 'Dashboard' });
+      const pushMsg = isProfessionalUpgrade
+        ? 'Seu perfil profissional foi aprovado! Agora você pode atender clientes.'
+        : 'Sua conta foi aprovada. Bem-vindo ao Já! Você já pode começar a atender.';
+      sendExpoPush(user.pushToken, '✅ Conta aprovada!', pushMsg, { screen: 'Dashboard' });
     }
+
     res.json({ message: 'Usuário aprovado', user });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao aprovar usuário' });
@@ -638,26 +663,108 @@ router.patch('/approvals/:id/approve', adminAuth, async (req, res) => {
 });
 
 // PATCH /api/admin/approvals/:id/reject
+// Body: { reason: string, rejectionType: 'full'|'partial' }
+// full → bane por 90 dias e desativa conta
+// partial → marca para reenvio (use /request-resubmit para especificar quais docs)
 router.patch('/approvals/:id/reject', adminAuth, async (req, res) => {
-  const { reason } = req.body;
+  const { reason, rejectionType } = req.body;
   if (!reason) return res.status(400).json({ message: 'Informe o motivo da rejeição' });
+  if (!['full', 'partial'].includes(rejectionType)) {
+    return res.status(400).json({ message: 'rejectionType deve ser "full" ou "partial"' });
+  }
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { verificationStatus: 'rejected', rejectionReason: reason },
-      { new: true }
-    );
+    const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
-    await sendRejectionEmail(user.email, user.name, reason);
-    const io = req.app.get('io');
-    if (io) io.to(`user_${user._id}`).emit('account_rejected', { userId: user._id, reason });
-    // Push de rejeição
-    if (user.pushToken) {
-      sendExpoPush(user.pushToken, '⚠️ Verificação recusada', 'Sua documentação foi recusada. Acesse o app para ver o motivo e reenviar.', { screen: 'PendingApproval' });
+
+    const isProfessionalUpgrade = user.professionalVerification?.status === 'pending_review';
+
+    if (rejectionType === 'full') {
+      // Banimento por 90 dias
+      const now = new Date();
+      const banExpires = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      user.isActive       = false;
+      user.banStatus      = { isBanned: true, bannedAt: now, banExpiresAt: banExpires, banReason: reason };
+      if (isProfessionalUpgrade) {
+        user.professionalVerification.status         = 'rejected';
+        user.professionalVerification.rejectionType  = 'full';
+        user.professionalVerification.rejectionReason = reason;
+      } else {
+        user.verificationStatus = 'rejected';
+        user.rejectionReason    = reason;
+      }
+    } else {
+      // Rejeição parcial — mantém conta ativa, solicita reenvio
+      if (isProfessionalUpgrade) {
+        user.professionalVerification.status         = 'resubmit_requested';
+        user.professionalVerification.rejectionType  = 'partial';
+        user.professionalVerification.rejectionReason = reason;
+      } else {
+        user.verificationStatus = 'rejected';
+        user.rejectionReason    = reason;
+      }
     }
+
+    await user.save();
+    await sendRejectionEmail(user.email, user.name, reason);
+
+    const io = req.app.get('io');
+    if (io) io.to(`user_${user._id}`).emit('account_rejected', { userId: user._id, reason, rejectionType, isProfessionalUpgrade });
+
+    if (user.pushToken) {
+      const pushMsg = rejectionType === 'full'
+        ? 'Sua verificação foi recusada. Acesse o app para mais detalhes.'
+        : 'Precisamos que você reenvie alguns documentos. Acesse o app para ver o que é necessário.';
+      sendExpoPush(user.pushToken, '⚠️ Verificação recusada', pushMsg, { screen: 'PendingApproval' });
+    }
+
     res.json({ message: 'Usuário rejeitado', user });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao rejeitar usuário' });
+  }
+});
+
+// PATCH /api/admin/approvals/:id/request-resubmit
+// Solicita reenvio parcial de documentos específicos (para profissionais puros)
+// Body: { message: string, requiredDocuments: ['selfie','document','documentBack','residenceProof'] }
+router.patch('/approvals/:id/request-resubmit', adminAuth, async (req, res) => {
+  const { message, requiredDocuments } = req.body;
+  if (!message || !Array.isArray(requiredDocuments) || requiredDocuments.length === 0) {
+    return res.status(400).json({ message: 'Informe a mensagem e os documentos necessários' });
+  }
+  const validDocs = ['selfie', 'document', 'documentBack', 'residenceProof'];
+  if (!requiredDocuments.every((d) => validDocs.includes(d))) {
+    return res.status(400).json({ message: `Documentos válidos: ${validDocs.join(', ')}` });
+  }
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
+
+    const isProfessionalUpgrade = user.professionalVerification?.status === 'pending_review'
+      || user.professionalVerification?.status === 'resubmit_requested';
+
+    if (isProfessionalUpgrade) {
+      user.professionalVerification.status = 'resubmit_requested';
+      user.professionalVerification.rejectionType = 'partial';
+      user.professionalVerification.resubmitRequest = {
+        requestedAt: new Date(), message, requiredDocuments,
+      };
+    } else {
+      user.verificationStatus = 'rejected';
+      user.rejectionReason    = message;
+    }
+
+    await user.save();
+
+    const io = req.app.get('io');
+    if (io) io.to(`user_${user._id}`).emit('account_rejected', { userId: user._id, reason: message, rejectionType: 'partial', requiredDocuments, isProfessionalUpgrade });
+
+    if (user.pushToken) {
+      sendExpoPush(user.pushToken, '📋 Documentos necessários', 'Precisamos que você reenvie alguns documentos. Acesse o app para ver o que é necessário.', { screen: 'PendingApproval' });
+    }
+
+    res.json({ message: 'Solicitação de reenvio registrada', user });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao solicitar reenvio' });
   }
 });
 
