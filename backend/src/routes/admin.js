@@ -2350,5 +2350,63 @@ router.delete('/waitlist/:id', adminAuth, async (req, res) => {
   }
 });
 
+// ── PUSH CAMPAIGNS ───────────────────────────────────────────────
+// POST /api/admin/push-campaign — envia notificação em massa
+router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USER_MANAGEMENT), async (req, res) => {
+  const { title, body, audience, data: extraData } = req.body;
+
+  if (!title || !body) {
+    return res.status(400).json({ message: 'Título e mensagem são obrigatórios.' });
+  }
+  if (!['all', 'clients', 'professionals'].includes(audience)) {
+    return res.status(400).json({ message: 'Público inválido. Use: all | clients | professionals' });
+  }
+
+  try {
+    // Monta filtro de audiência
+    const filter = { pushToken: { $ne: null }, isActive: true };
+    if (audience === 'clients') {
+      filter.$or = [{ userType: 'client' }, { activeProfile: 'client' }];
+      // Exclui quem é só profissional
+      filter.userType = 'client';
+    } else if (audience === 'professionals') {
+      filter.userType = 'professional';
+      filter.verificationStatus = 'approved';
+    }
+
+    const users = await User.find(filter).select('pushToken').lean();
+    const tokens = users.map((u) => u.pushToken).filter(Boolean);
+
+    if (tokens.length === 0) {
+      return res.json({ sent: 0, message: 'Nenhum usuário com token de notificação encontrado.' });
+    }
+
+    // Envia em lotes de 100 (limite recomendado da Expo Push API)
+    const BATCH = 100;
+    let sent = 0;
+    for (let i = 0; i < tokens.length; i += BATCH) {
+      const batch = tokens.slice(i, i + BATCH);
+      batch.forEach((token) => {
+        sendExpoPush(token, title, body, extraData || {});
+        sent++;
+      });
+    }
+
+    await logAudit({
+      module: 'push',
+      action: 'push_campaign_sent',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      severity: 'medium',
+      message: `Campanha push enviada → público: ${audience} | destinatários: ${sent} | título: "${title}"`,
+    });
+
+    res.json({ sent, audience, title, body });
+  } catch (err) {
+    console.error('[push-campaign]', err);
+    res.status(500).json({ message: 'Erro ao enviar campanha push.' });
+  }
+});
+
 module.exports = router;
 

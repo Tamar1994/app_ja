@@ -353,6 +353,10 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='cupons'?'active':''}" onclick="navTo('cupons')">
             <span class="icon">🎟️</span> Cupons
           </div>` : ''}
+          ${hasPermission(PERMISSIONS.USER_MANAGEMENT) ? `
+          <div class="nav-item ${currentPage==='push'?'active':''}" onclick="navTo('push')">
+            <span class="icon">📣</span> Campanhas Push
+          </div>` : ''}
           ${hasPermission(PERMISSIONS.PAYMENT_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='pagamentos'?'active':''}" onclick="navTo('pagamentos')">
             <span class="icon">💳</span> Pagamentos
@@ -433,6 +437,7 @@ const navTo = (page) => {
     'coverage-cities': [PERMISSIONS.SERVICE_MANAGEMENT],
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
+    push: [PERMISSIONS.USER_MANAGEMENT],
   };
   const required = pagePermissionMap[page] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
@@ -460,6 +465,7 @@ const navTo = (page) => {
     'coverage-cities': 'Cidades Atendidas',
     'pause-types': 'Tipos de Pausa',
     admins: 'Equipe Admin',
+    push: 'Campanhas Push',
   }[page] || page;
   renderPage();
 };
@@ -480,12 +486,13 @@ const renderPage = () => {
     'coverage-cities': [PERMISSIONS.SERVICE_MANAGEMENT],
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
+    push: [PERMISSIONS.USER_MANAGEMENT],
   };
   const required = pagePermissionMap[currentPage] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins };
+  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, precos: renderPricing, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -4155,6 +4162,168 @@ const deleteServiceType = async (id) => {
     showAlert('Profissão excluída.', 'success');
     renderServiceTypes();
   } catch (err) { showAlert(err.message); }
+};
+
+// ── PUSH CAMPAIGNS ────────────────────────────────────────────────
+let pushHistory = [];
+
+const renderPushCampaigns = () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
+
+      <!-- FORMULÁRIO -->
+      <div class="section-card">
+        <div class="section-header">
+          <h2>📣 Nova Campanha</h2>
+        </div>
+        <div style="padding:24px;display:flex;flex-direction:column;gap:16px;">
+
+          <!-- Audiência -->
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Público-alvo</label>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px;" id="push-audience-btns">
+              ${[
+                { val: 'all', label: '👥 Todos' },
+                { val: 'clients', label: '🏠 Clientes' },
+                { val: 'professionals', label: '🔧 Profissionais' },
+              ].map(o => `
+                <button
+                  onclick="selectPushAudience('${o.val}')"
+                  id="push-aud-${o.val}"
+                  style="padding:10px 8px;border-radius:8px;border:2px solid ${o.val === 'all' ? 'var(--accent)' : 'rgba(255,255,255,0.08)'};background:${o.val === 'all' ? 'rgba(255,107,0,0.15)' : 'rgba(255,255,255,0.03)'};color:${o.val === 'all' ? 'var(--accent)' : 'var(--text-secondary)'};font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;"
+                >${o.label}</button>
+              `).join('')}
+            </div>
+            <input type="hidden" id="push-audience" value="all" />
+          </div>
+
+          <!-- Título -->
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Título <span style="color:var(--text-muted);font-weight:400;">(máx. 65 caracteres)</span></label>
+            <input id="push-title" class="form-input" maxlength="65" placeholder="Ex: 🎁 Promoção especial de hoje!" oninput="updatePushPreview()" />
+          </div>
+
+          <!-- Mensagem -->
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Mensagem <span style="color:var(--text-muted);font-weight:400;">(máx. 178 caracteres)</span></label>
+            <textarea id="push-body" class="form-input" maxlength="178" rows="3" placeholder="Ex: Ganhe 20% de desconto no seu próximo serviço. Válido até meia-noite!" style="resize:vertical;" oninput="updatePushPreview()"></textarea>
+          </div>
+
+          <!-- Preview -->
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:16px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;">Preview da notificação</div>
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#FF8C38,#FF6B00);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">📲</div>
+              <div>
+                <div id="push-preview-title" style="font-weight:700;font-size:14px;color:var(--text-primary);">Título da notificação</div>
+                <div id="push-preview-body" style="font-size:13px;color:var(--text-secondary);margin-top:2px;line-height:1.4;">Mensagem que o usuário verá...</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Já! · agora</div>
+              </div>
+            </div>
+          </div>
+
+          <button onclick="sendPushCampaign()" id="push-send-btn" class="btn btn-primary" style="width:100%;padding:14px;font-size:15px;">
+            📤 Enviar Campanha
+          </button>
+          <div id="push-result" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- HISTÓRICO -->
+      <div class="section-card">
+        <div class="section-header"><h2>📋 Histórico de Envios</h2></div>
+        <div id="push-history-list" style="padding:0 0 8px;">
+          ${pushHistory.length === 0
+            ? `<div style="text-align:center;color:var(--text-muted);padding:40px 20px;font-size:14px;">Nenhuma campanha enviada ainda nesta sessão.</div>`
+            : pushHistory.map(h => pushHistoryCard(h)).join('')
+          }
+        </div>
+      </div>
+
+    </div>
+  `;
+};
+
+const selectPushAudience = (val) => {
+  document.getElementById('push-audience').value = val;
+  ['all', 'clients', 'professionals'].forEach(v => {
+    const btn = document.getElementById(`push-aud-${v}`);
+    if (!btn) return;
+    const active = v === val;
+    btn.style.borderColor = active ? 'var(--accent)' : 'rgba(255,255,255,0.08)';
+    btn.style.background  = active ? 'rgba(255,107,0,0.15)' : 'rgba(255,255,255,0.03)';
+    btn.style.color       = active ? 'var(--accent)' : 'var(--text-secondary)';
+  });
+};
+
+const updatePushPreview = () => {
+  const title = document.getElementById('push-title')?.value || '';
+  const body  = document.getElementById('push-body')?.value  || '';
+  const pt = document.getElementById('push-preview-title');
+  const pb = document.getElementById('push-preview-body');
+  if (pt) pt.textContent = title || 'Título da notificação';
+  if (pb) pb.textContent = body  || 'Mensagem que o usuário verá...';
+};
+
+const audienceLabel = { all: '👥 Todos', clients: '🏠 Clientes', professionals: '🔧 Profissionais' };
+
+const pushHistoryCard = (h) => `
+  <div style="padding:16px 20px;border-bottom:1px solid rgba(255,255,255,0.05);">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--text-primary);">${escHtml(h.title)}</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">${escHtml(h.body)}</div>
+      </div>
+      <div style="flex-shrink:0;text-align:right;">
+        <div style="font-size:11px;background:rgba(255,107,0,0.15);color:var(--accent);padding:3px 8px;border-radius:6px;font-weight:600;">${audienceLabel[h.audience] || h.audience}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${h.sent} enviados</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">${new Date(h.sentAt).toLocaleString('pt-BR')}</div>
+  </div>
+`;
+
+const sendPushCampaign = async () => {
+  const title    = (document.getElementById('push-title')?.value || '').trim();
+  const body     = (document.getElementById('push-body')?.value  || '').trim();
+  const audience = document.getElementById('push-audience')?.value || 'all';
+  const resultEl = document.getElementById('push-result');
+  const sendBtn  = document.getElementById('push-send-btn');
+
+  if (!title) { showAlert('Digite um título para a campanha.'); return; }
+  if (!body)  { showAlert('Digite a mensagem da campanha.'); return; }
+
+  const audienceNames = { all: 'todos os usuários', clients: 'todos os clientes', professionals: 'todos os profissionais aprovados' };
+  if (!confirm(`Enviar push para ${audienceNames[audience]}?\n\n"${title}"\n${body}`)) return;
+
+  sendBtn.disabled = true;
+  sendBtn.textContent = '⏳ Enviando...';
+  resultEl.style.display = 'none';
+
+  try {
+    const res = await req('POST', '/push-campaign', { title, body, audience });
+    const entry = { title, body, audience, sent: res.sent, sentAt: new Date().toISOString() };
+    pushHistory.unshift(entry);
+
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `<div style="background:rgba(0,200,83,0.1);border:1px solid rgba(0,200,83,0.3);border-radius:10px;padding:14px;color:#4ADE80;font-size:14px;font-weight:600;text-align:center;">✅ Campanha enviada para <strong>${res.sent}</strong> dispositivos!</div>`;
+
+    // Limpa campos
+    document.getElementById('push-title').value = '';
+    document.getElementById('push-body').value  = '';
+    updatePushPreview();
+
+    // Atualiza histórico na tela
+    const histEl = document.getElementById('push-history-list');
+    if (histEl) histEl.innerHTML = pushHistory.map(h => pushHistoryCard(h)).join('');
+  } catch (err) {
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = `<div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:14px;color:#EF4444;font-size:14px;">❌ ${escHtml(err.message)}</div>`;
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = '📤 Enviar Campanha';
+  }
 };
 
 // ── INIT ───────────────────────────────────────────────────────────
