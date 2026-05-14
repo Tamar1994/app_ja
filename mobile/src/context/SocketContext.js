@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
 const SOCKET_URL = API_URL.replace('/api', '').replace(/\/$/, '');
 
 const SocketContext = createContext(null);

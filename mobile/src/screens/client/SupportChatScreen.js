@@ -8,10 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supportChatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { colors } from '../../theme';
 
 const POLL_INTERVAL_MS = 8000;
-const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api').replace(/\/api\/?$/, '');
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
 
 function buildImageUrl(path) {
   if (!path) return null;
@@ -21,6 +22,7 @@ function buildImageUrl(path) {
 
 export default function SupportChatScreen({ navigation }) {
   const { user } = useAuth();
+  const { on } = useSocket();
   const isProfessional = user?.userType === 'professional';
   const [phase, setPhase] = useState('form'); // 'form' | 'waiting' | 'chat' | 'closed'
   const [subject, setSubject] = useState('');
@@ -67,6 +69,29 @@ export default function SupportChatScreen({ navigation }) {
     pollingTimer.current = setInterval(() => pollChatStatus(chatId), POLL_INTERVAL_MS);
     return () => clearInterval(pollingTimer.current);
   }, [chatId, pollChatStatus]);
+
+  // Real-time: receber mensagem do suporte e notificação de fechamento via socket
+  useEffect(() => {
+    if (!chatId) return;
+    const unsubMsg = on('support_message', (data) => {
+      if (String(data.chatId) !== String(chatId)) return;
+      setMessages(prev => [...prev, {
+        sender: 'support',
+        text: data.text,
+        createdAt: new Date().toISOString(),
+      }]);
+      setPhase(p => (p === 'waiting' ? 'chat' : p));
+    });
+    const unsubClose = on('chat_closed', (data) => {
+      if (String(data.chatId) !== String(chatId)) return;
+      setPhase('closed');
+      clearInterval(pollingTimer.current);
+    });
+    return () => {
+      if (unsubMsg) unsubMsg();
+      if (unsubClose) unsubClose();
+    };
+  }, [chatId, on]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -332,10 +357,10 @@ export default function SupportChatScreen({ navigation }) {
           </Text>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => navigation.navigate('HelpCenter')}
+            onPress={() => navigation.goBack()}
             activeOpacity={0.85}
           >
-            <Text style={styles.backBtnText}>← Voltar para Ajuda</Text>
+            <Text style={styles.backBtnText}>← Voltar</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

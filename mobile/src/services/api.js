@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 
 // Em desenvolvimento: crie mobile/.env com EXPO_PUBLIC_API_URL=http://SEU_IP:3000/api
 // Em produção: a variável aponta para a URL do Render
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
 
 const api = axios.create({ baseURL: BASE_URL });
 

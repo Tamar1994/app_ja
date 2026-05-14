@@ -37,7 +37,7 @@ export default function ServiceChatScreen({ navigation, route }) {
         if (mounted) setLoading(false);
       }
     };
-    start();
+    start().catch(() => {});
 
     pollingRef.current = setInterval(() => {
       loadChat().catch(() => {});
