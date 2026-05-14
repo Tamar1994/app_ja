@@ -6,6 +6,7 @@ const priceTierSchema = new mongoose.Schema({
   label:           { type: String, required: true, trim: true },
   durationMinutes: { type: Number, required: true, min: 1 },
   price:           { type: Number, required: true, min: 0 },
+  nightPrice:      { type: Number, default: null },
   sortOrder:       { type: Number, default: 0 },
 }, { _id: false });
 
@@ -64,6 +65,12 @@ const serviceTypeSchema = new mongoose.Schema({
     default: 15,
     min: 0,
     max: 100,
+  },
+  nightRateStartHour: {
+    type: Number,
+    default: null,
+    min: 0,
+    max: 23,
   },
   requiresLocationTracking: {
     type: Boolean,

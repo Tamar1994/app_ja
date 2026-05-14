@@ -3718,6 +3718,14 @@ const openNewServiceTypeModal = () => {
               <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">%</span>
             </div>
           </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Hora de início do período noturno <span style="color:#7A84A0;font-weight:400;">(opcional)</span></label>
+            <div style="position:relative;">
+              <input id="st-night-rate-hour" class="form-input" type="number" min="0" max="23" step="1" placeholder="Ex: 22 (para 22h)" style="color:#F59E0B;" />
+              <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-size:12px;">h</span>
+            </div>
+            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para não usar preço noturno. Defina o preço noturno em cada faixa.</div>
+          </div>
         </div>
         <div style="margin-top:14px;">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.10);">
@@ -3771,13 +3779,17 @@ const stAutoSlug = (nameInput) => {
 const buildTierRow = (tier = {}, idx = 0) => {
   const div = document.createElement('div');
   div.className = 'tier-row';
-  div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 90px 90px 90px 32px;gap:8px;align-items:center;margin-bottom:8px;';
   div.innerHTML = `
     <input class="form-input tier-label" placeholder='Ex: "Diarista 4h"' value="${escHtml(tier.label || '')}" style="font-size:13px;" />
     <input class="form-input tier-duration" type="number" min="1" placeholder="min" value="${tier.durationMinutes || ''}" style="font-size:13px;text-align:center;" title="Duração em minutos" />
     <div style="position:relative;">
       <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;color:#7A84A0;">R$</span>
-      <input class="form-input tier-price" type="number" min="0" step="0.01" placeholder="0" value="${tier.price != null ? tier.price : ''}" style="font-size:13px;padding-left:26px;" />
+      <input class="form-input tier-price" type="number" min="0" step="0.01" placeholder="Diurno" value="${tier.price != null ? tier.price : ''}" style="font-size:13px;padding-left:26px;" title="Preço diurno" />
+    </div>
+    <div style="position:relative;">
+      <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;color:#7A84A0;">R$</span>
+      <input class="form-input tier-night-price" type="number" min="0" step="0.01" placeholder="Noturno" value="${tier.nightPrice != null ? tier.nightPrice : ''}" style="font-size:13px;padding-left:26px;color:#F59E0B;" title="Preço noturno (opcional)" />
     </div>
     <button type="button" onclick="this.closest('.tier-row').remove()" style="background:rgba(229,57,53,.15);border:none;color:#e53935;border-radius:8px;width:32px;height:38px;cursor:pointer;font-size:16px;line-height:1;">✕</button>`;
   return div;
@@ -3791,8 +3803,8 @@ const addTierRow = (listId, tier = {}) => {
     if (!el.querySelector('.tier-header-row')) {
       const header = document.createElement('div');
       header.className = 'tier-header-row';
-      header.style.cssText = 'display:grid;grid-template-columns:1fr 100px 100px 32px;gap:8px;padding:0 0 4px;';
-      header.innerHTML = `<span style="font-size:11px;color:#7A84A0;">Rótulo (exibido no app)</span><span style="font-size:11px;color:#7A84A0;text-align:center;">Duração (min)</span><span style="font-size:11px;color:#7A84A0;">Preço</span><span></span>`;
+      header.style.cssText = 'display:grid;grid-template-columns:1fr 90px 90px 90px 32px;gap:8px;padding:0 0 4px;';
+      header.innerHTML = `<span style="font-size:11px;color:#7A84A0;">Rótulo (exibido no app)</span><span style="font-size:11px;color:#7A84A0;text-align:center;">Duração (min)</span><span style="font-size:11px;color:#7A84A0;">Preço diurno</span><span style="font-size:11px;color:#F59E0B;">Preço noturno</span><span></span>`;
       el.before(header);
     }
   }
@@ -3806,10 +3818,13 @@ const collectTiers = (listId) => {
     const label = (row.querySelector('.tier-label')?.value || '').trim();
     const durationMinutes = Number(row.querySelector('.tier-duration')?.value);
     const price = Number(row.querySelector('.tier-price')?.value);
+    const nightPriceRaw = (row.querySelector('.tier-night-price')?.value || '').trim();
+    const nightPrice = nightPriceRaw !== '' ? Number(nightPriceRaw) : null;
     if (!label) throw new Error(`Faixa ${idx + 1}: rótulo obrigatório`);
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) throw new Error(`Faixa "${label}": duração inválida`);
     if (!Number.isFinite(price) || price < 0) throw new Error(`Faixa "${label}": preço inválido`);
-    return { label, durationMinutes, price, sortOrder: idx };
+    if (nightPrice !== null && (!Number.isFinite(nightPrice) || nightPrice < 0)) throw new Error(`Faixa "${label}": preço noturno inválido`);
+    return { label, durationMinutes, price, nightPrice, sortOrder: idx };
   });
 };
 
@@ -3865,6 +3880,7 @@ const createServiceType = async () => {
   const icon = document.getElementById('st-icon').value.trim();
   const status = document.getElementById('st-status').value;
   const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
+  const nightRateHourRaw = (document.getElementById('st-night-rate-hour').value || '').trim();
   const requiresLocationTracking = document.getElementById('st-location-tracking').checked;
   const imageFile = document.getElementById('st-image').files?.[0] || null;
 
@@ -3874,6 +3890,10 @@ const createServiceType = async () => {
   const platformFeePercent = platformFeeRaw === '' ? 15 : Number(platformFeeRaw);
   if (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100) {
     showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.'); return;
+  }
+  const nightRateStartHour = nightRateHourRaw === '' ? null : Number(nightRateHourRaw);
+  if (nightRateStartHour !== null && (!Number.isFinite(nightRateStartHour) || nightRateStartHour < 0 || nightRateStartHour > 23)) {
+    showAlert('Hora do período noturno inválida. Use valor entre 0 e 23.'); return;
   }
 
   try {
@@ -3887,6 +3907,7 @@ const createServiceType = async () => {
     formData.append('icon', icon);
     formData.append('status', status);
     formData.append('platformFeePercent', String(platformFeePercent));
+    formData.append('nightRateStartHour', nightRateStartHour !== null ? String(nightRateStartHour) : '');
     formData.append('priceTiers', JSON.stringify(priceTiers));
     formData.append('upsells', JSON.stringify(upsells));
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
@@ -3987,6 +4008,14 @@ const openEditServiceTypeModal = (t) => {
               <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">%</span>
             </div>
           </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Hora de início do período noturno <span style="color:#7A84A0;font-weight:400;">(opcional)</span></label>
+            <div style="position:relative;">
+              <input id="ste-night-rate-hour" class="form-input" type="number" min="0" max="23" step="1" placeholder="Ex: 22" value="${t.nightRateStartHour != null ? t.nightRateStartHour : ''}" style="color:#F59E0B;" />
+              <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-size:12px;">h</span>
+            </div>
+            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para não usar preço noturno.</div>
+          </div>
         </div>
         <div style="margin-top:14px;">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.10);">
@@ -4034,12 +4063,17 @@ const updateServiceType = async (id) => {
   const sortOrder = parseInt(document.getElementById('ste-order').value) || 0;
   const status = document.getElementById('ste-status').value;
   const platformFeeRaw = (document.getElementById('ste-platform-fee').value || '').trim();
+  const nightRateHourRaw = (document.getElementById('ste-night-rate-hour').value || '').trim();
   const requiresLocationTracking = document.getElementById('ste-location-tracking').checked;
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
 
   const platformFeePercent = platformFeeRaw === '' ? 15 : Number(platformFeeRaw);
   if (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100) {
     showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.'); return;
+  }
+  const nightRateStartHour = nightRateHourRaw === '' ? null : Number(nightRateHourRaw);
+  if (nightRateStartHour !== null && (!Number.isFinite(nightRateStartHour) || nightRateStartHour < 0 || nightRateStartHour > 23)) {
+    showAlert('Hora do período noturno inválida. Use valor entre 0 e 23.'); return;
   }
 
   try {
@@ -4053,6 +4087,7 @@ const updateServiceType = async (id) => {
     formData.append('sortOrder', sortOrder);
     formData.append('status', status);
     formData.append('platformFeePercent', String(platformFeePercent));
+    formData.append('nightRateStartHour', nightRateStartHour !== null ? String(nightRateStartHour) : '');
     formData.append('priceTiers', JSON.stringify(priceTiers));
     formData.append('upsells', JSON.stringify(upsells));
     formData.append('requiresLocationTracking', String(requiresLocationTracking));

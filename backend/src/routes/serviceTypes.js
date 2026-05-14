@@ -30,7 +30,12 @@ function parsePriceTiers(rawValue) {
     if (!label) throw Object.assign(new Error(`priceTiers[${idx}]: label e obrigatorio`), { status: 400 });
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1) throw Object.assign(new Error(`priceTiers[${idx}]: durationMinutes invalido`), { status: 400 });
     if (!Number.isFinite(price) || price < 0) throw Object.assign(new Error(`priceTiers[${idx}]: price invalido`), { status: 400 });
-    return { label, durationMinutes, price, sortOrder: Number(t?.sortOrder ?? idx) };
+    const nightPriceRaw = t?.nightPrice;
+    const nightPrice = (nightPriceRaw !== undefined && nightPriceRaw !== null && nightPriceRaw !== '')
+      ? Number(nightPriceRaw)
+      : null;
+    if (nightPrice !== null && (!Number.isFinite(nightPrice) || nightPrice < 0)) throw Object.assign(new Error(`priceTiers[${idx}]: nightPrice invalido`), { status: 400 });
+    return { label, durationMinutes, price, nightPrice, sortOrder: Number(t?.sortOrder ?? idx) };
   });
 }
 
@@ -113,9 +118,13 @@ router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, re
     const priceTiers = parsePriceTiers(req.body.priceTiers) || [];
     const upsells    = parseUpsells(req.body.upsells) || [];
     const parsedPlatformFeePercent = parseOptionalNumber(platformFeePercent);
+    const parsedNightRateStartHour = parseOptionalNumber(req.body.nightRateStartHour);
 
     if (parsedPlatformFeePercent !== undefined && (parsedPlatformFeePercent < 0 || parsedPlatformFeePercent > 100)) {
       return res.status(400).json({ message: 'platformFeePercent deve estar entre 0 e 100' });
+    }
+    if (parsedNightRateStartHour !== undefined && (parsedNightRateStartHour < 0 || parsedNightRateStartHour > 23)) {
+      return res.status(400).json({ message: 'nightRateStartHour deve estar entre 0 e 23' });
     }
 
     const st = await ServiceType.create({
@@ -129,6 +138,7 @@ router.post('/', adminAuth, serviceTypeUpload.single('iconFile'), async (req, re
       priceTiers,
       upsells,
       platformFeePercent: parsedPlatformFeePercent ?? 15,
+      nightRateStartHour: parsedNightRateStartHour ?? null,
       requiresLocationTracking: req.body.requiresLocationTracking === 'true',
     });
     res.status(201).json({ serviceType: st });
@@ -163,12 +173,21 @@ router.patch('/:id', adminAuth, serviceTypeUpload.single('iconFile'), async (req
     const priceTiers = parsePriceTiers(req.body.priceTiers);
     const upsells    = parseUpsells(req.body.upsells);
     const parsedPlatformFeePercent = parseOptionalNumber(req.body.platformFeePercent);
+    const parsedNightRateStartHour = req.body.nightRateStartHour !== undefined
+      ? (req.body.nightRateStartHour === '' || req.body.nightRateStartHour === 'null' ? null : parseOptionalNumber(req.body.nightRateStartHour))
+      : undefined;
 
     if (parsedPlatformFeePercent !== undefined) {
       if (parsedPlatformFeePercent < 0 || parsedPlatformFeePercent > 100) {
         return res.status(400).json({ message: 'platformFeePercent deve estar entre 0 e 100' });
       }
       updates.platformFeePercent = parsedPlatformFeePercent;
+    }
+    if (parsedNightRateStartHour !== undefined) {
+      if (parsedNightRateStartHour !== null && (parsedNightRateStartHour < 0 || parsedNightRateStartHour > 23)) {
+        return res.status(400).json({ message: 'nightRateStartHour deve estar entre 0 e 23' });
+      }
+      updates.nightRateStartHour = parsedNightRateStartHour;
     }
     if (priceTiers !== undefined) updates.priceTiers = priceTiers;
     if (upsells !== undefined) updates.upsells = upsells;

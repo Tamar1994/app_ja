@@ -96,6 +96,7 @@ export default function RequestServiceScreen({ navigation, route }) {
         serviceType.slug,
         selectedTier.label,
         selectedUpsellKeys,
+        getFinalScheduledDate(),
       );
       setEstimate(data);
     } catch {
@@ -103,7 +104,7 @@ export default function RequestServiceScreen({ navigation, route }) {
     } finally {
       setLoadingEstimate(false);
     }
-  }, [selectedTier?.label, selectedUpsellKeys.join(','), serviceType?.slug]);
+  }, [selectedTier?.label, selectedUpsellKeys.join(','), serviceType?.slug, scheduleMode, scheduledDate, selectedTime]);
 
   useEffect(() => {
     fetchEstimate();

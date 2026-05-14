@@ -257,7 +257,7 @@ export default function ProfessionalProfileScreen({ navigation }) {
           </View>
 
           {/* Perfis */}
-          <ProfileSwitcher />
+          <ProfileSwitcher navigation={navigation} />
 
           {/* Menu */}
           <View style={styles.menuCard}>

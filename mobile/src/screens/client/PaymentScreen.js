@@ -300,19 +300,33 @@ export default function PaymentScreen({ navigation, route }) {
           {Array.isArray(selectedUpsells) && selectedUpsells.length > 0 && (
             <View style={styles.summaryRow}>
               <Ionicons name="add-circle-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.summaryText}>{selectedUpsells.map(k => k).join(', ')}</Text>
+              <Text style={styles.summaryText}>
+                {estimate?.upsells?.length
+                  ? estimate.upsells.map(u => u.label).join(', ')
+                  : selectedUpsells.join(', ')}
+              </Text>
+            </View>
+          )}
+          {estimate?.dayNightBreakdown?.nightMinutes > 0 && (
+            <View style={styles.summaryRow}>
+              <Ionicons name="sunny-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.summaryText}>
+                Diurno: {estimate.dayNightBreakdown.dayMinutes}min → R$ {Number(estimate.dayNightBreakdown.dayPrice).toFixed(2)}
+              </Text>
+            </View>
+          )}
+          {estimate?.dayNightBreakdown?.nightMinutes > 0 && (
+            <View style={styles.summaryRow}>
+              <Ionicons name="moon-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.summaryText}>
+                Noturno: {estimate.dayNightBreakdown.nightMinutes}min → R$ {Number(estimate.dayNightBreakdown.nightPrice).toFixed(2)}
+              </Text>
             </View>
           )}
           <View style={styles.summaryRow}>
             <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.summaryText} numberOfLines={1}>{address.street}, {address.city}</Text>
           </View>
-          {supportsProducts && hasProducts && (
-            <View style={styles.summaryRow}>
-              <Ionicons name="cube-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.summaryText}>Você fornece os produtos</Text>
-            </View>
-          )}
         </View>
 
         {/* Métodos aceitos */}

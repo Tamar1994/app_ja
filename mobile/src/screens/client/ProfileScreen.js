@@ -169,7 +169,7 @@ export default function ProfileScreen({ navigation }) {
           </View>
 
           {/* Perfis */}
-          <ProfileSwitcher />
+          <ProfileSwitcher navigation={navigation} />
 
           {/* Menu */}
           <View style={styles.menuCard}>
