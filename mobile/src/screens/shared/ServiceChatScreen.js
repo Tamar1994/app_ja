@@ -122,11 +122,10 @@ export default function ServiceChatScreen({ navigation, route }) {
             </View>
           }
           renderItem={({ item }) => {
-            const mine = item.sender === (request?.client?._id === request?.professional?._id ? 'client' : item.sender);
             const isClientMessage = item.sender === 'client';
-            const isMyMessage = (request?.client?._id && request?.professional?._id)
-              ? ((route.params.role === 'client' && isClientMessage) || (route.params.role === 'professional' && !isClientMessage))
-              : false;
+            const isMyMessage =
+              (route.params.role === 'client' && isClientMessage) ||
+              (route.params.role === 'professional' && !isClientMessage);
             return (
               <View style={[styles.msgWrapper, isMyMessage ? styles.msgWrapperMine : styles.msgWrapperOther]}>
                 <View style={[styles.msgBubble, isMyMessage ? styles.msgBubbleMine : styles.msgBubbleOther]}>

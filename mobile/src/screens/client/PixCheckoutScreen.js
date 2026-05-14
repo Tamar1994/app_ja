@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as ExpoClipboard from 'expo-clipboard';
 import {
   Alert,
-  Clipboard,
   Image,
   SafeAreaView,
   ScrollView,
@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { paymentAPI } from '../../services/api';
 import { colors } from '../../theme';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
 
 function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -97,8 +97,8 @@ export default function PixCheckoutScreen({ navigation, route }) {
     }
 
     try {
-      await Clipboard.setString(charge.emv);
-      Alert.alert('✓ Codigo copiado!', 'Cole no app do seu banco para pagar.');
+      await ExpoClipboard.setStringAsync(charge.emv);
+      Alert.alert('\u2713 Codigo copiado!', 'Cole no app do seu banco para pagar.');
     } catch (e) {
       Alert.alert('Erro', 'Nao consegui copiar. Copie manualmente da tela.');
     }

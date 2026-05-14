@@ -128,7 +128,7 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.greeting}>Olá, {firstName}! 👋</Text>
             <Text style={styles.headerSub}>O que você precisa hoje?</Text>
           </View>
-          <TouchableOpacity style={styles.avatarBtn} onPress={() => navigation.navigate('ProfileTab')}>>
+          <TouchableOpacity style={styles.avatarBtn} onPress={() => navigation.navigate('ProfileTab')}>
             <View style={styles.avatarPlaceholder}>
               <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
             </View>
