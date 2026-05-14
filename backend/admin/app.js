@@ -1170,9 +1170,12 @@ const openSupportChat = async (id, context) => {
       </div>
       <div class="chat-messages" id="support-msgs" style="flex:1;overflow-y:auto;">
         ${chat.messages.length === 0 ? `<div class="empty"><div class="empty-icon">💬</div><p>Nenhuma mensagem ainda.</p></div>` :
-          chat.messages.map(m => `
+        chat.messages.map(m => `
           <div>
-            <div class="msg ${m.sender === 'support' ? 'msg-support' : 'msg-user'}">${escHtml(m.text)}</div>
+            <div class="msg ${m.sender === 'support' ? 'msg-support' : 'msg-user'}">
+              ${m.text ? escHtml(m.text) : ''}
+              ${m.imageUrl ? `<br/><img src="${escHtml(m.imageUrl)}" style="max-width:220px;max-height:220px;border-radius:8px;margin-top:${m.text ? '6' : '0'}px;cursor:pointer;display:block;" onclick="openImageZoom('${escHtml(m.imageUrl)}')" />` : ''}
+            </div>
             <div class="msg-time" style="text-align:${m.sender==='support'?'right':'left'};color:#5C6B7A;">${fmtDatetime(m.createdAt)}</div>
           </div>`).join('')}
       </div>

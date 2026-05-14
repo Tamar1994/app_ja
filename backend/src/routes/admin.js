@@ -1190,7 +1190,7 @@ router.patch('/support/toggle-status', adminAuth, requirePermission(ADMIN_PERMIS
         const next = await SupportChat.findOne({ status: 'waiting' }).sort({ priorityLevel: -1, queuedAt: 1 });
         if (!next) break;
         const result = await tryAssignChat(next._id, io);
-        if (!result) break;
+        if (!result) continue;
         admin.activeSupportChats++;
       }
 
@@ -1266,8 +1266,7 @@ router.post('/support/chats/:id/message', adminAuth, requirePermission(ADMIN_PER
       req.params.id,
       {
         $push: { messages: { sender: 'support', adminId: req.admin._id, text: text.trim() } },
-        assignedTo: req.admin._id,
-        $set: { status: 'assigned' },
+        $set: { status: 'assigned', assignedTo: req.admin._id },
       },
       { new: true }
     ).populate('userId', 'name');
@@ -1294,7 +1293,7 @@ router.patch('/support/chats/:id/close', adminAuth, requirePermission(ADMIN_PERM
     const chat = await SupportChat.findById(req.params.id);
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
     const operatorId = chat.assignedTo || req.admin._id;
-    await SupportChat.findByIdAndUpdate(req.params.id, { status: 'closed' });
+    await SupportChat.findByIdAndUpdate(req.params.id, { $set: { status: 'closed', closedAt: new Date() } });
     const io = req.app.get('io');
     await onChatClosed(operatorId, io);
     if (io) io.to(`user_${chat.userId}`).emit('chat_closed', { chatId: chat._id });

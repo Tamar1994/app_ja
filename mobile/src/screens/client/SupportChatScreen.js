@@ -290,7 +290,9 @@ export default function SupportChatScreen({ navigation }) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.headerRow}>
-          <View style={{ width: 24 }} />
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Aguardando</Text>
           <View style={{ width: 24 }} />
         </View>
