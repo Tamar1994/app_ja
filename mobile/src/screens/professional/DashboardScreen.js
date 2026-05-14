@@ -22,16 +22,23 @@ export default function DashboardScreen({ navigation }) {
   const { emit, on } = useSocket();
   const [available, setAvailable] = useState(user?.professional?.isAvailable || false);
   const [requests, setRequests] = useState([]);
+  const [scheduledRequests, setScheduledRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [selectedScheduledRequest, setSelectedScheduledRequest] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [incomingJob, setIncomingJob] = useState(null); // dados do pedido recebido via socket
+  const [incomingJob, setIncomingJob] = useState(null);
+  const [activeTab, setActiveTab] = useState('immediate'); // 'immediate' | 'scheduled'
 
   const loadRequests = useCallback(async () => {
     try {
-      const { data } = await requestAPI.list('available');
-      setRequests(data.requests);
+      const [immedRes, schedRes] = await Promise.all([
+        requestAPI.list('available').catch(() => ({ data: { requests: [] } })),
+        requestAPI.scheduledFeed().catch(() => ({ data: { requests: [] } })),
+      ]);
+      setRequests(immedRes.data.requests);
+      setScheduledRequests(schedRes.data.requests);
     } catch {
       // ignora
     } finally {
@@ -189,6 +196,34 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
+  const handleScheduleAccept = async (requestId) => {
+    setActionLoading(true);
+    try {
+      await requestAPI.scheduleAccept(requestId);
+      setSelectedScheduledRequest(null);
+      setScheduledRequests(prev => prev.filter(r => r._id !== requestId));
+      Alert.alert(
+        '📅 Agendamento aceito!',
+        'O cliente será notificado. Aguarde a confirmação dele. O serviço aparecerá na sua Agenda após a confirmação.',
+        [{ text: 'OK' }],
+      );
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível aceitar o agendamento.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleScheduleReject = async (requestId) => {
+    try {
+      await requestAPI.scheduleReject(requestId);
+      setSelectedScheduledRequest(null);
+      setScheduledRequests(prev => prev.filter(r => r._id !== requestId));
+    } catch {
+      Alert.alert('Erro', 'Não foi possível recusar.');
+    }
+  };
+
   const renderItem = ({ item }) => (
     <TouchableOpacity style={styles.card} onPress={() => setSelectedRequest(item)} activeOpacity={0.85}>
       <View style={styles.cardHeader}>
@@ -227,6 +262,44 @@ export default function DashboardScreen({ navigation }) {
       </View>
       <View style={styles.tapHint}>
         <Text style={styles.tapHintText}>Toque para ver detalhes →</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderScheduledItem = ({ item }) => (
+    <TouchableOpacity style={styles.card} onPress={() => setSelectedScheduledRequest(item)} activeOpacity={0.85}>
+      <View style={styles.cardHeader}>
+        <LinearGradient colors={['#EEF2FF', '#E8F0FE']} style={styles.cardAvatar}>
+          <Ionicons name="calendar" size={22} color={colors.primary} />
+        </LinearGradient>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardName}>{item.client?.name || 'Cliente'}</Text>
+          <Text style={styles.cardAddress} numberOfLines={1}>
+            {item.address?.street}, {item.address?.city}
+          </Text>
+        </View>
+        <View style={styles.priceWrap}>
+          <Text style={styles.cardPriceLabel}>estimado</Text>
+          <Text style={styles.cardPrice}>
+            R$ {((item.pricing?.estimated || 0) * (1 - (item.pricing?.platformFeePercent || 15) / 100)).toFixed(0)}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.cardDivider} />
+      <View style={styles.cardTags}>
+        {[
+          { icon: 'pricetag-outline', label: item.details?.tierLabel || '-' },
+          { icon: 'calendar-outline', label: new Date(item.details?.scheduledDate).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }) },
+          { icon: 'time-outline', label: new Date(item.details?.scheduledDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) },
+        ].map((tag, i) => (
+          <View key={i} style={styles.tag}>
+            <Ionicons name={tag.icon} size={12} color={colors.primary} />
+            <Text style={styles.tagText}>{tag.label}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.tapHint}>
+        <Text style={styles.tapHintText}>Toque para ver detalhes e aceitar →</Text>
       </View>
     </TouchableOpacity>
   );
@@ -277,9 +350,26 @@ export default function DashboardScreen({ navigation }) {
         </View>
       </LinearGradient>
 
-      {/* Lista de pedidos */}
-      <View style={styles.listHeaderWrap}>
-        <Text style={styles.listTitle}>Pedidos disponíveis</Text>
+      {/* Tabs: Imediatos / Agendamentos */}
+      <View style={styles.tabsRow}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'immediate' && styles.tabActive]}
+          onPress={() => setActiveTab('immediate')}
+        >
+          <Ionicons name="flash" size={15} color={activeTab === 'immediate' ? colors.primary : colors.textLight} />
+          <Text style={[styles.tabText, activeTab === 'immediate' && styles.tabTextActive]}>
+            Imediatos {requests.length > 0 ? `(${requests.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'scheduled' && styles.tabActive]}
+          onPress={() => setActiveTab('scheduled')}
+        >
+          <Ionicons name="calendar" size={15} color={activeTab === 'scheduled' ? colors.primary : colors.textLight} />
+          <Text style={[styles.tabText, activeTab === 'scheduled' && styles.tabTextActive]}>
+            Agendamentos {scheduledRequests.length > 0 ? `(${scheduledRequests.length})` : ''}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.refreshBtn}
           onPress={() => { setRefreshing(true); loadRequests(); }}
@@ -290,7 +380,7 @@ export default function DashboardScreen({ navigation }) {
 
       {loading ? (
         <ActivityIndicator color={colors.secondary} style={{ marginTop: 32 }} />
-      ) : (
+      ) : activeTab === 'immediate' ? (
         <FlatList
           data={requests}
           keyExtractor={(item) => item._id}
@@ -307,10 +397,10 @@ export default function DashboardScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <View style={styles.emptyIcon}>
-                <Ionicons name="search-outline" size={36} color={colors.textLight} />
+                <Ionicons name="flash-outline" size={36} color={colors.textLight} />
               </View>
               <Text style={styles.emptyTitle}>
-                {available ? 'Nenhum pedido no momento' : 'Fique online para receber pedidos'}
+                {available ? 'Nenhum pedido imediato no momento' : 'Fique online para receber pedidos'}
               </Text>
               {!available && (
                 <TouchableOpacity
@@ -322,6 +412,30 @@ export default function DashboardScreen({ navigation }) {
                   </LinearGradient>
                 </TouchableOpacity>
               )}
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          data={scheduledRequests}
+          keyExtractor={(item) => item._id}
+          renderItem={renderScheduledItem}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); loadRequests(); }}
+              colors={[colors.secondary]}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <Ionicons name="calendar-outline" size={36} color={colors.textLight} />
+              </View>
+              <Text style={styles.emptyTitle}>Nenhum agendamento disponível no momento</Text>
+              <Text style={styles.emptySubtitle}>Puxe para atualizar e ver novos pedidos de agendamento</Text>
             </View>
           }
         />
@@ -395,6 +509,78 @@ export default function DashboardScreen({ navigation }) {
             )}
 
             <TouchableOpacity onPress={() => setSelectedRequest(null)} style={styles.modalClose}>
+              <Text style={styles.modalCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de detalhes de agendamento */}
+      <Modal visible={!!selectedScheduledRequest} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Pedido de agendamento</Text>
+            {selectedScheduledRequest && (
+              <>
+                <View style={styles.modalDetail}>
+                  {[
+                    { icon: 'person-outline', label: 'Cliente', value: selectedScheduledRequest.client?.name },
+                    {
+                      icon: 'calendar-outline', label: 'Data',
+                      value: new Date(selectedScheduledRequest.details?.scheduledDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }),
+                    },
+                    {
+                      icon: 'time-outline', label: 'Horário',
+                      value: new Date(selectedScheduledRequest.details?.scheduledDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                    },
+                    { icon: 'pricetag-outline', label: 'Serviço', value: selectedScheduledRequest.details?.tierLabel },
+                    {
+                      icon: 'location-outline', label: 'Endereço',
+                      value: `${selectedScheduledRequest.address?.street}, ${selectedScheduledRequest.address?.city}`,
+                    },
+                  ].map((row, i) => (
+                    <View key={i} style={styles.detailRow}>
+                      <View style={styles.detailIcon}><Ionicons name={row.icon} size={16} color={colors.primary} /></View>
+                      <Text style={styles.detailLabel}>{row.label}</Text>
+                      <Text style={styles.detailValue} numberOfLines={2}>{row.value}</Text>
+                    </View>
+                  ))}
+                </View>
+
+                <View style={[styles.earningsHighlight, { backgroundColor: colors.success + '15', marginBottom: 16 }]}>
+                  <Text style={[styles.earningsLabel, { color: colors.success }]}>Estimativa de ganho</Text>
+                  <Text style={[styles.earningsValue, { color: colors.success }]}>
+                    R$ {((selectedScheduledRequest.pricing?.estimated || 0) * (1 - (selectedScheduledRequest.pricing?.platformFeePercent || 15) / 100)).toFixed(2)}
+                  </Text>
+                  <Text style={[styles.earningsNote, { color: colors.textLight, fontSize: 11 }]}>
+                    Pagamento após conclusão · buffer de 30min para deslocamento
+                  </Text>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.btnReject}
+                    onPress={() => handleScheduleReject(selectedScheduledRequest._id)}
+                    disabled={actionLoading}
+                  >
+                    <Text style={styles.btnRejectText}>Recusar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.btnAcceptWrap}
+                    onPress={() => handleScheduleAccept(selectedScheduledRequest._id)}
+                    disabled={actionLoading}
+                  >
+                    <LinearGradient colors={[colors.primary, colors.primaryDark || '#C0392B']} style={styles.btnAccept}>
+                      {actionLoading
+                        ? <ActivityIndicator color={colors.white} />
+                        : <Text style={styles.btnAcceptText}>Aceitar agendamento</Text>}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+            <TouchableOpacity onPress={() => setSelectedScheduledRequest(null)} style={styles.modalClose}>
               <Text style={styles.modalCloseText}>Fechar</Text>
             </TouchableOpacity>
           </View>
@@ -526,6 +712,25 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 12, color: colors.secondary, fontWeight: '600' },
   tapHint: { backgroundColor: `${colors.secondary}10`, paddingVertical: 7, alignItems: 'center' },
   tapHintText: { fontSize: 11, color: colors.secondary, fontWeight: '600' },
+  // Tabs
+  tabsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: colors.divider,
+    backgroundColor: colors.white, gap: spacing.sm,
+  },
+  tab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: borderRadius.full,
+    borderWidth: 1.5, borderColor: 'transparent',
+  },
+  tabActive: { backgroundColor: `${colors.primary}10`, borderColor: colors.primary },
+  tabText: { fontSize: typography.fontSizes.sm, fontWeight: '600', color: colors.textLight },
+  tabTextActive: { color: colors.primary },
+  emptySubtitle: {
+    fontSize: typography.fontSizes.sm, color: colors.textLight,
+    textAlign: 'center', marginTop: 8, paddingHorizontal: spacing.xl,
+  },
   // Empty
   empty: { alignItems: 'center', paddingTop: 64, gap: spacing.md },
   emptyIcon: {

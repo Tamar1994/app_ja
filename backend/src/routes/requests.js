@@ -17,7 +17,38 @@ const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService
 
 const router = express.Router();
 
-// Multer para fotos de conclusão de serviço
+// Verifica conflito de agenda: 30min de buffer antes/depois de cada serviço agendado
+async function hasScheduleConflict(professionalId, scheduledDate, durationMinutes, excludeRequestId = null) {
+  const BUFFER_MS = 30 * 60 * 1000;
+  const start = new Date(scheduledDate);
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+  const windowStart = new Date(start.getTime() - BUFFER_MS);
+  const windowEnd = new Date(end.getTime() + BUFFER_MS);
+
+  const filter = {
+    professional: professionalId,
+    status: { $in: ['accepted', 'preparing', 'on_the_way', 'in_progress', 'scheduled'] },
+    'details.scheduledDate': {
+      $gte: new Date(windowStart.getTime() - 12 * 60 * 60000),
+      $lte: new Date(windowEnd.getTime() + 12 * 60 * 60000),
+    },
+  };
+  if (excludeRequestId) filter._id = { $ne: excludeRequestId };
+
+  const existing = await ServiceRequest.find(filter)
+    .select('details.scheduledDate details.durationMinutes')
+    .lean();
+
+  return existing.some((req) => {
+    const eStart = new Date(req.details.scheduledDate);
+    const eEnd = new Date(eStart.getTime() + (req.details.durationMinutes || 60) * 60000);
+    const eWindowStart = new Date(eStart.getTime() - BUFFER_MS);
+    const eWindowEnd = new Date(eEnd.getTime() + BUFFER_MS);
+    return start < eWindowEnd && end > eWindowStart;
+  });
+}
+
+
 const completionPhotosUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
@@ -223,6 +254,7 @@ router.post('/', auth, [
     notes,
     address,
     scheduledDate,
+    isScheduled = false,
   } = req.body;
 
   const coverage = await isCityCovered(address?.city, address?.state);
@@ -245,6 +277,8 @@ router.post('/', auth, [
       client: req.user._id,
       serviceTypeSlug,
       requiresLocationTracking: pricing.serviceType?.requiresLocationTracking || false,
+      requestType: isScheduled ? 'scheduled' : 'immediate',
+      status: isScheduled ? 'pending_professional' : 'searching',
       details: {
         tierLabel,
         durationMinutes: pricing.tier.durationMinutes,
@@ -260,11 +294,11 @@ router.post('/', auth, [
         platformFeePercent: pricing.platformFeePercent,
         platformFee:        pricing.platformFee,
       },
+      payment: isScheduled ? { status: 'pending' } : undefined,
     });
 
-    // Despachar para o primeiro profissional disponível (fila inteligente)
     const io = req.app.get('io');
-    if (io) {
+    if (io && !isScheduled) {
       dispatchToNextProfessional(request._id, io);
     }
 
@@ -275,12 +309,51 @@ router.post('/', auth, [
   }
 });
 
+// GET /api/requests/scheduled-feed — pedidos agendados disponíveis para o profissional aceitar
+router.get('/scheduled-feed', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem acessar o feed de agendamentos' });
+  }
+  try {
+    const requests = await ServiceRequest.find({
+      requestType: 'scheduled',
+      status: 'pending_professional',
+      rejectedBy: { $ne: req.user._id },
+      'details.scheduledDate': { $gt: new Date() },
+    })
+      .populate('client', 'name avatar')
+      .sort({ 'details.scheduledDate': 1 })
+      .limit(50);
+    res.json({ requests });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar pedidos agendados' });
+  }
+});
+
+// GET /api/requests/my-schedule — agenda do profissional (confirmados)
+router.get('/my-schedule', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem acessar a agenda' });
+  }
+  try {
+    const requests = await ServiceRequest.find({
+      professional: req.user._id,
+      status: { $in: ['scheduled', 'accepted', 'preparing', 'on_the_way', 'in_progress'] },
+    })
+      .populate('client', 'name avatar phone')
+      .sort({ 'details.scheduledDate': 1 });
+    res.json({ requests });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar agenda' });
+  }
+});
+
 // GET /api/requests — listar solicitações
 // Cliente: vê as próprias | Profissional: vê disponíveis na região
 router.get('/', auth, async (req, res) => {
   try {
     let requests;
-    if (req.user.userType === 'client') {
+    if (req.user.userType === 'client' || req.user.activeProfile === 'client') {
       requests = await ServiceRequest.find({ client: req.user._id })
         .populate('professional', 'name avatar professional.rating location')
         .sort({ createdAt: -1 });
@@ -452,13 +525,28 @@ router.patch('/:id/professional-location', auth, async (req, res) => {
   }
 });
 
-// PATCH /api/requests/:id/accept — profissional aceita
+// PATCH /api/requests/:id/accept — profissional aceita (pedido imediato)
 router.patch('/:id/accept', auth, async (req, res) => {
   if (req.user.userType !== 'professional') {
     return res.status(403).json({ message: 'Apenas profissionais podem aceitar' });
   }
 
   try {
+    // Verificar conflito de agenda antes de aceitar
+    const pending = await ServiceRequest.findOne({ _id: req.params.id, status: 'searching' })
+      .select('details.scheduledDate details.durationMinutes')
+      .lean();
+    if (!pending) return res.status(400).json({ message: 'Solicitação não disponível' });
+
+    const conflict = await hasScheduleConflict(
+      req.user._id,
+      pending.details.scheduledDate,
+      pending.details.durationMinutes,
+    );
+    if (conflict) {
+      return res.status(409).json({ message: 'Você já tem um serviço agendado neste horário (incluindo 30min de deslocamento). Verifique sua agenda.' });
+    }
+
     const request = await ServiceRequest.findOneAndUpdate(
       { _id: req.params.id, status: 'searching' },
       {
@@ -510,6 +598,162 @@ router.patch('/:id/accept', auth, async (req, res) => {
     res.json({ request });
   } catch {
     res.status(500).json({ message: 'Erro ao aceitar serviço' });
+  }
+});
+
+// PATCH /api/requests/:id/schedule-accept — profissional aceita do feed de agendamentos
+router.patch('/:id/schedule-accept', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem aceitar agendamentos' });
+  }
+
+  try {
+    const pending = await ServiceRequest.findOne({
+      _id: req.params.id,
+      requestType: 'scheduled',
+      status: 'pending_professional',
+    }).select('details.scheduledDate details.durationMinutes client').lean();
+
+    if (!pending) return res.status(400).json({ message: 'Agendamento não disponível' });
+
+    const conflict = await hasScheduleConflict(
+      req.user._id,
+      pending.details.scheduledDate,
+      pending.details.durationMinutes,
+    );
+    if (conflict) {
+      return res.status(409).json({
+        message: 'Você já tem um serviço neste horário (com 30min de deslocamento). Verifique sua agenda antes de aceitar.',
+      });
+    }
+
+    const request = await ServiceRequest.findOneAndUpdate(
+      { _id: req.params.id, requestType: 'scheduled', status: 'pending_professional' },
+      {
+        status: 'pending_client',
+        professional: req.user._id,
+        acceptedAt: new Date(),
+      },
+      { new: true }
+    ).populate('client', 'name avatar phone pushToken');
+
+    if (!request) return res.status(400).json({ message: 'Agendamento não disponível' });
+
+    const professional = await User.findById(req.user._id).select('name avatar professional phone');
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${request.client._id}`).emit('schedule_professional_accepted', {
+        request,
+        professional: {
+          _id: professional._id,
+          name: professional.name,
+          avatar: professional.avatar,
+          phone: professional.phone,
+          rating: professional.professional?.rating || 0,
+          totalReviews: professional.professional?.totalReviews || 0,
+        },
+      });
+    }
+
+    if (request.client?.pushToken) {
+      sendExpoPush(
+        request.client.pushToken,
+        '✅ Profissional disponível para seu agendamento!',
+        `${professional.name} aceitou seu agendamento. Confirme para garantir a data.`,
+        { requestId: String(request._id), screen: 'ScheduledPending' },
+      );
+    }
+
+    res.json({ request });
+  } catch {
+    res.status(500).json({ message: 'Erro ao aceitar agendamento' });
+  }
+});
+
+// PATCH /api/requests/:id/schedule-reject — profissional recusa do feed de agendamentos
+router.patch('/:id/schedule-reject', auth, async (req, res) => {
+  if (req.user.userType !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem recusar agendamentos' });
+  }
+  try {
+    await ServiceRequest.findOneAndUpdate(
+      { _id: req.params.id, status: { $in: ['pending_professional', 'pending_client'] } },
+      { $addToSet: { rejectedBy: req.user._id }, $unset: { professional: '', acceptedAt: '' }, status: 'pending_professional' },
+    );
+    res.json({ message: 'Agendamento recusado' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao recusar agendamento' });
+  }
+});
+
+// PATCH /api/requests/:id/schedule-client-confirm — cliente confirma profissional do agendamento
+router.patch('/:id/schedule-client-confirm', auth, async (req, res) => {
+  if (req.user.userType !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem confirmar' });
+  }
+  try {
+    const request = await ServiceRequest.findOneAndUpdate(
+      { _id: req.params.id, client: req.user._id, status: 'pending_client' },
+      { status: 'scheduled', clientConfirmedAt: new Date() },
+      { new: true }
+    ).populate('professional', 'name pushToken');
+
+    if (!request) return res.status(404).json({ message: 'Agendamento não encontrado' });
+
+    const io = req.app.get('io');
+    if (io && request.professional) {
+      io.to(`user_${request.professional._id}`).emit('schedule_client_confirmed', {
+        requestId: request._id,
+        message: 'O cliente confirmou o agendamento. Está na sua agenda!',
+      });
+    }
+
+    if (request.professional?.pushToken) {
+      sendExpoPush(
+        request.professional.pushToken,
+        '📅 Agendamento confirmado!',
+        `O cliente confirmou. O serviço está na sua agenda.`,
+        { requestId: String(request._id), screen: 'Schedule' },
+      );
+    }
+
+    res.json({ request });
+  } catch {
+    res.status(500).json({ message: 'Erro ao confirmar agendamento' });
+  }
+});
+
+// PATCH /api/requests/:id/schedule-client-reject — cliente recusa profissional do agendamento
+router.patch('/:id/schedule-client-reject', auth, async (req, res) => {
+  if (req.user.userType !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem recusar' });
+  }
+  try {
+    const existing = await ServiceRequest.findOne({
+      _id: req.params.id,
+      client: req.user._id,
+      status: 'pending_client',
+    });
+    if (!existing) return res.status(404).json({ message: 'Agendamento não encontrado' });
+
+    const rejectedProfId = existing.professional;
+    await ServiceRequest.findByIdAndUpdate(req.params.id, {
+      status: 'pending_professional',
+      $addToSet: { rejectedBy: rejectedProfId },
+      $unset: { professional: '', acceptedAt: '', clientConfirmedAt: '' },
+    });
+
+    const io = req.app.get('io');
+    if (io && rejectedProfId) {
+      io.to(`user_${rejectedProfId}`).emit('schedule_client_rejected', {
+        requestId: req.params.id,
+        message: 'O cliente optou por outro profissional para este agendamento.',
+      });
+    }
+
+    res.json({ message: 'Buscando outro profissional para o agendamento' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao recusar profissional do agendamento' });
   }
 });
 
@@ -776,8 +1020,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
     const filter = req.user.userType === 'client'
-      ? { _id: req.params.id, client: req.user._id, status: { $in: ['searching', 'accepted', 'preparing', 'on_the_way'] } }
-      : { _id: req.params.id, professional: req.user._id, status: { $in: ['accepted', 'preparing', 'on_the_way'] } };
+      ? { _id: req.params.id, client: req.user._id, status: { $in: ['pending_professional', 'pending_client', 'scheduled', 'searching', 'accepted', 'preparing', 'on_the_way'] } }
+      : { _id: req.params.id, professional: req.user._id, status: { $in: ['pending_client', 'scheduled', 'accepted', 'preparing', 'on_the_way'] } };
 
     const request = await ServiceRequest.findOneAndUpdate(filter, {
       status: 'cancelled',

@@ -10,6 +10,9 @@ import { colors, typography, spacing, borderRadius, shadows } from '../../theme'
 import { formatHours } from '../../utils/format';
 
 const STATUS_LABELS = {
+  pending_professional: 'Buscando profissional',
+  pending_client: 'Confirmar profissional',
+  scheduled: 'Agendado',
   searching: 'Buscando',
   accepted: 'Aceito',
   preparing: 'Se preparando',
@@ -19,6 +22,9 @@ const STATUS_LABELS = {
   cancelled: 'Cancelado',
 };
 const STATUS_COLORS = {
+  pending_professional: colors.primary,
+  pending_client: '#F59E0B',
+  scheduled: '#7C3AED',
   searching: colors.primary,
   accepted: colors.secondary,
   preparing: '#7C3AED',
@@ -28,6 +34,9 @@ const STATUS_COLORS = {
   cancelled: colors.textLight,
 };
 const STATUS_ICONS = {
+  pending_professional: 'search',
+  pending_client: 'person-circle',
+  scheduled: 'calendar',
   searching: 'search',
   accepted: 'person-circle',
   preparing: 'construct',
@@ -62,6 +71,10 @@ export default function HistoryScreen({ navigation }) {
       <TouchableOpacity
         style={styles.card}
         onPress={() => {
+          if (['pending_professional', 'pending_client', 'scheduled'].includes(item.status)) {
+            navigation.navigate('HomeTab', { screen: 'ScheduledPending', params: { requestId: item._id } });
+            return;
+          }
           if (item.status === 'searching') {
             navigation.navigate('HomeTab', { screen: 'Searching', params: { requestId: item._id } });
             return;

@@ -20,6 +20,7 @@ import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 import RequestDetailsScreen from '../screens/shared/RequestDetailsScreen';
+import ScheduleScreen from '../screens/professional/ScheduleScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -34,6 +35,7 @@ function DashboardStack() {
       <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
       <Stack.Screen name="ServiceChat" component={ServiceChatScreen} />
       <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} />
+      <Stack.Screen name="Schedule" component={ScheduleScreen} />
     </Stack.Navigator>
   );
 }
@@ -71,6 +73,7 @@ export default function ProfessionalNavigator() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
           if (route.name === 'DashboardTab') iconName = focused ? 'grid' : 'grid-outline';
+          else if (route.name === 'ScheduleTab') iconName = focused ? 'calendar' : 'calendar-outline';
           else if (route.name === 'EarningsTab') iconName = focused ? 'wallet' : 'wallet-outline';
           else if (route.name === 'HistoryTab') iconName = focused ? 'time' : 'time-outline';
           else if (route.name === 'ProfileTab') iconName = focused ? 'person' : 'person-outline';
@@ -79,6 +82,7 @@ export default function ProfessionalNavigator() {
       })}
     >
       <Tab.Screen name="DashboardTab" component={DashboardStack} options={{ title: 'Serviços' }} />
+      <Tab.Screen name="ScheduleTab" component={ScheduleScreen} options={{ title: 'Agenda' }} />
       <Tab.Screen name="EarningsTab" component={EarningsScreen} options={{ title: 'Carteira' }} />
       <Tab.Screen name="HistoryTab" component={HistoryScreen} options={{ title: 'Histórico' }} />
       <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Perfil' }} />

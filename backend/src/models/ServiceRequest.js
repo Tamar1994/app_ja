@@ -20,9 +20,14 @@ const serviceRequestSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  requestType: {
+    type: String,
+    enum: ['immediate', 'scheduled'],
+    default: 'immediate',
+  },
   status: {
     type: String,
-    enum: ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress', 'completed', 'cancelled'],
+    enum: ['pending_professional', 'pending_client', 'scheduled', 'searching', 'accepted', 'preparing', 'on_the_way', 'in_progress', 'completed', 'cancelled'],
     default: 'searching',
   },
   address: {

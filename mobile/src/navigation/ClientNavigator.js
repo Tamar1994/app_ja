@@ -27,6 +27,7 @@ import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 import RequestDetailsScreen from '../screens/shared/RequestDetailsScreen';
 import ProfessionalUpgradeScreen from '../screens/auth/ProfessionalUpgradeScreen';
 import ProfessionalAddressScreen from '../screens/auth/ProfessionalAddressScreen';
+import ScheduledPendingScreen from '../screens/client/ScheduledPendingScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -47,6 +48,7 @@ function HomeStack() {
       <Stack.Screen name="Wallet" component={WalletScreen} />
       <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
       <Stack.Screen name="Security" component={SecurityScreen} />
+      <Stack.Screen name="ScheduledPending" component={ScheduledPendingScreen} />
     </Stack.Navigator>
   );
 }
