@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { formatHours } from '../../utils/format';
+import { formatDuration } from '../../utils/format';
 
 export default function ProfessionalHistoryScreen({ navigation }) {
   const [requests, setRequests] = useState([]);
@@ -96,7 +96,7 @@ export default function ProfessionalHistoryScreen({ navigation }) {
       <View style={styles.cardBottom}>
         <View style={styles.cardDetail}>
           <Ionicons name="time-outline" size={14} color={colors.textLight} />
-          <Text style={styles.cardDetailText}>{formatHours(item.details.hours)}</Text>
+          <Text style={styles.cardDetailText}>{formatDuration(item.details.durationMinutes)}</Text>
         </View>
         <View style={styles.cardDetail}>
           <Ionicons name="location-outline" size={14} color={colors.textLight} />

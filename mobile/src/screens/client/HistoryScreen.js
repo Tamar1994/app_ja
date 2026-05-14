@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { formatHours } from '../../utils/format';
+import { formatDuration } from '../../utils/format';
 
 const STATUS_LABELS = {
   pending_professional: 'Buscando profissional',
@@ -116,7 +116,7 @@ export default function HistoryScreen({ navigation }) {
         <View style={styles.cardBottom}>
           <View style={styles.cardDetail}>
             <Ionicons name="time-outline" size={14} color={colors.textLight} />
-            <Text style={styles.cardDetailText}>{formatHours(item.details.hours)}</Text>
+            <Text style={styles.cardDetailText}>{formatDuration(item.details.durationMinutes)}</Text>
           </View>
           {item.professional && (
             <View style={styles.cardDetail}>

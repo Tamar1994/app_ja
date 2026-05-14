@@ -10,7 +10,7 @@ import * as Location from 'expo-location';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceChatAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { formatHours } from '../../utils/format';
+import { formatDuration } from '../../utils/format';
 
 const STEPS = [
   { status: 'accepted', label: 'Profissional confirmado', icon: 'person-circle', color: colors.secondary },
@@ -278,7 +278,7 @@ export default function TrackingScreen({ navigation, route }) {
       return () => clearTimeout(t);
     }
   }, [canRenderMap, fitMap]);
-  const requestHours = Number.isFinite(toFiniteNumber(request?.details?.hours)) ? Number(request.details.hours) : null;
+  const requestDuration = request?.details?.durationMinutes || null;
   const requestStreet = request?.address?.street || 'Endereço não informado';
   const requestCity = request?.address?.city || 'Cidade não informada';
   const estimatedValue = Number.isFinite(toFiniteNumber(request?.pricing?.estimated))
@@ -461,7 +461,7 @@ export default function TrackingScreen({ navigation, route }) {
           <View style={styles.detailsCard}>
             <Text style={styles.cardLabel}>Detalhes</Text>
             {[
-              { label: 'Duração', value: requestHours ? formatHours(requestHours) : '-', icon: 'time-outline' },
+              { label: 'Duração', value: requestDuration ? formatDuration(requestDuration) : '-', icon: 'time-outline' },
               { label: 'Endereço', value: `${requestStreet}, ${requestCity}`, icon: 'location-outline' },
               { label: 'Total estimado', value: `R$ ${estimatedValue.toFixed(2)}`, icon: 'cash-outline', highlight: true },
             ].map((row, i) => (

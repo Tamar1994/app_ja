@@ -12,7 +12,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, userAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { formatHours } from '../../utils/format';
+import { formatDuration } from '../../utils/format';
 import IncomingJobModal from '../../components/IncomingJobModal';
 import { registerForPushNotifications } from '../../services/notifications';
 import { getPendingNotification, clearPendingNotification } from '../../services/pendingNotification';
@@ -270,12 +270,10 @@ export default function DashboardScreen({ navigation }) {
       <View style={styles.cardDivider} />
       <View style={styles.cardTags}>
         {[
-          { icon: 'time-outline', label: formatHours(item.details.hours) },
-          ...((item.details.customFormSummary || []).length
-            ? [{ icon: 'list-outline', label: `${item.details.customFormSummary.length} campo(s)` }]
-            : [{ icon: 'home-outline', label: `${item.details.rooms} côm.` }]),
+          { icon: 'time-outline', label: formatDuration(item.details.durationMinutes) },
+          ...(item.details.tierLabel ? [{ icon: 'pricetag-outline', label: item.details.tierLabel }] : []),
+          ...((item.details.upsells || []).length ? [{ icon: 'add-circle-outline', label: `+${item.details.upsells.length} extra(s)` }] : []),
           { icon: 'calendar-outline', label: new Date(item.details.scheduledDate).toLocaleDateString('pt-BR') },
-          ...(item.serviceTypeSlug === 'diarista' && item.details.hasProducts ? [{ icon: 'cube-outline', label: 'Produtos' }] : []),
         ].map((tag, i) => (
           <View key={i} style={styles.tag}>
             <Ionicons name={tag.icon} size={12} color={colors.secondary} />
@@ -476,14 +474,15 @@ export default function DashboardScreen({ navigation }) {
                 <View style={styles.modalDetail}>
                   {[
                     { icon: 'person-outline', label: 'Cliente', value: selectedRequest.client?.name },
-                    { icon: 'time-outline', label: 'Duração', value: formatHours(selectedRequest.details.hours) },
-                    ...((selectedRequest.details.customFormSummary || []).length
-                      ? (selectedRequest.details.customFormSummary || []).map((item) => ({
-                        icon: 'list-outline',
-                        label: item.label,
-                        value: item.displayValue || String(item.value || '-'),
+                    { icon: 'time-outline', label: 'Duração', value: formatDuration(selectedRequest.details.durationMinutes) },
+                    ...(selectedRequest.details.tierLabel ? [{ icon: 'pricetag-outline', label: 'Faixa', value: selectedRequest.details.tierLabel }] : []),
+                    ...((selectedRequest.details.upsells || []).length
+                      ? (selectedRequest.details.upsells || []).map((item) => ({
+                        icon: 'add-circle-outline',
+                        label: item.label || item.key,
+                        value: `R$ ${Number(item.price || 0).toFixed(2)}`,
                       }))
-                      : [{ icon: 'home-outline', label: 'Cômodos', value: `${selectedRequest.details.rooms} cômodo(s) · ${selectedRequest.details.bathrooms} banheiro(s)` }]),
+                      : []),
                     { icon: 'location-outline', label: 'Endereço', value: `${selectedRequest.address.street}, ${selectedRequest.address.city}` },
                     { icon: 'calendar-outline', label: 'Data', value: new Date(selectedRequest.details.scheduledDate).toLocaleDateString('pt-BR') },
                   ].map((row, i) => (

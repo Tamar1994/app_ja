@@ -9,7 +9,7 @@ import * as Location from 'expo-location';
 import { requestAPI, userAPI, serviceChatAPI } from '../../services/api';
 import { useSocket } from '../../context/SocketContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { formatHours } from '../../utils/format';
+import { formatDuration } from '../../utils/format';
 
 export default function ActiveJobScreen({ navigation, route }) {
   const { requestId } = route.params;
@@ -328,16 +328,14 @@ export default function ActiveJobScreen({ navigation, route }) {
             <Text style={styles.detailsTitle}>Detalhes do serviço</Text>
             {[
               { icon: 'location-outline', label: 'Endereço', value: `${request.address.street}${request.address.complement ? `, ${request.address.complement}` : ''} — ${request.address.city}` },
-              { icon: 'time-outline', label: 'Duração', value: formatHours(request.details.hours) },
-              ...((request.details.customFormSummary || []).length
-                ? (request.details.customFormSummary || []).map((item) => ({
-                  icon: 'list-outline',
-                  label: item.label,
-                  value: item.displayValue || String(item.value || '-'),
+              { icon: 'time-outline', label: 'Duração', value: formatDuration(request.details.durationMinutes) },
+              ...(request.details.tierLabel ? [{ icon: 'pricetag-outline', label: 'Faixa', value: request.details.tierLabel }] : []),
+              ...((request.details.upsells || []).length
+                ? (request.details.upsells || []).map((item) => ({
+                  icon: 'add-circle-outline',
+                  label: item.label || item.key,
+                  value: `R$ ${Number(item.price || 0).toFixed(2)}`,
                 }))
-                : [{ icon: 'grid-outline', label: 'Cômodos', value: `${request.details.rooms} cômodo(s), ${request.details.bathrooms} banheiro(s)` }]),
-              ...(request.serviceTypeSlug === 'diarista'
-                ? [{ icon: 'cube-outline', label: 'Produtos', value: request.details.hasProducts ? 'Cliente fornece' : 'Você traz' }]
                 : []),
               ...(request.details.notes ? [{ icon: 'chatbubble-outline', label: 'Obs.', value: request.details.notes }] : []),
             ].map((row, i) => (

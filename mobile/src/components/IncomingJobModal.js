@@ -6,7 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../theme';
-import { formatHours } from '../utils/format';
+import { formatDuration } from '../utils/format';
 
 const { width, height } = Dimensions.get('window');
 
@@ -165,10 +165,10 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
                 </Text>
               </View>
             )}
-            {request?.details?.hours && (
+            {request?.details?.durationMinutes > 0 && (
               <View style={styles.detailRow}>
                 <Ionicons name="time-outline" size={16} color={colors.primary} />
-                <Text style={styles.detailText}>{formatHours(request.details.hours)} de serviço</Text>
+                <Text style={styles.detailText}>{formatDuration(request.details.durationMinutes)} de serviço</Text>
               </View>
             )}
             {request?.address?.city && (

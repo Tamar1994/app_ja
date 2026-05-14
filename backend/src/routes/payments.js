@@ -221,27 +221,24 @@ async function createRequestFromIntent(intent, io) {
 
   const m = intent.metadata;
   const address = JSON.parse(m.address);
-  const hasProducts = m.hasProducts === 'true';
   const serviceTypeSlug = m.serviceTypeSlug || null;
-  let customFormData = {};
-  if (m.customFormData) {
-    try {
-      customFormData = JSON.parse(m.customFormData);
-    } catch {
-      customFormData = {};
-    }
-  }
+  const tierLabel = m.tierLabel || null;
+  let parsedUpsells = [];
+  try { parsedUpsells = JSON.parse(m.selectedUpsells || '[]'); } catch {}
+  const selectedUpsells = parsedUpsells.map((u) => (typeof u === 'string' ? u : u.key)).filter(Boolean);
   const {
-    pricePerHour,
+    tier,
+    tierPrice,
+    upsellsTotal,
     estimated,
     platformFee,
-    normalizedCustomFormData,
-    customFormSummary,
+    platformFeePercent,
+    upsells: resolvedUpsells,
   } = await calculateCheckoutPricing({
-    hours: parseInt(m.hours),
-    hasProducts,
     serviceTypeSlug,
-    customFormData,
+    tierLabel,
+    selectedUpsells,
+    scheduledDate: m.scheduledDate,
   });
   const couponsMeta = parseCouponMeta(m.couponCodes, m.couponDiscounts);
   const discountTotal = couponsMeta.reduce((sum, c) => sum + Number(c.discountAmount || 0), 0);
@@ -257,19 +254,19 @@ async function createRequestFromIntent(intent, io) {
     client: m.clientId,
     serviceTypeSlug,
     details: {
-      hours: parseInt(m.hours),
-      rooms: parseInt(m.rooms),
-      bathrooms: parseInt(m.bathrooms),
-      hasProducts,
-      customFormData: normalizedCustomFormData,
-      customFormSummary,
-      notes: m.notes,
+      tierLabel,
+      durationMinutes: Number(m.durationMinutes) || tier.durationMinutes,
+      upsells: resolvedUpsells,
+      notes: m.notes || '',
       scheduledDate: m.scheduledDate,
     },
     address,
     pricing: {
-      pricePerHour,
+      tierPrice,
+      upsellsTotal,
       estimated,
+      platformFeePercent,
+      platformFee,
       final: customerTotalAfterCoupons,
       customerTotal: customerTotalAfterCoupons,
       customerPaidExternal: customerTotalPaid,
@@ -278,7 +275,6 @@ async function createRequestFromIntent(intent, io) {
       walletAppliedProfessional,
       discountTotal,
       appliedCoupons: couponsMeta.map((c) => c.code),
-      platformFee,
     },
     payment: {
       status: 'paid',
@@ -349,19 +345,22 @@ async function createRequestFromCoraCharge(charge, io) {
 
   const p = charge.requestPayload || {};
   const address = p.address || {};
-  const hasProducts = Boolean(p.hasProducts);
   const serviceTypeSlug = p.serviceTypeSlug || null;
+  const tierLabel = p.tierLabel || null;
+  const selectedUpsells = (p.selectedUpsells || []).map((u) => (typeof u === 'string' ? u : u.key)).filter(Boolean);
   const {
-    pricePerHour,
+    tier,
+    tierPrice,
+    upsellsTotal,
     estimated,
     platformFee,
-    normalizedCustomFormData,
-    customFormSummary,
+    platformFeePercent,
+    upsells: resolvedUpsells,
   } = await calculateCheckoutPricing({
-    hours: Number(p.hours),
-    hasProducts,
     serviceTypeSlug,
-    customFormData: p.customFormData || {},
+    tierLabel,
+    selectedUpsells,
+    scheduledDate: p.scheduledDate,
   });
 
   const discountTotal = Number(charge.discountTotal || 0);
@@ -378,19 +377,19 @@ async function createRequestFromCoraCharge(charge, io) {
     client: charge.client,
     serviceTypeSlug,
     details: {
-      hours: Number(p.hours || 1),
-      rooms: Number(p.rooms || 1),
-      bathrooms: Number(p.bathrooms || 1),
-      hasProducts,
-      customFormData: normalizedCustomFormData,
-      customFormSummary,
+      tierLabel,
+      durationMinutes: tier.durationMinutes,
+      upsells: resolvedUpsells,
       notes: p.notes || '',
       scheduledDate: p.scheduledDate,
     },
     address,
     pricing: {
-      pricePerHour,
+      tierPrice,
+      upsellsTotal,
       estimated,
+      platformFeePercent,
+      platformFee,
       final: customerTotalAfterCoupons,
       customerTotal: customerTotalAfterCoupons,
       customerPaidExternal: customerTotalPaid,
@@ -399,7 +398,6 @@ async function createRequestFromCoraCharge(charge, io) {
       walletAppliedProfessional,
       discountTotal,
       appliedCoupons: appliedCoupons.map((c) => c.code),
-      platformFee,
     },
     payment: {
       status: 'paid',
@@ -461,40 +459,39 @@ async function createRequestFromCoraCharge(charge, io) {
 // POST /api/payments/create-intent
 // Cria PaymentIntent + EphemeralKey para o Payment Sheet do Stripe
 router.post('/create-intent', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
 
   const {
-    hours,
-    hasProducts,
-    rooms,
-    bathrooms,
+    serviceTypeSlug,
+    tierLabel,
+    selectedUpsells = [],
     notes,
     address,
     scheduledDate,
-    serviceTypeSlug,
-    customFormData,
     couponCodes,
     useWallet,
     walletAmount,
   } = req.body;
-  if (!hours || !address?.street || !address?.city || !scheduledDate) {
+  if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
   try {
     const {
+      tier,
+      tierPrice,
+      upsellsTotal,
       estimated,
-      pricePerHour,
       platformFee,
-      normalizedCustomFormData,
-      customFormSummary,
+      platformFeePercent,
+      upsells: resolvedUpsells,
     } = await calculateCheckoutPricing({
-      hours,
-      hasProducts: !!hasProducts,
-      serviceTypeSlug: serviceTypeSlug || null,
-      customFormData: customFormData || {},
+      serviceTypeSlug,
+      tierLabel,
+      selectedUpsells,
+      scheduledDate,
     });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,
@@ -518,19 +515,19 @@ router.post('/create-intent', auth, async (req, res) => {
         client: req.user._id,
         serviceTypeSlug: serviceTypeSlug || null,
         details: {
-          hours: Number(hours),
-          rooms: Number(rooms || 1),
-          bathrooms: Number(bathrooms || 1),
-          hasProducts: Boolean(hasProducts),
-          customFormData: normalizedCustomFormData,
-          customFormSummary,
+          tierLabel,
+          durationMinutes: tier.durationMinutes,
+          upsells: resolvedUpsells,
           notes: notes || '',
           scheduledDate,
         },
         address,
         pricing: {
-          pricePerHour,
+          tierPrice,
+          upsellsTotal,
           estimated,
+          platformFeePercent,
+          platformFee,
           final: finalAmount,
           customerTotal: finalAmount,
           customerPaidExternal: 0,
@@ -539,7 +536,6 @@ router.post('/create-intent', auth, async (req, res) => {
           walletAppliedProfessional: walletUsage.fromProfessionalWallet,
           discountTotal: checkout.pricing.totalDiscount,
           appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code),
-          platformFee,
         },
         payment: {
           status: 'paid',
@@ -599,14 +595,12 @@ router.post('/create-intent', auth, async (req, res) => {
         },
         metadata: {
           clientId: req.user._id.toString(),
-          hours: String(hours),
-          hasProducts: String(!!hasProducts),
-          rooms: String(rooms || 1),
-          bathrooms: String(bathrooms || 1),
+          serviceTypeSlug: serviceTypeSlug || '',
+          tierLabel: tierLabel || '',
+          selectedUpsells: JSON.stringify(resolvedUpsells),
+          durationMinutes: String(tier.durationMinutes),
           notes: notes || '',
           scheduledDate,
-          serviceTypeSlug: serviceTypeSlug || '',
-          customFormData: JSON.stringify(normalizedCustomFormData),
           couponCodes: checkout.pricing.appliedCoupons.map((c) => c.code).join(','),
           couponDiscounts: checkout.pricing.appliedCoupons.map((c) => String(c.discountAmount)).join(','),
           walletAppliedTotal: String(walletUsage.totalWalletUsed),
@@ -646,27 +640,27 @@ router.post('/create-intent', auth, async (req, res) => {
 // POST /api/payments/preview
 // Pré-visualiza o total com cupons antes de abrir o Payment Sheet
 router.post('/preview', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem simular pagamento' });
   }
 
   const {
-    hours,
-    hasProducts,
     serviceTypeSlug,
-    customFormData,
+    tierLabel,
+    selectedUpsells = [],
+    scheduledDate,
     couponCodes,
     useWallet,
     walletAmount,
   } = req.body;
-  if (!hours) return res.status(400).json({ message: 'hours é obrigatório' });
+  if (!tierLabel) return res.status(400).json({ message: 'tierLabel é obrigatório' });
 
   try {
-    const { estimated, pricePerHour, normalizedCustomFormData, pricingBreakdown } = await calculateCheckoutPricing({
-      hours,
-      hasProducts: !!hasProducts,
-      serviceTypeSlug: serviceTypeSlug || null,
-      customFormData: customFormData || {},
+    const { estimated } = await calculateCheckoutPricing({
+      serviceTypeSlug,
+      tierLabel,
+      selectedUpsells,
+      scheduledDate: scheduledDate || null,
     });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,
@@ -691,9 +685,6 @@ router.post('/preview', auth, async (req, res) => {
       walletAppliedProfessional: walletUsage.fromProfessionalWallet,
       walletAvailable: walletUsage.maxWalletAvailable,
       total: Number((checkout.pricing.finalTotal - walletUsage.totalWalletUsed).toFixed(2)),
-      pricePerHour,
-      customFormData: normalizedCustomFormData,
-      pricingBreakdown,
       appliedCoupons: checkout.pricing.appliedCoupons,
       rejectedCoupons: checkout.rejectedCoupons,
     });
@@ -735,7 +726,7 @@ router.post('/confirm', auth, async (req, res) => {
 // POST /api/payments/cora/pix/create
 // Cria uma cobranca Pix Cora com expiracao local de 15 minutos (sem reutilizacao)
 router.post('/cora/pix/create', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
 
@@ -744,21 +735,18 @@ router.post('/cora/pix/create', auth, async (req, res) => {
   }
 
   const {
-    hours,
-    hasProducts,
-    rooms,
-    bathrooms,
+    serviceTypeSlug,
+    tierLabel,
+    selectedUpsells = [],
     notes,
     address,
     scheduledDate,
-    serviceTypeSlug,
-    customFormData,
     couponCodes,
     useWallet,
     walletAmount,
   } = req.body;
 
-  if (!hours || !address?.street || !address?.city || !scheduledDate) {
+  if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
@@ -770,16 +758,18 @@ router.post('/cora/pix/create', auth, async (req, res) => {
     }
 
     const {
+      tier,
+      tierPrice,
+      upsellsTotal,
       estimated,
-      pricePerHour,
       platformFee,
-      normalizedCustomFormData,
-      customFormSummary,
+      platformFeePercent,
+      upsells: resolvedUpsells,
     } = await calculateCheckoutPricing({
-      hours,
-      hasProducts: !!hasProducts,
-      serviceTypeSlug: serviceTypeSlug || null,
-      customFormData: customFormData || {},
+      serviceTypeSlug,
+      tierLabel,
+      selectedUpsells,
+      scheduledDate,
     });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,
@@ -803,19 +793,19 @@ router.post('/cora/pix/create', auth, async (req, res) => {
         client: req.user._id,
         serviceTypeSlug: serviceTypeSlug || null,
         details: {
-          hours: Number(hours),
-          rooms: Number(rooms || 1),
-          bathrooms: Number(bathrooms || 1),
-          hasProducts: Boolean(hasProducts),
-          customFormData: normalizedCustomFormData,
-          customFormSummary,
+          tierLabel,
+          durationMinutes: tier.durationMinutes,
+          upsells: resolvedUpsells,
           notes: notes || '',
           scheduledDate,
         },
         address,
         pricing: {
-          pricePerHour,
+          tierPrice,
+          upsellsTotal,
           estimated,
+          platformFeePercent,
+          platformFee,
           final: checkout.pricing.finalTotal,
           customerTotal: checkout.pricing.finalTotal,
           customerPaidExternal: 0,
@@ -824,7 +814,6 @@ router.post('/cora/pix/create', auth, async (req, res) => {
           walletAppliedProfessional: walletUsage.fromProfessionalWallet,
           discountTotal: checkout.pricing.totalDiscount,
           appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code),
-          platformFee,
         },
         payment: {
           status: 'paid',
@@ -881,25 +870,18 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       walletAppliedTotal: walletUsage.totalWalletUsed,
       walletAppliedClient: walletUsage.fromClientWallet,
       walletAppliedProfessional: walletUsage.fromProfessionalWallet,
-      walletAppliedTotal: walletUsage.totalWalletUsed,
-      walletAppliedClient: walletUsage.fromClientWallet,
-      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
       appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({
         code: c.code,
         discountAmount: c.discountAmount,
       })),
       rejectedCoupons: checkout.rejectedCoupons,
       requestPayload: {
-        hours,
-        hasProducts: !!hasProducts,
-        rooms: rooms || 1,
-        bathrooms: bathrooms || 1,
+        serviceTypeSlug: serviceTypeSlug || null,
+        tierLabel,
+        selectedUpsells: resolvedUpsells,
         notes: notes || '',
         address,
         scheduledDate,
-        serviceTypeSlug: serviceTypeSlug || null,
-        customFormData: normalizedCustomFormData,
-        customFormSummary,
       },
       qrCodeUrl: invoice.qrCodeUrl,
       emv: invoice.emv,
