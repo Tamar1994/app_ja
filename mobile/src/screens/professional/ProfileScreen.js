@@ -12,7 +12,7 @@ import { useSocket } from '../../context/SocketContext';
 import ProfileSwitcher from '../../components/ProfileSwitcher';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
-const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.15.17:3000/api').replace(/\/api\/?$/, '');
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
 const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 
 function buildImageUrl(path) {

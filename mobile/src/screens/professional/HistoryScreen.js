@@ -104,7 +104,7 @@ export default function ProfessionalHistoryScreen({ navigation }) {
         </View>
         {item.status === 'completed' && (
           <Text style={styles.cardEarnings}>
-            +R$ {(item.pricing.estimated * 0.85).toFixed(2)}
+            +R$ {((item.pricing.estimated || 0) * (1 - (item.pricing.platformFeePercent || 15) / 100)).toFixed(2)}
           </Text>
         )}
       </View>

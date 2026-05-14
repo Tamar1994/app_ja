@@ -264,7 +264,7 @@ export default function DashboardScreen({ navigation }) {
         </View>
         <View style={styles.priceWrap}>
           <Text style={styles.cardPriceLabel}>ganho</Text>
-          <Text style={styles.cardPrice}>R$ {(item.pricing.estimated * 0.85).toFixed(2)}</Text>
+          <Text style={styles.cardPrice}>R$ {((item.pricing.estimated || 0) * (1 - (item.pricing.platformFeePercent || 15) / 100)).toFixed(2)}</Text>
         </View>
       </View>
       <View style={styles.cardDivider} />
