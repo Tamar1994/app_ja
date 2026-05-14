@@ -3326,10 +3326,8 @@ const renderServiceTypeCard = (t) => `
     <div class="service-type-info">
       <div class="service-type-name">${escHtml(t.name)}</div>
       <div class="service-type-desc">${escHtml(t.description || '')}</div>
-      <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Campos customizados: ${(Array.isArray(t.checkoutFields) ? t.checkoutFields.length : 0)}</div>
-      <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Faixa de horas: ${Number.isFinite(Number(t.minHours)) ? Number(t.minHours) : 2}h - ${Number.isFinite(Number(t.maxHours)) ? Number(t.maxHours) : 12}h</div>
-      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Opções: ${Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.map(m => formatAdminDuration(m)).join(', ') : '2h, 3h, 4h'}</div>
-      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Valor/min: ${Number.isFinite(Number(t.pricePerMinute)) && Number(t.pricePerMinute) > 0 ? `R$ ${Number(t.pricePerMinute).toFixed(2)}` : 'padrão global'} · Taxa plataforma: ${Number.isFinite(Number(t.platformFeePercent)) ? `${Number(t.platformFeePercent)}%` : 'padrão global'}</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Faixas de preço: ${Array.isArray(t.priceTiers) && t.priceTiers.length ? t.priceTiers.map(tier => `${escHtml(tier.label)} — R$${Number(tier.price).toFixed(0)}`).join(' · ') : '<span style="color:#e53935;">Nenhuma configurada</span>'}</div>
+      <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Opcionais: ${Array.isArray(t.upsells) && t.upsells.length ? t.upsells.map(u => `${escHtml(u.label)} +R$${Number(u.price).toFixed(0)}`).join(', ') : 'Nenhum'} · Taxa plataforma: ${Number.isFinite(Number(t.platformFeePercent)) ? `${Number(t.platformFeePercent)}%` : '15%'}</div>
       <div style="font-size:12px;color:#7A84A0;margin-top:2px;">Rastreamento: <span style="color:${t.requiresLocationTracking ? '#00C853' : '#5C6B7A'};font-weight:600;">${t.requiresLocationTracking ? '✅ Sim' : 'Não'}</span></div>
       <div class="service-type-toggle">
         <label class="toggle-switch" title="${t.status === 'enabled' ? 'Desativar' : 'Ativar'} profissão">
@@ -3701,33 +3699,24 @@ const openNewServiceTypeModal = () => {
         </div>
       </div>
 
-      <!-- SEÇÃO 3: Duração e Preço -->
+      <!-- SEÇÃO 3: Faixas de Preço -->
       <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-          <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
-          <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Duração &amp; Preço</span>
-        </div>
-        <div class="form-group" style="margin-bottom:12px;">
-          <label class="form-label">Opções de duração em minutos <span style="color:#e53935;">*</span></label>
-          <input id="st-hours-options" class="form-input" placeholder="ex: 60, 90, 120, 180, 240, 300" value="120,180,240,300,360,480" />
-          <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Separe por vírgula. O cliente escolhe entre essas opções no app.</div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          <div class="form-group" style="margin:0;">
-            <label class="form-label">Valor por minuto (R$) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
-            <div style="position:relative;">
-              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">R$</span>
-              <input id="st-price-minute" class="form-input" type="number" min="0.01" step="0.01" placeholder="0,90" style="padding-left:34px;" />
-            </div>
-            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para usar o valor global da plataforma.</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
+            <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Faixas de Preço <span style="color:#e53935;">*</span></span>
           </div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addTierRow('st-tiers-list')" style="font-size:12px;color:#43A047;border-color:#43A047;">+ Faixa</button>
+        </div>
+        <div style="font-size:12px;color:#7A84A0;margin-bottom:10px;">Ex: "Diarista 4h — 4h — R$120". O cliente escolhe uma das faixas ao pedir o serviço.</div>
+        <div id="st-tiers-list"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
           <div class="form-group" style="margin:0;">
-            <label class="form-label">Taxa da plataforma (%) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
+            <label class="form-label">Taxa da plataforma (%)</label>
             <div style="position:relative;">
               <input id="st-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="15" style="padding-right:30px;" />
               <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">%</span>
             </div>
-            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para usar a taxa global.</div>
           </div>
         </div>
         <div style="margin-top:14px;">
@@ -3741,17 +3730,17 @@ const openNewServiceTypeModal = () => {
         </div>
       </div>
 
-      <!-- SEÇÃO 4: Campos personalizados do checkout -->
+      <!-- SEÇÃO 4: Opcionais (upsells) -->
       <div style="padding:20px 24px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="width:6px;height:18px;background:#7C3AED;border-radius:3px;"></div>
-            <span style="font-size:12px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:0.8px;">Campos do Formulário (opcional)</span>
+            <span style="font-size:12px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:0.8px;">Opcionais (upsells)</span>
           </div>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('st-fields-list')" style="font-size:12px;color:#7C3AED;border-color:#7C3AED;">+ Adicionar campo</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addUpsellRow('st-upsells-list')" style="font-size:12px;color:#7C3AED;border-color:#7C3AED;">+ Opcional</button>
         </div>
-        <div style="font-size:12px;color:#7A84A0;margin-bottom:12px;">Campos extras que o cliente preenche ao contratar esse serviço (ex: número de cômodos, tipo de animal, etc.)</div>
-        <div class="stf-fields-list" id="st-fields-list">${buildCheckoutFieldRows([])}</div>
+        <div style="font-size:12px;color:#7A84A0;margin-bottom:10px;">Extras que o cliente pode adicionar ao pedido (ex: "Levar produtos — R$40"). Opcional — deixe vazio se não houver.</div>
+        <div id="st-upsells-list"></div>
       </div>
 
     </div>
@@ -3777,14 +3766,104 @@ const stAutoSlug = (nameInput) => {
     .replace(/\s+/g, '-');
 };
 
+// ── Tier / Upsell row builders ──────────────────────────────────────
+
+const buildTierRow = (tier = {}, idx = 0) => {
+  const div = document.createElement('div');
+  div.className = 'tier-row';
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  div.innerHTML = `
+    <input class="form-input tier-label" placeholder='Ex: "Diarista 4h"' value="${escHtml(tier.label || '')}" style="font-size:13px;" />
+    <input class="form-input tier-duration" type="number" min="1" placeholder="min" value="${tier.durationMinutes || ''}" style="font-size:13px;text-align:center;" title="Duração em minutos" />
+    <div style="position:relative;">
+      <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;color:#7A84A0;">R$</span>
+      <input class="form-input tier-price" type="number" min="0" step="0.01" placeholder="0" value="${tier.price != null ? tier.price : ''}" style="font-size:13px;padding-left:26px;" />
+    </div>
+    <button type="button" onclick="this.closest('.tier-row').remove()" style="background:rgba(229,57,53,.15);border:none;color:#e53935;border-radius:8px;width:32px;height:38px;cursor:pointer;font-size:16px;line-height:1;">✕</button>`;
+  return div;
+};
+
+const addTierRow = (listId, tier = {}) => {
+  const el = document.getElementById(listId);
+  if (!el) return;
+  if (!el.previousElementSibling || !el.previousElementSibling.classList?.contains('tier-header')) {
+    // Insert column header once
+    if (!el.querySelector('.tier-header-row')) {
+      const header = document.createElement('div');
+      header.className = 'tier-header-row';
+      header.style.cssText = 'display:grid;grid-template-columns:1fr 100px 100px 32px;gap:8px;padding:0 0 4px;';
+      header.innerHTML = `<span style="font-size:11px;color:#7A84A0;">Rótulo (exibido no app)</span><span style="font-size:11px;color:#7A84A0;text-align:center;">Duração (min)</span><span style="font-size:11px;color:#7A84A0;">Preço</span><span></span>`;
+      el.before(header);
+    }
+  }
+  el.appendChild(buildTierRow(tier, el.querySelectorAll('.tier-row').length));
+};
+
+const collectTiers = (listId) => {
+  const el = document.getElementById(listId);
+  if (!el) return [];
+  return Array.from(el.querySelectorAll('.tier-row')).map((row, idx) => {
+    const label = (row.querySelector('.tier-label')?.value || '').trim();
+    const durationMinutes = Number(row.querySelector('.tier-duration')?.value);
+    const price = Number(row.querySelector('.tier-price')?.value);
+    if (!label) throw new Error(`Faixa ${idx + 1}: rótulo obrigatório`);
+    if (!Number.isFinite(durationMinutes) || durationMinutes < 1) throw new Error(`Faixa "${label}": duração inválida`);
+    if (!Number.isFinite(price) || price < 0) throw new Error(`Faixa "${label}": preço inválido`);
+    return { label, durationMinutes, price, sortOrder: idx };
+  });
+};
+
+const buildUpsellRow = (upsell = {}, idx = 0) => {
+  const div = document.createElement('div');
+  div.className = 'upsell-row';
+  div.style.cssText = 'display:grid;grid-template-columns:120px 1fr 100px 32px;gap:8px;align-items:center;margin-bottom:8px;';
+  div.innerHTML = `
+    <input class="form-input upsell-key" placeholder='chave (ex: produtos)' value="${escHtml(upsell.key || '')}" style="font-size:12px;font-family:monospace;" />
+    <input class="form-input upsell-label" placeholder='Rótulo (ex: "Levar produtos")' value="${escHtml(upsell.label || '')}" style="font-size:13px;" />
+    <div style="position:relative;">
+      <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;color:#7A84A0;">R$</span>
+      <input class="form-input upsell-price" type="number" min="0" step="0.01" placeholder="0" value="${upsell.price != null ? upsell.price : ''}" style="font-size:13px;padding-left:26px;" />
+    </div>
+    <button type="button" onclick="this.closest('.upsell-row').remove()" style="background:rgba(229,57,53,.15);border:none;color:#e53935;border-radius:8px;width:32px;height:38px;cursor:pointer;font-size:16px;line-height:1;">✕</button>`;
+  return div;
+};
+
+const addUpsellRow = (listId, upsell = {}) => {
+  const el = document.getElementById(listId);
+  if (!el) return;
+  if (!el.querySelector('.upsell-header-row')) {
+    const header = document.createElement('div');
+    header.className = 'upsell-header-row';
+    header.style.cssText = 'display:grid;grid-template-columns:120px 1fr 100px 32px;gap:8px;padding:0 0 4px;';
+    header.innerHTML = `<span style="font-size:11px;color:#7A84A0;">Chave interna</span><span style="font-size:11px;color:#7A84A0;">Rótulo</span><span style="font-size:11px;color:#7A84A0;">Preço</span><span></span>`;
+    el.before(header);
+  }
+  el.appendChild(buildUpsellRow(upsell, el.querySelectorAll('.upsell-row').length));
+};
+
+const collectUpsells = (listId) => {
+  const el = document.getElementById(listId);
+  if (!el) return [];
+  const keys = new Set();
+  return Array.from(el.querySelectorAll('.upsell-row')).map((row, idx) => {
+    const key = (row.querySelector('.upsell-key')?.value || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const label = (row.querySelector('.upsell-label')?.value || '').trim();
+    const price = Number(row.querySelector('.upsell-price')?.value);
+    if (!key) throw new Error(`Opcional ${idx + 1}: chave obrigatória`);
+    if (!label) throw new Error(`Opcional ${idx + 1}: rótulo obrigatório`);
+    if (!Number.isFinite(price) || price < 0) throw new Error(`Opcional "${label}": preço inválido`);
+    if (keys.has(key)) throw new Error(`Chave duplicada: ${key}`);
+    keys.add(key);
+    return { key, label, price, sortOrder: idx };
+  });
+};
+
 const createServiceType = async () => {
   const name = document.getElementById('st-name').value.trim();
   const slug = document.getElementById('st-slug').value.trim().toLowerCase().replace(/\s+/g, '-');
   const description = document.getElementById('st-desc').value.trim();
   const icon = document.getElementById('st-icon').value.trim();
   const status = document.getElementById('st-status').value;
-  const hoursOptionsRaw = (document.getElementById('st-hours-options').value || '').trim();
-  const pricePerMinuteRaw = (document.getElementById('st-price-minute').value || '').trim();
   const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
   const requiresLocationTracking = document.getElementById('st-location-tracking').checked;
   const imageFile = document.getElementById('st-image').files?.[0] || null;
@@ -3792,43 +3871,24 @@ const createServiceType = async () => {
   if (!name) { showAlert('Informe o nome da profissão.'); return; }
   if (!slug) { showAlert('Informe o slug (identificador único) da profissão.'); return; }
 
-  const hoursOptions = hoursOptionsRaw
-    .split(',')
-    .map((chunk) => parseInt(chunk.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 1440);
-  if (!hoursOptions.length) {
-    showAlert('Informe ao menos uma opção de duração em minutos (ex: 30, 60, 90, 120).');
-    return;
-  }
-
-  const pricePerMinute = pricePerMinuteRaw === '' ? null : Number(pricePerMinuteRaw);
-  if (pricePerMinuteRaw !== '' && (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0)) {
-    showAlert('Valor por minuto inválido.');
-    return;
-  }
-
-  const platformFeePercent = platformFeeRaw === '' ? null : Number(platformFeeRaw);
-  if (platformFeeRaw !== '' && (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100)) {
-    showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.');
-    return;
+  const platformFeePercent = platformFeeRaw === '' ? 15 : Number(platformFeeRaw);
+  if (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100) {
+    showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.'); return;
   }
 
   try {
-    const checkoutFields = collectCheckoutFields('st-fields-list');
+    const priceTiers = collectTiers('st-tiers-list');
+    if (!priceTiers.length) { showAlert('Adicione ao menos uma faixa de preço.'); return; }
+    const upsells = collectUpsells('st-upsells-list');
     const formData = new FormData();
     formData.append('name', name);
     formData.append('slug', slug);
     formData.append('description', description);
     formData.append('icon', icon);
     formData.append('status', status);
-    const sortedOpts = Array.from(new Set(hoursOptions)).sort((a, b) => a - b);
-    formData.append('minHours', String(+(sortedOpts[0] / 60).toFixed(2)));
-    formData.append('maxHours', String(+(sortedOpts[sortedOpts.length - 1] / 60).toFixed(2)));
-    formData.append('hoursOptions', JSON.stringify(sortedOpts));
-    if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
-    if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
-    formData.append('checkoutFields', JSON.stringify(checkoutFields));
-    formData.append('durationUnit', 'minutes');
+    formData.append('platformFeePercent', String(platformFeePercent));
+    formData.append('priceTiers', JSON.stringify(priceTiers));
+    formData.append('upsells', JSON.stringify(upsells));
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('POST', '', formData);
@@ -3839,9 +3899,7 @@ const createServiceType = async () => {
 };
 
 const openEditServiceTypeModal = (t) => {
-  const hoursVal = escHtml(Array.isArray(t.hoursOptions) && t.hoursOptions.length ? t.hoursOptions.join(',') : '120,180,240,300,360,480');
-  const priceVal = Number.isFinite(Number(t.pricePerMinute)) ? Number(t.pricePerMinute) : '';
-  const feeVal = Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : '';
+  const feeVal = Number.isFinite(Number(t.platformFeePercent)) ? Number(t.platformFeePercent) : 15;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -3911,29 +3969,21 @@ const openEditServiceTypeModal = (t) => {
         </div>
       </div>
 
-      <!-- SEÇÃO 3: Duração e Preço -->
+      <!-- SEÇÃO 3: Faixas de Preço -->
       <div style="padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.07);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
-          <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
-          <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Duração &amp; Preço</span>
-        </div>
-        <div class="form-group" style="margin-bottom:12px;">
-          <label class="form-label">Opções de duração em minutos <span style="color:#e53935;">*</span></label>
-          <input id="ste-hours-options" class="form-input" value="${hoursVal}" placeholder="ex: 60, 90, 120, 180, 240, 300" />
-          <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Separe por vírgula. O cliente escolhe entre essas opções no app.</div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          <div class="form-group" style="margin:0;">
-            <label class="form-label">Valor por minuto (R$) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
-            <div style="position:relative;">
-              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">R$</span>
-              <input id="ste-price-minute" class="form-input" type="number" min="0.01" step="0.01" value="${priceVal}" placeholder="padrão global" style="padding-left:34px;" />
-            </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:6px;height:18px;background:#43A047;border-radius:3px;"></div>
+            <span style="font-size:12px;font-weight:700;color:#43A047;text-transform:uppercase;letter-spacing:0.8px;">Faixas de Preço <span style="color:#e53935;">*</span></span>
           </div>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addTierRow('ste-tiers-list')" style="font-size:12px;color:#43A047;border-color:#43A047;">+ Faixa</button>
+        </div>
+        <div id="ste-tiers-list"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
           <div class="form-group" style="margin:0;">
-            <label class="form-label">Taxa da plataforma (%) <span style="color:#7A84A0;font-weight:400;">opcional</span></label>
+            <label class="form-label">Taxa da plataforma (%)</label>
             <div style="position:relative;">
-              <input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${feeVal}" placeholder="padrão global" style="padding-right:30px;" />
+              <input id="ste-platform-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${feeVal}" placeholder="15" style="padding-right:30px;" />
               <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-weight:600;font-size:13px;">%</span>
             </div>
           </div>
@@ -3949,16 +3999,16 @@ const openEditServiceTypeModal = (t) => {
         </div>
       </div>
 
-      <!-- SEÇÃO 4: Campos personalizados -->
+      <!-- SEÇÃO 4: Opcionais (upsells) -->
       <div style="padding:20px 24px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="width:6px;height:18px;background:#7C3AED;border-radius:3px;"></div>
-            <span style="font-size:12px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:0.8px;">Campos do Formulário (opcional)</span>
+            <span style="font-size:12px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:0.8px;">Opcionais (upsells)</span>
           </div>
-          <button class="btn btn-ghost btn-sm" type="button" onclick="addCheckoutFieldRow('ste-fields-list')" style="font-size:12px;color:#7C3AED;border-color:#7C3AED;">+ Adicionar campo</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="addUpsellRow('ste-upsells-list')" style="font-size:12px;color:#7C3AED;border-color:#7C3AED;">+ Opcional</button>
         </div>
-        <div class="stf-fields-list" id="ste-fields-list">${buildCheckoutFieldRows(t.checkoutFields || [])}</div>
+        <div id="ste-upsells-list"></div>
       </div>
 
     </div>
@@ -3972,6 +4022,9 @@ const openEditServiceTypeModal = (t) => {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  // Populate existing tiers and upsells
+  (t.priceTiers || []).forEach(tier => addTierRow('ste-tiers-list', tier));
+  (t.upsells || []).forEach(upsell => addUpsellRow('ste-upsells-list', upsell));
 };
 
 const updateServiceType = async (id) => {
@@ -3980,49 +4033,28 @@ const updateServiceType = async (id) => {
   const icon = document.getElementById('ste-icon').value.trim();
   const sortOrder = parseInt(document.getElementById('ste-order').value) || 0;
   const status = document.getElementById('ste-status').value;
-  const hoursOptionsRaw = (document.getElementById('ste-hours-options').value || '').trim();
-  const pricePerMinuteRaw = (document.getElementById('ste-price-minute').value || '').trim();
   const platformFeeRaw = (document.getElementById('ste-platform-fee').value || '').trim();
   const requiresLocationTracking = document.getElementById('ste-location-tracking').checked;
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
 
-  const hoursOptions = hoursOptionsRaw
-    .split(',')
-    .map((chunk) => parseInt(chunk.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 1440);
-  if (!hoursOptions.length) {
-    showAlert('Informe ao menos uma opção de duração em minutos (ex: 30, 60, 90, 120).');
-    return;
-  }
-
-  const pricePerMinute = pricePerMinuteRaw === '' ? null : Number(pricePerMinuteRaw);
-  if (pricePerMinuteRaw !== '' && (!Number.isFinite(pricePerMinute) || pricePerMinute <= 0)) {
-    showAlert('Valor por minuto inválido.');
-    return;
-  }
-
-  const platformFeePercent = platformFeeRaw === '' ? null : Number(platformFeeRaw);
-  if (platformFeeRaw !== '' && (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100)) {
-    showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.');
-    return;
+  const platformFeePercent = platformFeeRaw === '' ? 15 : Number(platformFeeRaw);
+  if (!Number.isFinite(platformFeePercent) || platformFeePercent < 0 || platformFeePercent > 100) {
+    showAlert('Taxa da plataforma inválida. Use valor entre 0 e 100.'); return;
   }
 
   try {
-    const checkoutFields = collectCheckoutFields('ste-fields-list');
+    const priceTiers = collectTiers('ste-tiers-list');
+    if (!priceTiers.length) { showAlert('Adicione ao menos uma faixa de preço.'); return; }
+    const upsells = collectUpsells('ste-upsells-list');
     const formData = new FormData();
     formData.append('name', name);
     formData.append('description', description);
     formData.append('icon', icon);
     formData.append('sortOrder', sortOrder);
     formData.append('status', status);
-    const sortedOpts = Array.from(new Set(hoursOptions)).sort((a, b) => a - b);
-    formData.append('minHours', String(+(sortedOpts[0] / 60).toFixed(2)));
-    formData.append('maxHours', String(+(sortedOpts[sortedOpts.length - 1] / 60).toFixed(2)));
-    formData.append('hoursOptions', JSON.stringify(sortedOpts));
-    if (pricePerMinute !== null) formData.append('pricePerMinute', String(pricePerMinute));
-    if (platformFeePercent !== null) formData.append('platformFeePercent', String(platformFeePercent));
-    formData.append('checkoutFields', JSON.stringify(checkoutFields));
-    formData.append('durationUnit', 'minutes');
+    formData.append('platformFeePercent', String(platformFeePercent));
+    formData.append('priceTiers', JSON.stringify(priceTiers));
+    formData.append('upsells', JSON.stringify(upsells));
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
     if (imageFile) formData.append('iconFile', imageFile);
     await stMultipartReq('PATCH', `/${id}`, formData);

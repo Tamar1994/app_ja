@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceTypeAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
-import { formatHours } from '../../utils/format';
+
 
 const { width } = Dimensions.get('window');
 const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
@@ -175,7 +175,7 @@ export default function HomeScreen({ navigation }) {
 
             <Text style={styles.activeTitle}>{activeRequest.serviceType?.name || 'Serviço'}</Text>
             <Text style={styles.activeDetail}>
-              {formatHours(activeRequest.details.hours)} • {new Date(activeRequest.details.scheduledDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+              {activeRequest.details.tierLabel || '-'} • {new Date(activeRequest.details.scheduledDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
             </Text>
 
             <View style={styles.activeDivider} />

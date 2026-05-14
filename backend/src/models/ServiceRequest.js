@@ -38,26 +38,15 @@ const serviceRequestSchema = new mongoose.Schema({
     },
   },
   details: {
-    hours: { type: Number, required: true, min: 0.25 },
-    rooms: { type: Number, default: 1 },
-    bathrooms: { type: Number, default: 1 },
-    hasProducts: { type: Boolean, default: false }, // cliente fornece produtos
-    customFormData: {
-      type: Map,
-      of: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
-    customFormSummary: {
-      type: [{
-        key: { type: String },
-        label: { type: String },
-        inputType: { type: String },
-        value: mongoose.Schema.Types.Mixed,
-        displayValue: { type: String },
-      }],
+    // Faixa horária escolhida pelo cliente (ex: "8h", "4h")
+    tierLabel:       { type: String, default: null },
+    durationMinutes: { type: Number, required: true, min: 1 }, // duração em minutos
+    // Upsells selecionados pelo cliente
+    upsells: {
+      type: [{ key: String, label: String, price: Number }],
       default: [],
     },
-    notes: { type: String, default: '' },
+    notes:         { type: String, default: '' },
     scheduledDate: { type: Date, required: true },
   },
   // true quando o cliente solicitou um Profissional Especialista
@@ -70,21 +59,22 @@ const serviceRequestSchema = new mongoose.Schema({
   completionPhotos: { type: [String], default: [] },
 
   pricing: {
-    pricePerHour: { type: Number, required: true },
-    estimated: { type: Number, required: true }, // valor bruto do servico (base para repasse do profissional)
-    specialistPremium: { type: Number, default: 0 }, // acrescimo por ser pedido especialista
-    discountTotal: { type: Number, default: 0 },
+    tierPrice:      { type: Number, required: true },  // preço da faixa horária escolhida
+    upsellsTotal:   { type: Number, default: 0 },       // soma dos upsells
+    estimated:      { type: Number, required: true },   // tierPrice + upsellsTotal
+    discountTotal:  { type: Number, default: 0 },
     appliedCoupons: [{ type: String }],
-    customerTotal: { type: Number, default: null }, // total apos cupons
-    customerPaidExternal: { type: Number, default: 0 }, // valor efetivamente pago via gateway externo
-    walletAppliedTotal: { type: Number, default: 0 },
-    walletAppliedClient: { type: Number, default: 0 },
-    walletAppliedProfessional: { type: Number, default: 0 },
-    professionalBonus: { type: Number, default: 0 },
-    platformFeeDiscount: { type: Number, default: 0 },
-    professionalRewardCoupon: { type: String, default: null },
-    final: { type: Number, default: null },
-    platformFee: { type: Number, default: 0 }, // taxa da plataforma (%)
+    customerTotal:  { type: Number, default: null },    // total após cupons
+    customerPaidExternal:       { type: Number, default: 0 },
+    walletAppliedTotal:         { type: Number, default: 0 },
+    walletAppliedClient:        { type: Number, default: 0 },
+    walletAppliedProfessional:  { type: Number, default: 0 },
+    professionalBonus:          { type: Number, default: 0 },
+    platformFeeDiscount:        { type: Number, default: 0 },
+    professionalRewardCoupon:   { type: String, default: null },
+    final:                      { type: Number, default: null },
+    platformFeePercent:         { type: Number, default: 0 },  // % da plataforma (snapshot)
+    platformFee:                { type: Number, default: 0 },  // valor R$ da taxa
   },
   payment: {
     status: {

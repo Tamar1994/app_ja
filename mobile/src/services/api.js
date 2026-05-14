@@ -43,8 +43,8 @@ export const userAPI = {
 
 // Solicitações de serviço
 export const requestAPI = {
-  estimate: (hours, hasProducts, serviceTypeSlug = null, customFormData = {}) =>
-    api.post('/requests/estimate', { hours, hasProducts, serviceTypeSlug, customFormData }),
+  estimate: (serviceTypeSlug, tierLabel, selectedUpsells = []) =>
+    api.post('/requests/estimate', { serviceTypeSlug, tierLabel, selectedUpsells }),
   checkCoverage: (city, state = '') =>
     api.get('/requests/coverage', { params: { city, state } }),
   create: (data) => api.post('/requests', data),

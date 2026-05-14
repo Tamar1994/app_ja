@@ -39,7 +39,6 @@ const completionPhotosUpload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-const SPECIALIST_PREMIUM_PERCENT = 30; // acrescimo percentual para pedidos especialista
 
 const normalizeBasicText = (value = '') => String(value)
   .normalize('NFD')
@@ -171,32 +170,24 @@ router.get('/coverage', auth, async (req, res) => {
 
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
-  const { hours, hasProducts, serviceTypeSlug, customFormData, isSpecialist } = req.body;
+  const { serviceTypeSlug, tierLabel, selectedUpsells } = req.body;
   try {
     const pricing = await calculateCheckoutPricing({
-      hours,
-      hasProducts: !!hasProducts,
       serviceTypeSlug: serviceTypeSlug || null,
-      customFormData: customFormData || {},
+      tierLabel: tierLabel || null,
+      selectedUpsells: selectedUpsells || [],
     });
 
-    const specialistPremium = isSpecialist
-      ? Math.round(pricing.estimated * SPECIALIST_PREMIUM_PERCENT) / 100
-      : 0;
-    const totalEstimated = pricing.estimated + specialistPremium;
-
     res.json({
-      pricePerHour: pricing.pricePerHour,
-      hours,
-      estimated: totalEstimated,
-      specialistPremium,
-      isSpecialist: !!isSpecialist,
+      serviceTypeSlug,
+      tierLabel,
+      tier: pricing.tier,
+      upsells: pricing.upsells,
+      tierPrice: pricing.tierPrice,
+      upsellsTotal: pricing.upsellsTotal,
+      estimated: pricing.estimated,
+      platformFeePercent: pricing.platformFeePercent,
       platformFee: pricing.platformFee,
-      total: totalEstimated,
-      serviceTypeSlug: serviceTypeSlug || null,
-      usedServiceBasePrice: pricing.usedServiceBasePrice,
-      customFormData: pricing.normalizedCustomFormData,
-      pricingBreakdown: pricing.pricingBreakdown,
     });
   } catch (err) {
     if (err.status === 400) {
@@ -208,12 +199,13 @@ router.post('/estimate', auth, async (req, res) => {
 
 // POST /api/requests — criar solicitação
 router.post('/', auth, [
-  body('hours').isFloat({ min: 0.25, max: 24 }),
+  body('serviceTypeSlug').notEmpty().withMessage('serviceTypeSlug é obrigatório'),
+  body('tierLabel').notEmpty().withMessage('Escolha uma faixa de serviço'),
   body('address.street').notEmpty(),
   body('address.city').notEmpty(),
   body('scheduledDate').isISO8601(),
 ], async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem solicitar serviços' });
   }
 
@@ -223,16 +215,12 @@ router.post('/', auth, [
   }
 
   const {
-    hours,
-    rooms,
-    bathrooms,
-    hasProducts,
+    serviceTypeSlug,
+    tierLabel,
+    selectedUpsells = [],
     notes,
     address,
     scheduledDate,
-    serviceTypeSlug,
-    customFormData,
-    isSpecialist,
   } = req.body;
 
   const coverage = await isCityCovered(address?.city, address?.state);
@@ -242,71 +230,33 @@ router.post('/', auth, [
     });
   }
 
-  let pricePerHour, estimated, platformFee, specialistPremium = 0;
-  let normalizedCustomFormData = {};
-  let customFormSummary = [];
+  let pricing;
   try {
-    const pricing = await calculateCheckoutPricing({
-      hours,
-      hasProducts: !!hasProducts,
-      serviceTypeSlug: serviceTypeSlug || null,
-      customFormData: customFormData || {},
-    });
-    pricePerHour = pricing.pricePerHour;
-    estimated = pricing.estimated;
-    platformFee = pricing.platformFee;
-    normalizedCustomFormData = pricing.normalizedCustomFormData;
-    customFormSummary = pricing.customFormSummary;
-    if (isSpecialist) {
-      specialistPremium = Math.round(estimated * SPECIALIST_PREMIUM_PERCENT) / 100;
-      estimated = estimated + specialistPremium;
-    }
+    pricing = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells });
   } catch (err) {
-    if (err.status === 400) {
-      return res.status(400).json({ message: err.message });
-    }
-    pricePerHour = 35;
-    if (!hasProducts) pricePerHour += 5;
-    estimated = pricePerHour * hours;
-    if (isSpecialist) {
-      specialistPremium = Math.round(estimated * SPECIALIST_PREMIUM_PERCENT) / 100;
-      estimated = estimated + specialistPremium;
-    }
-    platformFee = (estimated * 15) / 100;
-    normalizedCustomFormData = customFormData && typeof customFormData === 'object' ? customFormData : {};
-    customFormSummary = [];
+    if (err.status === 400) return res.status(400).json({ message: err.message });
+    return res.status(500).json({ message: 'Erro ao calcular preço' });
   }
 
   try {
-    // Verificar se o tipo de serviço exige rastreamento de localização
-    let requiresLocationTracking = false;
-    if (serviceTypeSlug) {
-      const ServiceType = require('../models/ServiceType');
-      const st = await ServiceType.findOne({ slug: serviceTypeSlug }).select('requiresLocationTracking');
-      requiresLocationTracking = st?.requiresLocationTracking || false;
-    }
-
     const request = await ServiceRequest.create({
       client: req.user._id,
-      isSpecialist: !!isSpecialist,
-      serviceTypeSlug: serviceTypeSlug || null,
-      requiresLocationTracking,
+      serviceTypeSlug,
+      requiresLocationTracking: pricing.serviceType?.requiresLocationTracking || false,
       details: {
-        hours,
-        rooms,
-        bathrooms,
-        hasProducts,
-        customFormData: normalizedCustomFormData,
-        customFormSummary,
-        notes,
+        tierLabel,
+        durationMinutes: pricing.tier.durationMinutes,
+        upsells: pricing.upsells,
+        notes: notes || '',
         scheduledDate,
       },
       address,
       pricing: {
-        pricePerHour,
-        estimated,
-        specialistPremium,
-        platformFee,
+        tierPrice:          pricing.tierPrice,
+        upsellsTotal:       pricing.upsellsTotal,
+        estimated:          pricing.estimated,
+        platformFeePercent: pricing.platformFeePercent,
+        platformFee:        pricing.platformFee,
       },
     });
 
@@ -317,7 +267,8 @@ router.post('/', auth, [
     }
 
     res.status(201).json({ request });
-  } catch {
+  } catch (err) {
+    console.error('[create request]', err);
     res.status(500).json({ message: 'Erro ao criar solicitação' });
   }
 });
