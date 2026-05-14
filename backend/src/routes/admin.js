@@ -229,36 +229,13 @@ router.post('/seed', async (req, res) => {
       icon: 'home-outline',
       status: 'enabled',
       sortOrder: 1,
-      checkoutFields: [
-        {
-          key: 'rooms',
-          label: 'Cômodos',
-          inputType: 'number',
-          required: true,
-          min: 1,
-          max: 20,
-          step: 1,
-          defaultValue: 2,
-          pricingEnabled: false,
-          pricingMode: 'add_total',
-          pricingAmount: 0,
-          sortOrder: 1,
-        },
-        {
-          key: 'bathrooms',
-          label: 'Banheiros',
-          inputType: 'number',
-          required: true,
-          min: 1,
-          max: 10,
-          step: 1,
-          defaultValue: 1,
-          pricingEnabled: false,
-          pricingMode: 'add_total',
-          pricingAmount: 0,
-          sortOrder: 2,
-        },
+      platformFeePercent: 15,
+      priceTiers: [
+        { label: 'Diarista 4h', durationMinutes: 240, price: 120, nightPrice: null, sortOrder: 0 },
+        { label: 'Diarista 6h', durationMinutes: 360, price: 160, nightPrice: null, sortOrder: 1 },
+        { label: 'Diarista 8h', durationMinutes: 480, price: 200, nightPrice: null, sortOrder: 2 },
       ],
+      upsells: [],
     },
     { slug: 'eletricista', name: 'Eletricista', description: 'Instalações e reparos elétricos', icon: 'flash-outline', status: 'disabled', sortOrder: 2 },
     { slug: 'encanador', name: 'Encanador', description: 'Reparos hidráulicos e vaza mentos', icon: 'water-outline', status: 'disabled', sortOrder: 3 },
@@ -667,7 +644,8 @@ router.patch('/approvals/:id/approve', adminAuth, async (req, res) => {
 // full → bane por 90 dias e desativa conta
 // partial → marca para reenvio (use /request-resubmit para especificar quais docs)
 router.patch('/approvals/:id/reject', adminAuth, async (req, res) => {
-  const { reason, rejectionType } = req.body;
+  const { reason } = req.body;
+  const rejectionType = req.body.rejectionType || 'full';
   if (!reason) return res.status(400).json({ message: 'Informe o motivo da rejeição' });
   if (!['full', 'partial'].includes(rejectionType)) {
     return res.status(400).json({ message: 'rejectionType deve ser "full" ou "partial"' });

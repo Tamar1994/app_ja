@@ -535,7 +535,7 @@ const renderDashboard = async () => {
           <div class="stat-icon">💬</div>
           <div class="stat-label">Chats Abertos</div>
           <div class="stat-value" style="color:#CE93D8;">${s.support.openChats}</div>
-          <div class="stat-sub"><a href="#" onclick="navTo('chat')" style="color:#FF6B00;text-decoration:none;">Ver chats →</a></div>
+          <div class="stat-sub"><a href="#" onclick="navTo('suporte')" style="color:#FF6B00;text-decoration:none;">Ver chats →</a></div>
         </div>
       </div>
       <div class="section-card">
@@ -1228,6 +1228,7 @@ const openServiceChatAudit = async (id) => {
   try {
     const data = await req('GET', `/service-chats/${id}`);
     const chat = data.chat;
+    const isP1 = chat.priority === 'p1';
     main.style.display = 'flex';
     main.style.flexDirection = 'column';
     main.innerHTML = `
