@@ -1076,10 +1076,14 @@ router.patch('/:id/cancel', auth, async (req, res) => {
 // POST /api/requests/:id/review — avaliação mútua após conclusão
 // Cliente avalia profissional | Profissional avalia cliente
 router.post('/:id/review', auth, async (req, res) => {
-  const { rating, comment } = req.body;
+  const { rating, comment, npsScore } = req.body;
   if (!rating || rating < 1 || rating > 5) {
     return res.status(400).json({ message: 'Avaliação deve ser entre 1 e 5' });
   }
+
+  const parsedNps = (typeof npsScore === 'number' && Number.isInteger(npsScore) && npsScore >= 0 && npsScore <= 10)
+    ? npsScore
+    : null;
 
   try {
     const request = await ServiceRequest.findById(req.params.id);
@@ -1107,6 +1111,7 @@ router.post('/:id/review', auth, async (req, res) => {
       reviewerRole,
       rating,
       comment,
+      npsScore: parsedNps,
     });
 
     res.status(201).json({ review });

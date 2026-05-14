@@ -67,8 +67,8 @@ export const requestAPI = {
   cancel: (id, reason) => api.patch(`/requests/${id}/cancel`, { reason }),
   clientReject: (id, professionalId) => api.patch(`/requests/${id}/client-reject`, { professionalId }),
   clientConfirm: (id) => api.patch(`/requests/${id}/client-confirm`),
-  review: (id, rating, comment) =>
-    api.post(`/requests/${id}/review`, { rating, comment }),
+  review: (id, rating, comment, npsScore = null) =>
+    api.post(`/requests/${id}/review`, { rating, comment, npsScore }),
   uploadCompletionPhotos: (id, formData) =>
     api.post(`/requests/${id}/completion-photos`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

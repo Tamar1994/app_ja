@@ -23,6 +23,7 @@ const CouponClaim = require('../models/CouponClaim');
 const CouponRedemption = require('../models/CouponRedemption');
 const AuditLog = require('../models/AuditLog');
 const SpecialistCertificate = require('../models/SpecialistCertificate');
+const Review = require('../models/Review');
 const {
   adminAuth,
   requireRole,
@@ -294,6 +295,81 @@ router.get('/stats', adminAuth, requirePermission(ADMIN_PERMISSIONS.DASHBOARD), 
     });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao buscar estatísticas' });
+  }
+});
+
+// GET /api/admin/nps — indicadores NPS do aplicativo
+router.get('/nps', adminAuth, requirePermission(ADMIN_PERMISSIONS.DASHBOARD), async (req, res) => {
+  try {
+    const periodDays = Math.min(365, Math.max(7, parseInt(req.query.period, 10) || 90));
+    const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
+
+    const [allResponses, recentResponses] = await Promise.all([
+      Review.find({ npsScore: { $ne: null } })
+        .select('npsScore reviewerRole createdAt')
+        .lean(),
+      Review.find({ npsScore: { $ne: null }, createdAt: { $gte: since } })
+        .populate('reviewer', 'name email')
+        .populate('serviceRequest', 'status')
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+    ]);
+
+    const computeNps = (reviews) => {
+      const total = reviews.length;
+      if (total === 0) return { score: null, total: 0, promoters: 0, passives: 0, detractors: 0, promotersPct: 0, passivesPct: 0, detractorsPct: 0 };
+      const promoters = reviews.filter((r) => r.npsScore >= 9).length;
+      const passives  = reviews.filter((r) => r.npsScore >= 7 && r.npsScore <= 8).length;
+      const detractors = reviews.filter((r) => r.npsScore <= 6).length;
+      return {
+        score: Math.round(((promoters - detractors) / total) * 100),
+        total,
+        promoters,
+        passives,
+        detractors,
+        promotersPct: Math.round((promoters / total) * 100),
+        passivesPct: Math.round((passives / total) * 100),
+        detractorsPct: Math.round((detractors / total) * 100),
+      };
+    };
+
+    // Monthly trend — last 6 months
+    const trend = [];
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date();
+      start.setDate(1); start.setHours(0, 0, 0, 0);
+      start.setMonth(start.getMonth() - i);
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 1);
+      const monthReviews = allResponses.filter((r) => {
+        const d = new Date(r.createdAt);
+        return d >= start && d < end;
+      });
+      trend.push({
+        month: start.toLocaleString('pt-BR', { month: 'short', year: 'numeric' }),
+        ...computeNps(monthReviews),
+      });
+    }
+
+    res.json({
+      overall: computeNps(allResponses),
+      period: { days: periodDays, ...computeNps(recentResponses) },
+      distribution: Array.from({ length: 11 }, (_, i) => ({
+        score: i,
+        count: allResponses.filter((r) => r.npsScore === i).length,
+        label: i <= 6 ? 'detrator' : i <= 8 ? 'neutro' : 'promotor',
+      })),
+      byRole: {
+        client: computeNps(allResponses.filter((r) => r.reviewerRole === 'client')),
+        professional: computeNps(allResponses.filter((r) => r.reviewerRole === 'professional')),
+      },
+      trend,
+      recent: recentResponses,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao buscar NPS' });
   }
 });
 

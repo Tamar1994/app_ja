@@ -15,6 +15,7 @@ export default function ReviewScreen({ navigation, route }) {
   const { requestId, professionalName } = route.params;
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [npsScore, setNpsScore] = useState(null);
   const [loading, setLoading] = useState(false);
   const [reporting, setReporting] = useState(false);
 
@@ -25,7 +26,7 @@ export default function ReviewScreen({ navigation, route }) {
     }
     setLoading(true);
     try {
-      await requestAPI.review(requestId, rating, comment);
+      await requestAPI.review(requestId, rating, comment, npsScore);
       navigation.replace('Home');
     } catch {
       Alert.alert('Erro', 'Não foi possível enviar a avaliação.');
@@ -118,6 +119,38 @@ export default function ReviewScreen({ navigation, route }) {
           onChangeText={setComment}
           textAlignVertical="top"
         />
+
+        {/* Pergunta NPS */}
+        <View style={styles.npsSection}>
+          <Text style={styles.npsTitle}>📱 Avalie o app</Text>
+          <Text style={styles.npsQuestion}>
+            Em uma escala de 0 a 10, o quanto você recomendaria o Já! para um amigo?
+          </Text>
+          <View style={styles.npsRow}>
+            {Array.from({ length: 11 }, (_, i) => (
+              <TouchableOpacity
+                key={i}
+                style={[styles.npsBtn, npsScore === i && styles.npsBtnSelected,
+                  i <= 6 ? styles.npsBtnDetractor : i <= 8 ? styles.npsBtnPassive : styles.npsBtnPromotor,
+                  npsScore === i && styles.npsBtnActive,
+                  npsScore === i && { backgroundColor: i <= 6 ? '#e53935' : i <= 8 ? '#f9a825' : '#43a047' }]}
+                onPress={() => setNpsScore(npsScore === i ? null : i)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.npsBtnText, npsScore === i && styles.npsBtnTextSelected]}>{i}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.npsLabels}>
+            <Text style={styles.npsLabelLeft}>Nada provável</Text>
+            <Text style={styles.npsLabelRight}>Muito provável</Text>
+          </View>
+          {npsScore !== null && (
+            <Text style={styles.npsHint}>
+              {npsScore <= 6 ? '😕 Que pena! Vamos melhorar.' : npsScore <= 8 ? '🙂 Obrigado pelo feedback!' : '🤩 Incrível! Fico feliz em ouvir!'}
+            </Text>
+          )}
+        </View>
 
         <TouchableOpacity
           style={styles.btnSubmit}
@@ -282,6 +315,67 @@ const styles = StyleSheet.create({
     color: '#e53935',
     fontSize: typography.fontSizes.sm,
     fontWeight: '600',
+  },
+  npsSection: {
+    width: '100%',
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    backgroundColor: `${colors.primary}08`,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: `${colors.primary}20`,
+  },
+  npsTitle: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  npsQuestion: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  npsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  npsBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  npsBtnDetractor: { borderColor: '#FFCDD2' },
+  npsBtnPassive:   { borderColor: '#FFF9C4' },
+  npsBtnPromotor:  { borderColor: '#C8E6C9' },
+  npsBtnSelected: {},
+  npsBtnActive: { borderWidth: 2 },
+  npsBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  npsBtnTextSelected: { color: colors.white, fontWeight: '700' },
+  npsLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  npsLabelLeft:  { fontSize: 10, color: colors.textLight },
+  npsLabelRight: { fontSize: 10, color: colors.textLight },
+  npsHint: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    fontWeight: '500',
   },
 });
 

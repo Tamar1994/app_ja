@@ -320,6 +320,9 @@ const renderLayout = async () => {
           ${hasPermission(PERMISSIONS.DASHBOARD) ? `
           <div class="nav-item ${currentPage==='dashboard'?'active':''}" onclick="navTo('dashboard')">
             <span class="icon">📊</span> Dashboard
+          </div>
+          <div class="nav-item ${currentPage==='nps'?'active':''}" onclick="navTo('nps')">
+            <span class="icon">📈</span> NPS do App
           </div>` : ''}
           ${hasPermission(PERMISSIONS.USER_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='approvals'?'active':''}" onclick="navTo('approvals')">
@@ -421,6 +424,7 @@ const renderLayout = async () => {
 const navTo = (page) => {
   const pagePermissionMap = {
     dashboard: [PERMISSIONS.DASHBOARD],
+    nps: [PERMISSIONS.DASHBOARD],
     approvals: [PERMISSIONS.USER_MANAGEMENT],
     users: [PERMISSIONS.USER_MANAGEMENT],
     suporte: [PERMISSIONS.SUPPORT_CHAT],
@@ -448,6 +452,7 @@ const navTo = (page) => {
   if (selectedItem) selectedItem.classList.add('active');
   document.getElementById('page-title').textContent = {
     dashboard: 'Dashboard',
+    nps: 'NPS do Aplicativo',
     approvals: 'Fila de Aprovações',
     users: 'Usuários',
     suporte: 'Suporte ao Vivo',
@@ -468,6 +473,7 @@ const navTo = (page) => {
 const renderPage = () => {
   const pagePermissionMap = {
     dashboard: [PERMISSIONS.DASHBOARD],
+    nps: [PERMISSIONS.DASHBOARD],
     approvals: [PERMISSIONS.USER_MANAGEMENT],
     users: [PERMISSIONS.USER_MANAGEMENT],
     suporte: [PERMISSIONS.SUPPORT_CHAT],
@@ -486,7 +492,7 @@ const renderPage = () => {
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
+  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -504,7 +510,13 @@ const renderDashboard = async () => {
   const c = document.getElementById('page-content');
   c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
   try {
-    const s = await req('GET', '/stats');
+    const [s, nps] = await Promise.all([
+      req('GET', '/stats'),
+      req('GET', '/nps?period=90').catch(() => null),
+    ]);
+    const npsScore = nps?.overall?.score;
+    const npsColor = npsScore === null ? '#9E9E9E' : npsScore < 0 ? '#e53935' : npsScore < 30 ? '#f9a825' : '#43a047';
+    const npsLabel = npsScore === null ? 'Sem dados' : npsScore < 0 ? 'Crítico' : npsScore < 30 ? 'Neutro' : npsScore < 70 ? 'Bom' : 'Excelente';
     c.innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
@@ -537,6 +549,12 @@ const renderDashboard = async () => {
           <div class="stat-value" style="color:#CE93D8;">${s.support.openChats}</div>
           <div class="stat-sub"><a href="#" onclick="navTo('suporte')" style="color:#FF6B00;text-decoration:none;">Ver chats →</a></div>
         </div>
+        <div class="stat-card" style="cursor:pointer;" onclick="navTo('nps')">
+          <div class="stat-icon">📈</div>
+          <div class="stat-label">NPS do App</div>
+          <div class="stat-value" style="color:${npsColor};">${npsScore !== null ? npsScore : '—'}</div>
+          <div class="stat-sub" style="color:${npsColor};">${npsLabel}${nps?.overall?.total ? ` · ${nps.overall.total} respostas` : ''}</div>
+        </div>
       </div>
       <div class="section-card">
         <div class="section-header"><h2>🔍 Fila de Aprovações Pendentes</h2><button class="btn btn-ghost btn-sm" onclick="navTo('approvals')">Ver todos</button></div>
@@ -565,6 +583,161 @@ const loadDashApprovals = async () => {
       </tr>`).join('')}</tbody>
     </table></div>`;
   } catch {}
+};
+
+// ── NPS ─────────────────────────────────────────────────────────────
+const renderNps = async (period = 90) => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const d = await req('GET', `/nps?period=${period}`);
+    const { overall, byRole, distribution, trend, recent } = d;
+
+    const npsColor = (score) => score === null ? '#9E9E9E' : score < 0 ? '#e53935' : score < 30 ? '#f9a825' : '#43a047';
+    const npsZone = (score) => score === null ? 'Sem dados' : score < 0 ? '🔴 Crítico' : score < 30 ? '🟡 Neutro' : score < 70 ? '🟢 Bom' : '🌟 Excelente';
+    const barColor = (label) => label === 'detrator' ? '#e53935' : label === 'neutro' ? '#f9a825' : '#43a047';
+    const maxCount = Math.max(...distribution.map(x => x.count), 1);
+
+    const scoreSummary = (nps, title) => nps.total === 0
+      ? `<div style="text-align:center;color:#9E9E9E;padding:16px;">${title}: sem dados ainda</div>`
+      : `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <div style="text-align:center;flex:0 0 80px;">
+            <div style="font-size:48px;font-weight:800;color:${npsColor(nps.score)};line-height:1;">${nps.score}</div>
+            <div style="font-size:11px;color:${npsColor(nps.score)};font-weight:600;">${npsZone(nps.score)}</div>
+          </div>
+          <div style="flex:1;display:flex;gap:8px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:90px;background:#C8E6C9;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:700;color:#2E7D32;">${nps.promotersPct}%</div>
+              <div style="font-size:11px;color:#388E3C;">Promotores</div>
+              <div style="font-size:10px;color:#555;">${nps.promoters} respostas (9-10)</div>
+            </div>
+            <div style="flex:1;min-width:90px;background:#FFF9C4;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:700;color:#F57F17;">${nps.passivesPct}%</div>
+              <div style="font-size:11px;color:#F9A825;">Neutros</div>
+              <div style="font-size:10px;color:#555;">${nps.passives} respostas (7-8)</div>
+            </div>
+            <div style="flex:1;min-width:90px;background:#FFCDD2;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:700;color:#C62828;">${nps.detractorsPct}%</div>
+              <div style="font-size:11px;color:#E53935;">Detratores</div>
+              <div style="font-size:10px;color:#555;">${nps.detractors} respostas (0-6)</div>
+            </div>
+          </div>
+        </div>`;
+
+    c.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+        <span style="font-size:13px;color:#5C6B7A;">Período dos dados recentes:</span>
+        ${[30,60,90,180,365].map(p => `<button class="btn btn-sm ${period===p?'btn-primary':'btn-ghost'}" onclick="renderNps(${p})">${p} dias</button>`).join('')}
+      </div>
+
+      <!-- Score geral -->
+      <div class="section-card" style="margin-bottom:16px;">
+        <div class="section-header"><h2>📈 NPS Geral (todos os tempos · ${overall.total} respostas)</h2></div>
+        ${scoreSummary(overall, 'NPS Geral')}
+      </div>
+
+      <!-- Por tipo de usuário -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div class="section-card">
+          <div class="section-header"><h2>👤 Clientes (${byRole.client.total})</h2></div>
+          ${scoreSummary(byRole.client, 'Clientes')}
+        </div>
+        <div class="section-card">
+          <div class="section-header"><h2>🔧 Profissionais (${byRole.professional.total})</h2></div>
+          ${scoreSummary(byRole.professional, 'Profissionais')}
+        </div>
+      </div>
+
+      <!-- Distribuição por nota -->
+      <div class="section-card" style="margin-bottom:16px;">
+        <div class="section-header"><h2>📊 Distribuição por Nota (todos os tempos)</h2></div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="border-bottom:1px solid #e0e0e0;">
+              <th style="padding:8px;text-align:left;">Nota</th>
+              <th style="padding:8px;text-align:left;">Grupo</th>
+              <th style="padding:8px;text-align:left;min-width:200px;">Distribuição</th>
+              <th style="padding:8px;text-align:right;">Respostas</th>
+            </tr></thead>
+            <tbody>
+              ${distribution.map(row => `<tr style="border-bottom:1px solid #f0f0f0;">
+                <td style="padding:8px;font-weight:700;font-size:16px;">${row.score}</td>
+                <td style="padding:8px;"><span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:${barColor(row.label)}22;color:${barColor(row.label)};">${row.label === 'detrator' ? 'Detrator' : row.label === 'neutro' ? 'Neutro' : 'Promotor'}</span></td>
+                <td style="padding:8px;">
+                  <div style="background:#f0f0f0;border-radius:4px;height:16px;overflow:hidden;">
+                    <div style="background:${barColor(row.label)};height:100%;width:${Math.round((row.count/maxCount)*100)}%;border-radius:4px;transition:width 0.3s;"></div>
+                  </div>
+                </td>
+                <td style="padding:8px;text-align:right;font-weight:600;">${row.count}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tendência mensal -->
+      <div class="section-card" style="margin-bottom:16px;">
+        <div class="section-header"><h2>📅 Tendência Mensal (últimos 6 meses)</h2></div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="border-bottom:1px solid #e0e0e0;">
+              <th style="padding:10px 8px;text-align:left;">Mês</th>
+              <th style="padding:10px 8px;text-align:right;">Respostas</th>
+              <th style="padding:10px 8px;text-align:right;">Promotores</th>
+              <th style="padding:10px 8px;text-align:right;">Neutros</th>
+              <th style="padding:10px 8px;text-align:right;">Detratores</th>
+              <th style="padding:10px 8px;text-align:right;">NPS</th>
+            </tr></thead>
+            <tbody>
+              ${trend.map(m => `<tr style="border-bottom:1px solid #f0f0f0;">
+                <td style="padding:10px 8px;font-weight:600;text-transform:capitalize;">${escHtml(m.month)}</td>
+                <td style="padding:10px 8px;text-align:right;">${m.total}</td>
+                <td style="padding:10px 8px;text-align:right;color:#43a047;">${m.promoters}</td>
+                <td style="padding:10px 8px;text-align:right;color:#f9a825;">${m.passives}</td>
+                <td style="padding:10px 8px;text-align:right;color:#e53935;">${m.detractors}</td>
+                <td style="padding:10px 8px;text-align:right;">
+                  ${m.total > 0
+                    ? `<strong style="color:${npsColor(m.score)};">${m.score}</strong>`
+                    : '<span style="color:#bbb;">—</span>'}
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Respostas recentes -->
+      <div class="section-card">
+        <div class="section-header"><h2>🕐 Respostas Recentes (últimos ${d.period.days} dias · ${recent.length})</h2></div>
+        ${recent.length === 0
+          ? `<div class="empty"><div class="empty-icon">📭</div><p>Nenhuma resposta NPS no período selecionado.</p></div>`
+          : `<div class="table-wrap"><table>
+              <thead><tr>
+                <th>Usuário</th><th>Tipo</th><th>Nota NPS</th><th>Grupo</th><th>Avaliação do Serviço</th><th>Data</th>
+              </tr></thead>
+              <tbody>
+                ${recent.map(r => {
+                  const score = r.npsScore;
+                  const label = score <= 6 ? 'Detrator' : score <= 8 ? 'Neutro' : 'Promotor';
+                  const color = score <= 6 ? '#e53935' : score <= 8 ? '#f9a825' : '#43a047';
+                  return `<tr>
+                    <td><strong>${escHtml(r.reviewer?.name || '—')}</strong><br/><span style="font-size:11px;color:#aaa;">${escHtml(r.reviewer?.email || '')}</span></td>
+                    <td>${r.reviewerRole === 'client' ? '👤 Cliente' : '🔧 Profissional'}</td>
+                    <td style="text-align:center;"><span style="font-size:22px;font-weight:800;color:${color};">${score}</span></td>
+                    <td><span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:${color}22;color:${color};">${label}</span></td>
+                    <td style="text-align:center;">
+                      ${'★'.repeat(r.rating || 0)}<span style="color:#ddd">${'★'.repeat(5-(r.rating||0))}</span>
+                      <span style="font-size:11px;color:#aaa;"> (${r.rating || '—'}/5)</span>
+                    </td>
+                    <td style="font-size:12px;color:#5C6B7A;">${fmtDatetime(r.createdAt)}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table></div>`}
+      </div>`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
 };
 
 // ── APPROVALS ──────────────────────────────────────────────────────

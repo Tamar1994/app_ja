@@ -32,6 +32,12 @@ const reviewSchema = new mongoose.Schema({
     default: '',
     maxlength: 500,
   },
+  npsScore: {
+    type: Number,
+    default: null,
+    min: 0,
+    max: 10,
+  },
 }, { timestamps: true });
 
 // Atualiza rating médio do profissional SOMENTE quando um cliente avalia
