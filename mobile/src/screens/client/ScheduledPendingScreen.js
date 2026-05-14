@@ -30,6 +30,9 @@ export default function ScheduledPendingScreen({ navigation, route }) {
     try {
       const { data } = await requestAPI.getById(requestId);
       setRequest(data.request);
+      if (data.request?.professional) {
+        setProfessional(data.request.professional);
+      }
     } catch {
       // ignora
     } finally {
@@ -47,10 +50,22 @@ export default function ScheduledPendingScreen({ navigation, route }) {
       }
     });
 
+    const unsubWithdrew = on('schedule_professional_withdrew', ({ requestId: rid }) => {
+      if (rid?.toString() === requestId) {
+        setProfessional(null);
+        setRequest(prev => prev ? { ...prev, status: 'pending_professional', professional: null } : prev);
+        Alert.alert(
+          'Profissional indisponível',
+          'O profissional não poderá mais atender este horário. Aguardando outro profissional aceitar seu agendamento.',
+        );
+      }
+    });
+
     // Polling leve a cada 30s
     const poll = setInterval(loadRequest, 30000);
     return () => {
       unsub && unsub();
+      unsubWithdrew && unsubWithdrew();
       clearInterval(poll);
     };
   }, [requestId, loadRequest]);
@@ -119,6 +134,7 @@ export default function ScheduledPendingScreen({ navigation, route }) {
   };
 
   const status = request?.status;
+  const isConfirmed = status === 'scheduled';
   const hasProfessional = status === 'pending_client' && (professional || request?.professional);
   const prof = professional || request?.professional;
 
@@ -139,7 +155,15 @@ export default function ScheduledPendingScreen({ navigation, route }) {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
           {/* Status banner */}
-          {hasProfessional ? (
+          {isConfirmed ? (
+            <LinearGradient colors={[colors.success + '25', colors.success + '08']} style={[styles.statusBanner, { borderWidth: 1.5, borderColor: colors.success + '40' }]}>
+              <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statusTitle}>Serviço agendado!</Text>
+                <Text style={styles.statusSub}>Seu agendamento está confirmado. O profissional aparecerá no dia e horário combinados.</Text>
+              </View>
+            </LinearGradient>
+          ) : hasProfessional ? (
             <LinearGradient colors={[colors.success + '20', colors.success + '08']} style={styles.statusBanner}>
               <Ionicons name="person-circle" size={40} color={colors.success} />
               <View style={{ flex: 1 }}>

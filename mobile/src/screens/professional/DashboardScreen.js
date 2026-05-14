@@ -104,10 +104,33 @@ export default function DashboardScreen({ navigation }) {
       clearPendingNotification();
       loadRequests();
     });
+
+    // Quando cliente confirma agendamento: remover do modal se estiver aberto
+    const unsubSchedConfirmed = on('schedule_client_confirmed', ({ requestId }) => {
+      setSelectedScheduledRequest(prev => {
+        if (prev?._id?.toString() === requestId?.toString()) return null;
+        return prev;
+      });
+      // Recarregar para atualizar contadores
+      loadRequests();
+    });
+
+    // Quando cliente recusa: remover da lista (back to pending_professional = outro pro pegar)
+    const unsubSchedRejected = on('schedule_client_rejected', ({ requestId }) => {
+      setSelectedScheduledRequest(prev => {
+        if (prev?._id?.toString() === requestId?.toString()) return null;
+        return prev;
+      });
+      setScheduledRequests(prev => prev.filter(r => r._id?.toString() !== requestId?.toString()));
+      Alert.alert('Agendamento', 'O cliente optou por outro profissional para este agendamento.');
+    });
+
     return () => {
       unsub && unsub();
       unsubExpired && unsubExpired();
       unsubTaken && unsubTaken();
+      unsubSchedConfirmed && unsubSchedConfirmed();
+      unsubSchedRejected && unsubSchedRejected();
     };
   }, []);
 
@@ -292,14 +315,14 @@ export default function DashboardScreen({ navigation }) {
           { icon: 'calendar-outline', label: new Date(item.details?.scheduledDate).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }) },
           { icon: 'time-outline', label: new Date(item.details?.scheduledDate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) },
         ].map((tag, i) => (
-          <View key={i} style={styles.tag}>
+          <View key={i} style={[styles.tag, { backgroundColor: `${colors.primary}10` }]}>
             <Ionicons name={tag.icon} size={12} color={colors.primary} />
-            <Text style={styles.tagText}>{tag.label}</Text>
+            <Text style={[styles.tagText, { color: colors.primary }]}>{tag.label}</Text>
           </View>
         ))}
       </View>
-      <View style={styles.tapHint}>
-        <Text style={styles.tapHintText}>Toque para ver detalhes e aceitar →</Text>
+      <View style={[styles.tapHint, { backgroundColor: `${colors.primary}10` }]}>
+        <Text style={[styles.tapHintText, { color: colors.primary }]}>Toque para ver detalhes e aceitar →</Text>
       </View>
     </TouchableOpacity>
   );
@@ -548,7 +571,7 @@ export default function DashboardScreen({ navigation }) {
                   ))}
                 </View>
 
-                <View style={[styles.earningsHighlight, { backgroundColor: colors.success + '15', marginBottom: 16 }]}>
+                <View style={[styles.earningsHighlight, { backgroundColor: colors.success + '15' }]}>
                   <Text style={[styles.earningsLabel, { color: colors.success }]}>Estimativa de ganho</Text>
                   <Text style={[styles.earningsValue, { color: colors.success }]}>
                     R$ {((selectedScheduledRequest.pricing?.estimated || 0) * (1 - (selectedScheduledRequest.pricing?.platformFeePercent || 15) / 100)).toFixed(2)}
@@ -730,6 +753,30 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: typography.fontSizes.sm, color: colors.textLight,
     textAlign: 'center', marginTop: 8, paddingHorizontal: spacing.xl,
+  },
+  // Earnings highlight (used in scheduled request modal)
+  earningsHighlight: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: colors.success + '30',
+  },
+  earningsLabel: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  earningsValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    lineHeight: 42,
+  },
+  earningsNote: {
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 16,
   },
   // Empty
   empty: { alignItems: 'center', paddingTop: 64, gap: spacing.md },

@@ -71,8 +71,12 @@ export default function HistoryScreen({ navigation }) {
       <TouchableOpacity
         style={styles.card}
         onPress={() => {
-          if (['pending_professional', 'pending_client', 'scheduled'].includes(item.status)) {
+          if (['pending_professional', 'pending_client'].includes(item.status)) {
             navigation.navigate('HomeTab', { screen: 'ScheduledPending', params: { requestId: item._id } });
+            return;
+          }
+          if (item.status === 'scheduled') {
+            navigation.navigate('HomeTab', { screen: 'RequestDetails', params: { requestId: item._id, role: 'client' } });
             return;
           }
           if (item.status === 'searching') {

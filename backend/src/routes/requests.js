@@ -27,7 +27,7 @@ async function hasScheduleConflict(professionalId, scheduledDate, durationMinute
 
   const filter = {
     professional: professionalId,
-    status: { $in: ['accepted', 'preparing', 'on_the_way', 'in_progress', 'scheduled'] },
+    status: { $in: ['accepted', 'preparing', 'on_the_way', 'in_progress', 'scheduled', 'pending_client'] },
     'details.scheduledDate': {
       $gte: new Date(windowStart.getTime() - 12 * 60 * 60000),
       $lte: new Date(windowEnd.getTime() + 12 * 60 * 60000),
@@ -676,10 +676,27 @@ router.patch('/:id/schedule-reject', auth, async (req, res) => {
     return res.status(403).json({ message: 'Apenas profissionais podem recusar agendamentos' });
   }
   try {
+    const existing = await ServiceRequest.findOne({
+      _id: req.params.id,
+      status: { $in: ['pending_professional', 'pending_client'] },
+    }).select('client status').lean();
+
     await ServiceRequest.findOneAndUpdate(
       { _id: req.params.id, status: { $in: ['pending_professional', 'pending_client'] } },
       { $addToSet: { rejectedBy: req.user._id }, $unset: { professional: '', acceptedAt: '' }, status: 'pending_professional' },
     );
+
+    // Se estava em pending_client, notificar o cliente que o profissional desistiu
+    if (existing?.status === 'pending_client' && existing?.client) {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${existing.client}`).emit('schedule_professional_withdrew', {
+          requestId: req.params.id,
+          message: 'O profissional não poderá mais atender este agendamento. Aguardando outro profissional.',
+        });
+      }
+    }
+
     res.json({ message: 'Agendamento recusado' });
   } catch {
     res.status(500).json({ message: 'Erro ao recusar agendamento' });
@@ -688,7 +705,7 @@ router.patch('/:id/schedule-reject', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/schedule-client-confirm — cliente confirma profissional do agendamento
 router.patch('/:id/schedule-client-confirm', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem confirmar' });
   }
   try {
@@ -725,7 +742,7 @@ router.patch('/:id/schedule-client-confirm', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/schedule-client-reject — cliente recusa profissional do agendamento
 router.patch('/:id/schedule-client-reject', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem recusar' });
   }
   try {
