@@ -24,6 +24,7 @@ const CouponRedemption = require('../models/CouponRedemption');
 const AuditLog = require('../models/AuditLog');
 const SpecialistCertificate = require('../models/SpecialistCertificate');
 const Review = require('../models/Review');
+const AdBanner = require('../models/AdBanner');
 const {
   adminAuth,
   requireRole,
@@ -157,6 +158,24 @@ const withdrawalProofDir = path.join(uploadsRoot, 'withdrawal-proofs');
 if (!fs.existsSync(withdrawalProofDir)) {
   fs.mkdirSync(withdrawalProofDir, { recursive: true });
 }
+const bannerUploadsDir = path.join(uploadsRoot, 'banners');
+if (!fs.existsSync(bannerUploadsDir)) {
+  fs.mkdirSync(bannerUploadsDir, { recursive: true });
+}
+const bannerUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, bannerUploadsDir),
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+      cb(null, `banner-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Imagem deve ser JPG, PNG ou WEBP'));
+  },
+});
 
 const withdrawalProofStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, withdrawalProofDir),
@@ -370,6 +389,91 @@ router.get('/nps', adminAuth, requirePermission(ADMIN_PERMISSIONS.DASHBOARD), as
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Erro ao buscar NPS' });
+  }
+});
+
+// ── BANNERS DE PUBLICIDADE ────────────────────────────────────────
+// GET /api/admin/banners
+router.get('/banners', adminAuth, requirePermission(ADMIN_PERMISSIONS.CONTENT_MANAGEMENT), async (req, res) => {
+  try {
+    const banners = await AdBanner.find().sort({ startAt: -1 }).lean();
+    res.json({ banners });
+  } catch {
+    res.status(500).json({ message: 'Erro ao listar banners' });
+  }
+});
+
+// POST /api/admin/banners — criar banner com upload de imagem
+router.post('/banners', adminAuth, requirePermission(ADMIN_PERMISSIONS.CONTENT_MANAGEMENT), bannerUpload.single('image'), async (req, res) => {
+  try {
+    const { title, startAt, endAt, targetProfile = 'all' } = req.body;
+    if (!req.file) return res.status(400).json({ message: 'Imagem obrigatória' });
+    if (!title || !startAt || !endAt) return res.status(400).json({ message: 'Preencha todos os campos obrigatórios' });
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+      return res.status(400).json({ message: 'Período inválido: data de fim deve ser após a data de início' });
+    }
+    const banner = await AdBanner.create({
+      title: title.trim(),
+      imageUrl: `/uploads/banners/${req.file.filename}`,
+      startAt: start,
+      endAt: end,
+      targetProfile: ['all', 'client', 'professional'].includes(targetProfile) ? targetProfile : 'all',
+      active: true,
+      createdBy: req.admin._id,
+    });
+    res.status(201).json({ banner });
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Erro ao criar banner' });
+  }
+});
+
+// PATCH /api/admin/banners/:id/toggle — ativar/desativar
+router.patch('/banners/:id/toggle', adminAuth, requirePermission(ADMIN_PERMISSIONS.CONTENT_MANAGEMENT), async (req, res) => {
+  try {
+    const banner = await AdBanner.findById(req.params.id);
+    if (!banner) return res.status(404).json({ message: 'Banner não encontrado' });
+    banner.active = !banner.active;
+    await banner.save();
+    res.json({ banner });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar banner' });
+  }
+});
+
+// PUT /api/admin/banners/:id — editar título, datas e segmentação
+router.put('/banners/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.CONTENT_MANAGEMENT), async (req, res) => {
+  try {
+    const { title, startAt, endAt, targetProfile } = req.body;
+    const banner = await AdBanner.findById(req.params.id);
+    if (!banner) return res.status(404).json({ message: 'Banner não encontrado' });
+    if (title) banner.title = title.trim();
+    if (startAt) banner.startAt = new Date(startAt);
+    if (endAt) banner.endAt = new Date(endAt);
+    if (targetProfile && ['all', 'client', 'professional'].includes(targetProfile)) {
+      banner.targetProfile = targetProfile;
+    }
+    if (banner.endAt <= banner.startAt) {
+      return res.status(400).json({ message: 'Data de fim deve ser após a data de início' });
+    }
+    await banner.save();
+    res.json({ banner });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar banner' });
+  }
+});
+
+// DELETE /api/admin/banners/:id
+router.delete('/banners/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.CONTENT_MANAGEMENT), async (req, res) => {
+  try {
+    const banner = await AdBanner.findByIdAndDelete(req.params.id);
+    if (!banner) return res.status(404).json({ message: 'Banner não encontrado' });
+    const filePath = path.join(uploadsRoot, banner.imageUrl.replace('/uploads/', ''));
+    if (fs.existsSync(filePath)) fs.unlink(filePath, () => {});
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ message: 'Erro ao excluir banner' });
   }
 });
 

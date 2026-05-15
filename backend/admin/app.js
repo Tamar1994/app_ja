@@ -347,6 +347,9 @@ const renderLayout = async () => {
           </div>
           <div class="nav-item ${currentPage==='termos'?'active':''}" onclick="navTo('termos')">
             <span class="icon">📄</span> Termos de Uso
+          </div>
+          <div class="nav-item ${currentPage==='banners'?'active':''}" onclick="navTo('banners')">
+            <span class="icon">📸</span> Banners de Pub.
           </div>` : ''}
 
           ${hasPermission(PERMISSIONS.COUPON_MANAGEMENT) ? `
@@ -430,6 +433,7 @@ const navTo = (page) => {
     suporte: [PERMISSIONS.SUPPORT_CHAT],
     ajuda: [PERMISSIONS.CONTENT_MANAGEMENT],
     termos: [PERMISSIONS.CONTENT_MANAGEMENT],
+    banners: [PERMISSIONS.CONTENT_MANAGEMENT],
     cupons: [PERMISSIONS.COUPON_MANAGEMENT],
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
@@ -458,6 +462,7 @@ const navTo = (page) => {
     suporte: 'Suporte ao Vivo',
     ajuda: 'Central de Ajuda',
     termos: 'Termos de Uso',
+    banners: 'Banners de Publicidade',
     cupons: 'Cupons de Desconto',
     pagamentos: 'Pagamentos & Stripe',
     saques: 'Fila de Saques PIX',
@@ -479,6 +484,7 @@ const renderPage = () => {
     suporte: [PERMISSIONS.SUPPORT_CHAT],
     ajuda: [PERMISSIONS.CONTENT_MANAGEMENT],
     termos: [PERMISSIONS.CONTENT_MANAGEMENT],
+    banners: [PERMISSIONS.CONTENT_MANAGEMENT],
     cupons: [PERMISSIONS.COUPON_MANAGEMENT],
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
@@ -492,7 +498,7 @@ const renderPage = () => {
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
+  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -583,6 +589,151 @@ const loadDashApprovals = async () => {
       </tr>`).join('')}</tbody>
     </table></div>`;
   } catch {}
+};
+
+// ── BANNERS DE PUBLICIDADE ────────────────────────────────────────
+const renderBanners = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const { banners } = await req('GET', '/banners');
+    const now = new Date();
+
+    const statusBadge = (b) => {
+      if (!b.active) return `<span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:#f5f5f5;color:#9E9E9E;">Inativo</span>`;
+      const s = new Date(b.startAt), e = new Date(b.endAt);
+      if (now < s) return `<span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:#E3F2FD;color:#1565C0;">Agendado</span>`;
+      if (now > e) return `<span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:#F3E5F5;color:#6A1B9A;">Expirado</span>`;
+      return `<span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:#E8F5E9;color:#2E7D32;">● Exibindo</span>`;
+    };
+
+    const targetLabel = { all: '👥 Todos', client: '👤 Clientes', professional: '🔧 Profissionais' };
+
+    c.innerHTML = `
+      <div class="section-card" style="margin-bottom:16px;">
+        <div class="section-header">
+          <h2>📸 Novo Banner</h2>
+        </div>
+        <div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#5D4037;">
+          💡 <strong>Tamanho recomendado:</strong> 1080 × 1920 px (retrato, tela cheia) ou 1080 × 1080 px (quadrado). Máx. 15 MB. Formatos: JPG, PNG ou WEBP.
+        </div>
+        <form id="banner-form" enctype="multipart/form-data" onsubmit="event.preventDefault();submitBanner()">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div style="grid-column:span 2;">
+              <label class="field-label">Título interno (para identificação)</label>
+              <input class="field-input" type="text" name="title" placeholder="Ex: Promo Verão Junho" maxlength="100" required style="width:100%;">
+            </div>
+            <div>
+              <label class="field-label">Imagem do banner</label>
+              <input class="field-input" type="file" name="image" accept="image/jpeg,image/png,image/webp" required style="width:100%;">
+            </div>
+            <div>
+              <label class="field-label">Público-alvo</label>
+              <select class="field-input" name="targetProfile" style="width:100%;">
+                <option value="all">👥 Todos</option>
+                <option value="client">👤 Apenas Clientes</option>
+                <option value="professional">🔧 Apenas Profissionais</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Início da exibição</label>
+              <input class="field-input" type="datetime-local" name="startAt" required style="width:100%;">
+            </div>
+            <div>
+              <label class="field-label">Fim da exibição</label>
+              <input class="field-input" type="datetime-local" name="endAt" required style="width:100%;">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="banner-submit-btn">📤 Criar Banner</button>
+        </form>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header"><h2>📋 Banners Cadastrados (${banners.length})</h2></div>
+        ${banners.length === 0
+          ? `<div class="empty"><div class="empty-icon">📭</div><p>Nenhum banner cadastrado ainda.</p></div>`
+          : `<div class="table-wrap"><table>
+              <thead><tr>
+                <th>Preview</th><th>Título</th><th>Público</th><th>Início</th><th>Fim</th><th>Status</th><th>Ações</th>
+              </tr></thead>
+              <tbody>
+                ${banners.map(b => `<tr>
+                  <td style="width:80px;">
+                    <img src="${escHtml(b.imageUrl)}" style="width:70px;height:50px;object-fit:cover;border-radius:6px;cursor:pointer;"
+                      onclick="window.open('${escHtml(b.imageUrl)}','_blank')" title="Ver imagem completa" />
+                  </td>
+                  <td><strong>${escHtml(b.title)}</strong></td>
+                  <td>${targetLabel[b.targetProfile] || b.targetProfile}</td>
+                  <td style="font-size:12px;">${fmtDatetime(b.startAt)}</td>
+                  <td style="font-size:12px;">${fmtDatetime(b.endAt)}</td>
+                  <td>${statusBadge(b)}</td>
+                  <td>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="btn btn-sm btn-ghost" onclick="toggleBanner('${b._id}','${escHtml(b.title)}',${b.active})">
+                        ${b.active ? '⏸ Pausar' : '▶ Ativar'}
+                      </button>
+                      <button class="btn btn-sm" style="background:#e53935;color:#fff;" onclick="deleteBanner('${b._id}','${escHtml(b.title)}')">
+                        🗑 Excluir
+                      </button>
+                    </div>
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table></div>`}
+      </div>`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+const submitBanner = async () => {
+  const form = document.getElementById('banner-form');
+  const btn = document.getElementById('banner-submit-btn');
+  if (!form) return;
+  const formData = new FormData(form);
+  const start = formData.get('startAt');
+  const end = formData.get('endAt');
+  if (!start || !end || new Date(end) <= new Date(start)) {
+    showAlert('A data de fim deve ser após a data de início.');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  try {
+    const res2 = await fetch(`${API}/banners`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: formData,
+    });
+    const data = await res2.json();
+    if (!res2.ok) throw new Error(data.message || 'Erro ao criar banner');
+    showAlert('Banner criado com sucesso!', 'success');
+    renderBanners();
+  } catch (err) {
+    showAlert(err.message);
+    btn.disabled = false;
+    btn.textContent = '📤 Criar Banner';
+  }
+};
+
+const toggleBanner = async (id, title, currentActive) => {
+  if (!confirm(`${currentActive ? 'Pausar' : 'Ativar'} o banner "${title}"?`)) return;
+  try {
+    await req('PATCH', `/banners/${id}/toggle`);
+    renderBanners();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const deleteBanner = async (id, title) => {
+  if (!confirm(`Excluir permanentemente o banner "${title}"? A imagem também será removida.`)) return;
+  try {
+    await req('DELETE', `/banners/${id}`);
+    renderBanners();
+  } catch (err) {
+    showAlert(err.message);
+  }
 };
 
 // ── NPS ─────────────────────────────────────────────────────────────

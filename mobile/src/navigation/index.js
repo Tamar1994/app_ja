@@ -1,11 +1,17 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  NavigationContainer,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  ActivityIndicator, View, Text, TouchableOpacity, StyleSheet,
+  Modal, Image, Dimensions, SafeAreaView,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
+import { bannerAPI } from '../services/api';
 
 import AuthNavigator from './AuthNavigator';
 import ClientNavigator from './ClientNavigator';
@@ -16,9 +22,34 @@ import AcceptTermsScreen from '../screens/auth/AcceptTermsScreen';
 import ProfessionalAddressScreen from '../screens/auth/ProfessionalAddressScreen';
 
 const Stack = createNativeStackNavigator();
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
+const buildImageUrl = (p) => !p ? null : (String(p).startsWith('http') ? p : `${API_BASE}${p}`);
+
+// Module-level set — tracks banners already shown in this app session
+const _shownBannerIds = new Set();
 
 export default function RootNavigator() {
   const { user, loading, networkError, retryAuth } = useAuth();
+  const [activeBanner, setActiveBanner] = useState(null);
+  const [bannerVisible, setBannerVisible] = useState(false);
+  const bannerFetchedForUser = useRef(null);
+
+  // Fetch active banner once per authenticated session per user
+  useEffect(() => {
+    if (!user || !user._id || bannerFetchedForUser.current === user._id) return;
+    bannerFetchedForUser.current = user._id;
+    bannerAPI.getActive()
+      .then(({ data }) => {
+        const banner = data?.banner;
+        if (banner && !_shownBannerIds.has(banner._id)) {
+          _shownBannerIds.add(banner._id);
+          setActiveBanner(banner);
+          setBannerVisible(true);
+        }
+      })
+      .catch(() => {});
+  }, [user?._id]);
 
   if (loading) {
     return (
@@ -83,6 +114,37 @@ export default function RootNavigator() {
   return (
     <NavigationContainer>
       {renderMain()}
+      {/* Banner de publicidade — aparece 1x por sessão por banner ativo */}
+      <Modal
+        visible={bannerVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setBannerVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.bannerOverlay}
+          activeOpacity={1}
+          onPress={() => setBannerVisible(false)}
+        >
+          <SafeAreaView style={styles.bannerSafe} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.bannerClose}
+              onPress={() => setBannerVisible(false)}
+              hitSlop={{ top: 12, left: 12, bottom: 12, right: 12 }}
+            >
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            {activeBanner?.imageUrl ? (
+              <Image
+                source={{ uri: buildImageUrl(activeBanner.imageUrl) }}
+                style={styles.bannerImage}
+                resizeMode="contain"
+              />
+            ) : null}
+          </SafeAreaView>
+        </TouchableOpacity>
+      </Modal>
     </NavigationContainer>
   );
 }
@@ -121,5 +183,32 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
     fontSize: 15,
+  },
+  // Banner modal
+  bannerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bannerSafe: {
+    width: SCREEN_W,
+    height: SCREEN_H,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bannerImage: {
+    width: SCREEN_W,
+    height: SCREEN_H * 0.82,
+    borderRadius: 12,
+  },
+  bannerClose: {
+    position: 'absolute',
+    top: 48,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 6,
   },
 });

@@ -16,6 +16,7 @@ const serviceChatRoutes = require('./routes/serviceChats');
 const paymentRoutes = require('./routes/payments');
 const couponRoutes = require('./routes/coupons');
 const specialistCertificatesRoutes = require('./routes/specialistCertificates');
+const bannerRoutes = require('./routes/banners');
 const TermsOfUse = require('./models/TermsOfUse');
 const Waitlist = require('./models/Waitlist');
 
@@ -60,6 +61,7 @@ app.use('/api/service-chats', serviceChatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/specialist-certificates', specialistCertificatesRoutes);
+app.use('/api/banners', bannerRoutes);
 
 // Termos de uso — público
 app.get('/api/terms', async (req, res) => {

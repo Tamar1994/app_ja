@@ -169,6 +169,10 @@ export const termsAPI = {
   accept: () => api.post('/auth/accept-terms'),
 };
 
+export const bannerAPI = {
+  getActive: () => api.get('/banners/active'),
+};
+
 export const uploadAPI = {
   avatar: (formData) =>
     api.post('/upload/avatar', formData, {
