@@ -1,5 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef, useState } from 'react';
+import { AppRegistry } from 'react-native';
 import { registerRootComponent } from 'expo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +26,10 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
+
+// Registra a tarefa headless exigida pelo SDK do Stripe para evitar o warning
+// "No task registered for key StripeKeepJsAwakeTask"
+AppRegistry.registerHeadlessTask('StripeKeepJsAwakeTask', () => async () => {});
 
 function App() {
   const notificationResponseSub = useRef(null);
