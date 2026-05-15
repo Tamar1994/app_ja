@@ -20,7 +20,7 @@ import { getPendingNotification, clearPendingNotification } from '../../services
 export default function DashboardScreen({ navigation }) {
   const { user, updateUser } = useAuth();
   const { emit, on } = useSocket();
-  const [available, setAvailable] = useState(user?.professional?.isAvailable || false);
+  const available = user?.professional?.isAvailable ?? false;
   const [requests, setRequests] = useState([]);
   const [scheduledRequests, setScheduledRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -182,13 +182,12 @@ export default function DashboardScreen({ navigation }) {
   };
 
   const toggleAvailability = async (val) => {
-    setAvailable(val);
+    updateUser({ professional: { ...user.professional, isAvailable: val } });
     try {
       await userAPI.setAvailability(val);
       emit('toggle_availability', { isAvailable: val });
-      updateUser({ professional: { ...user.professional, isAvailable: val } });
     } catch {
-      setAvailable(!val);
+      updateUser({ professional: { ...user.professional, isAvailable: !val } });
     }
   };
 

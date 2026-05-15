@@ -61,6 +61,9 @@ export default function HelpCenterScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Central de Ajuda</Text>
         <Text style={styles.headerSubtitle}>Como podemos te ajudar?</Text>
       </View>
@@ -182,6 +185,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     backgroundColor: colors.primary,
   },
+  backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#fff' },
   headerSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
   scroll: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },

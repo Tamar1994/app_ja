@@ -24,17 +24,16 @@ function buildImageUrl(path) {
 export default function ProfessionalProfileScreen({ navigation }) {
   const { user, logout, updateUser } = useAuth();
   const { emit } = useSocket();
-  const [available, setAvailable] = useState(user?.professional?.isAvailable || false);
+  const available = user?.professional?.isAvailable ?? false;
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const toggleAvailability = async (val) => {
-    setAvailable(val);
+    updateUser({ professional: { ...user.professional, isAvailable: val } });
     try {
       await userAPI.setAvailability(val);
       emit('toggle_availability', { isAvailable: val });
-      updateUser({ professional: { ...user.professional, isAvailable: val } });
     } catch {
-      setAvailable(!val);
+      updateUser({ professional: { ...user.professional, isAvailable: !val } });
     }
   };
 

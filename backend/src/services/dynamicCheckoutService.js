@@ -2,6 +2,20 @@
 
 const FALLBACK_PLATFORM_FEE_PCT = 15;
 
+// Retorna a hora decimal (ex: 20.5 = 20:30) no fuso horário de Brasília,
+// independente do fuso do servidor (que costuma ser UTC em produção).
+function getBrazilDecimalHour(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const h = Number(parts.find((p) => p.type === 'hour').value);
+  const m = Number(parts.find((p) => p.type === 'minute').value);
+  return h + m / 60;
+}
+
 /**
  * Calcula proporcional diurno/noturno para uma faixa de preco.
  * @returns {{ tierPrice: number, dayNightBreakdown: object|null }}
@@ -22,7 +36,7 @@ function calcDayNightPrice(tier, nightRateStartHour, scheduledDate) {
 
   const start = new Date(scheduledDate);
   const totalMin = Number(tier.durationMinutes);
-  const startDecimalHour = start.getHours() + start.getMinutes() / 60;
+  const startDecimalHour = getBrazilDecimalHour(start);
   const endDecimalHour = startDecimalHour + totalMin / 60;
 
   if (endDecimalHour <= nightRateStartHour) {
