@@ -475,6 +475,7 @@ router.post('/create-intent', auth, async (req, res) => {
     walletAmount,
   } = req.body;
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
+    console.warn('[create-intent] 400 – dados incompletos:', { tierLabel, street: address?.street, city: address?.city, scheduledDate });
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
@@ -747,6 +748,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
   } = req.body;
 
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
+    console.warn('[cora/pix/create] 400 – dados incompletos:', { tierLabel, street: address?.street, city: address?.city, scheduledDate });
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
@@ -754,6 +756,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     const cpf = onlyDigits(user.cpf);
     if (!cpf || cpf.length !== 11) {
+      console.warn('[cora/pix/create] 400 – CPF inválido:', { cpf, userId: req.user._id });
       return res.status(400).json({ message: 'CPF valido e obrigatorio para pagamento via Pix' });
     }
 

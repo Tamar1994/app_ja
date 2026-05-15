@@ -237,7 +237,9 @@ export default function PaymentScreen({ navigation, route }) {
       navigation.replace('Searching', { requestId: data.request._id });
     } catch (err) {
       console.error('handlePay error:', err);
-      Alert.alert('Erro', 'Ocorreu um erro ao processar o pagamento. Tente novamente.');
+      const backendMsg = err?.response?.data?.message;
+      console.error('handlePay backend message:', backendMsg, '| requestData:', JSON.stringify(requestData));
+      Alert.alert('Erro', backendMsg || 'Ocorreu um erro ao processar o pagamento. Tente novamente.');
       setPaying(false);
     }
   };
