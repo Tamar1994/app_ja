@@ -16,18 +16,28 @@ function getBrazilDecimalHour(date) {
   return h + m / 60;
 }
 
+function minuteInNightWindow(minuteOfDay, nightStartMin, nightEndMin) {
+  if (nightStartMin === nightEndMin) return true;
+  if (nightStartMin < nightEndMin) {
+    return minuteOfDay >= nightStartMin && minuteOfDay < nightEndMin;
+  }
+  return minuteOfDay >= nightStartMin || minuteOfDay < nightEndMin;
+}
+
 /**
  * Calcula proporcional diurno/noturno para uma faixa de preco.
  * @returns {{ tierPrice: number, dayNightBreakdown: object|null }}
  */
-function calcDayNightPrice(tier, nightRateStartHour, scheduledDate) {
+function calcDayNightPrice(tier, nightRateStartHour, nightRateEndHour, scheduledDate) {
   const tierNightPrice = tier.nightPrice != null && Number.isFinite(Number(tier.nightPrice))
     ? Number(tier.nightPrice)
     : null;
 
   if (
     nightRateStartHour == null ||
+    nightRateEndHour == null ||
     !Number.isFinite(nightRateStartHour) ||
+    !Number.isFinite(nightRateEndHour) ||
     tierNightPrice == null ||
     !scheduledDate
   ) {
@@ -36,28 +46,17 @@ function calcDayNightPrice(tier, nightRateStartHour, scheduledDate) {
 
   const start = new Date(scheduledDate);
   const totalMin = Number(tier.durationMinutes);
-  const startDecimalHour = getBrazilDecimalHour(start);
-  const endDecimalHour = startDecimalHour + totalMin / 60;
+  const startMinuteOfDay = Math.round(getBrazilDecimalHour(start) * 60) % 1440;
+  const nightStartMin = Math.round(Number(nightRateStartHour) * 60) % 1440;
+  const nightEndMin = Math.round(Number(nightRateEndHour) * 60) % 1440;
 
-  if (endDecimalHour <= nightRateStartHour) {
-    // 100% diurno
-    return {
-      tierPrice: Number(tier.price),
-      dayNightBreakdown: { dayMinutes: totalMin, nightMinutes: 0, dayPrice: Number(tier.price), nightPrice: 0, nightRateStartHour },
-    };
+  let nightMinutes = 0;
+  for (let i = 0; i < totalMin; i += 1) {
+    const minuteOfDay = (startMinuteOfDay + i) % 1440;
+    if (minuteInNightWindow(minuteOfDay, nightStartMin, nightEndMin)) nightMinutes += 1;
   }
+  const dayMinutes = totalMin - nightMinutes;
 
-  if (startDecimalHour >= nightRateStartHour) {
-    // 100% noturno
-    return {
-      tierPrice: tierNightPrice,
-      dayNightBreakdown: { dayMinutes: 0, nightMinutes: totalMin, dayPrice: 0, nightPrice: tierNightPrice, nightRateStartHour },
-    };
-  }
-
-  // Misto: parte diurna + parte noturna
-  const dayMinutes = Math.round((nightRateStartHour - startDecimalHour) * 60);
-  const nightMinutes = totalMin - dayMinutes;
   const dayRatePerMin = Number(tier.price) / totalMin;
   const nightRatePerMin = tierNightPrice / totalMin;
   const dayAmount  = Math.round(dayRatePerMin  * dayMinutes  * 100) / 100;
@@ -66,7 +65,7 @@ function calcDayNightPrice(tier, nightRateStartHour, scheduledDate) {
 
   return {
     tierPrice: mixedPrice,
-    dayNightBreakdown: { dayMinutes, nightMinutes, dayPrice: dayAmount, nightPrice: nightAmount, nightRateStartHour },
+    dayNightBreakdown: { dayMinutes, nightMinutes, dayPrice: dayAmount, nightPrice: nightAmount, nightRateStartHour, nightRateEndHour },
   };
 }
 
@@ -91,7 +90,7 @@ async function calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUp
   }
 
   const serviceType = await ServiceType.findOne({ slug: serviceTypeSlug })
-    .select('slug name priceTiers upsells platformFeePercent nightRateStartHour requiresLocationTracking status');
+    .select('slug name priceTiers upsells platformFeePercent nightRateStartHour nightRateEndHour requiresLocationTracking status');
 
   if (!serviceType) {
     throw Object.assign(new Error('Tipo de servico nao encontrado'), { status: 400 });
@@ -116,6 +115,9 @@ async function calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUp
   const { tierPrice, dayNightBreakdown } = calcDayNightPrice(
     tier,
     serviceType.nightRateStartHour != null ? Number(serviceType.nightRateStartHour) : null,
+    serviceType.nightRateStartHour != null
+      ? (serviceType.nightRateEndHour != null ? Number(serviceType.nightRateEndHour) : 6)
+      : null,
     scheduledDate,
   );
   const upsellsTotal = appliedUpsells.reduce((sum, u) => sum + Number(u.price), 0);

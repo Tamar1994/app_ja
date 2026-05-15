@@ -4038,7 +4038,7 @@ const openNewServiceTypeModal = () => {
         </div>
         <div style="font-size:12px;color:#7A84A0;margin-bottom:10px;">Ex: "Diarista 4h — 4h — R$120". O cliente escolhe uma das faixas ao pedir o serviço.</div>
         <div id="st-tiers-list"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px;">
           <div class="form-group" style="margin:0;">
             <label class="form-label">Taxa da plataforma (%)</label>
             <div style="position:relative;">
@@ -4052,9 +4052,16 @@ const openNewServiceTypeModal = () => {
               <input id="st-night-rate-hour" class="form-input" type="number" min="0" max="23" step="1" placeholder="Ex: 22 (para 22h)" style="color:#F59E0B;" />
               <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-size:12px;">h</span>
             </div>
-            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para não usar preço noturno. Defina o preço noturno em cada faixa.</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Hora de fim do período noturno</label>
+            <div style="position:relative;">
+              <input id="st-night-rate-end-hour" class="form-input" type="number" min="0" max="23" step="1" placeholder="Ex: 6 (para 06h)" value="6" style="color:#F59E0B;" />
+              <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-size:12px;">h</span>
+            </div>
           </div>
         </div>
+        <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Se iniciar às 22h e terminar às 6h, a madrugada (00h-06h) também é noturna. Deixe início vazio para não usar preço noturno.</div>
         <div style="margin-top:14px;">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.10);">
             <input type="checkbox" id="st-location-tracking" style="margin-top:2px;width:16px;height:16px;accent-color:#1565C0;flex-shrink:0;" />
@@ -4209,6 +4216,7 @@ const createServiceType = async () => {
   const status = document.getElementById('st-status').value;
   const platformFeeRaw = (document.getElementById('st-platform-fee').value || '').trim();
   const nightRateHourRaw = (document.getElementById('st-night-rate-hour').value || '').trim();
+  const nightRateEndHourRaw = (document.getElementById('st-night-rate-end-hour').value || '').trim();
   const requiresLocationTracking = document.getElementById('st-location-tracking').checked;
   const imageFile = document.getElementById('st-image').files?.[0] || null;
 
@@ -4223,6 +4231,10 @@ const createServiceType = async () => {
   if (nightRateStartHour !== null && (!Number.isFinite(nightRateStartHour) || nightRateStartHour < 0 || nightRateStartHour > 23)) {
     showAlert('Hora do período noturno inválida. Use valor entre 0 e 23.'); return;
   }
+  const nightRateEndHour = nightRateEndHourRaw === '' ? 6 : Number(nightRateEndHourRaw);
+  if (nightRateStartHour !== null && (!Number.isFinite(nightRateEndHour) || nightRateEndHour < 0 || nightRateEndHour > 23)) {
+    showAlert('Hora de fim do período noturno inválida. Use valor entre 0 e 23.'); return;
+  }
 
   try {
     const priceTiers = collectTiers('st-tiers-list');
@@ -4236,6 +4248,7 @@ const createServiceType = async () => {
     formData.append('status', status);
     formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('nightRateStartHour', nightRateStartHour !== null ? String(nightRateStartHour) : '');
+    formData.append('nightRateEndHour', nightRateStartHour !== null ? String(nightRateEndHour) : '');
     formData.append('priceTiers', JSON.stringify(priceTiers));
     formData.append('upsells', JSON.stringify(upsells));
     formData.append('requiresLocationTracking', String(requiresLocationTracking));
@@ -4328,7 +4341,7 @@ const openEditServiceTypeModal = (t) => {
           <button class="btn btn-ghost btn-sm" type="button" onclick="addTierRow('ste-tiers-list')" style="font-size:12px;color:#43A047;border-color:#43A047;">+ Faixa</button>
         </div>
         <div id="ste-tiers-list"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px;">
           <div class="form-group" style="margin:0;">
             <label class="form-label">Taxa da plataforma (%)</label>
             <div style="position:relative;">
@@ -4342,9 +4355,16 @@ const openEditServiceTypeModal = (t) => {
               <input id="ste-night-rate-hour" class="form-input" type="number" min="0" max="23" step="1" placeholder="Ex: 22" value="${t.nightRateStartHour != null ? t.nightRateStartHour : ''}" style="color:#F59E0B;" />
               <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-size:12px;">h</span>
             </div>
-            <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Deixe vazio para não usar preço noturno.</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Hora de fim do período noturno</label>
+            <div style="position:relative;">
+              <input id="ste-night-rate-end-hour" class="form-input" type="number" min="0" max="23" step="1" placeholder="Ex: 6" value="${t.nightRateEndHour != null ? t.nightRateEndHour : 6}" style="color:#F59E0B;" />
+              <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#7A84A0;font-size:12px;">h</span>
+            </div>
           </div>
         </div>
+        <div style="font-size:11px;color:#7A84A0;margin-top:4px;">Exemplo: início 22h + fim 6h = período noturno das 22h até 06h.</div>
         <div style="margin-top:14px;">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.10);">
             <input type="checkbox" id="ste-location-tracking" ${t.requiresLocationTracking ? 'checked' : ''} style="margin-top:2px;width:16px;height:16px;accent-color:#1565C0;flex-shrink:0;" />
@@ -4392,6 +4412,7 @@ const updateServiceType = async (id) => {
   const status = document.getElementById('ste-status').value;
   const platformFeeRaw = (document.getElementById('ste-platform-fee').value || '').trim();
   const nightRateHourRaw = (document.getElementById('ste-night-rate-hour').value || '').trim();
+  const nightRateEndHourRaw = (document.getElementById('ste-night-rate-end-hour').value || '').trim();
   const requiresLocationTracking = document.getElementById('ste-location-tracking').checked;
   const imageFile = document.getElementById('ste-image').files?.[0] || null;
 
@@ -4402,6 +4423,10 @@ const updateServiceType = async (id) => {
   const nightRateStartHour = nightRateHourRaw === '' ? null : Number(nightRateHourRaw);
   if (nightRateStartHour !== null && (!Number.isFinite(nightRateStartHour) || nightRateStartHour < 0 || nightRateStartHour > 23)) {
     showAlert('Hora do período noturno inválida. Use valor entre 0 e 23.'); return;
+  }
+  const nightRateEndHour = nightRateEndHourRaw === '' ? 6 : Number(nightRateEndHourRaw);
+  if (nightRateStartHour !== null && (!Number.isFinite(nightRateEndHour) || nightRateEndHour < 0 || nightRateEndHour > 23)) {
+    showAlert('Hora de fim do período noturno inválida. Use valor entre 0 e 23.'); return;
   }
 
   try {
@@ -4416,6 +4441,7 @@ const updateServiceType = async (id) => {
     formData.append('status', status);
     formData.append('platformFeePercent', String(platformFeePercent));
     formData.append('nightRateStartHour', nightRateStartHour !== null ? String(nightRateStartHour) : '');
+    formData.append('nightRateEndHour', nightRateStartHour !== null ? String(nightRateEndHour) : '');
     formData.append('priceTiers', JSON.stringify(priceTiers));
     formData.append('upsells', JSON.stringify(upsells));
     formData.append('requiresLocationTracking', String(requiresLocationTracking));

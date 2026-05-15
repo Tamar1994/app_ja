@@ -72,6 +72,12 @@ const serviceTypeSchema = new mongoose.Schema({
     min: 0,
     max: 23,
   },
+  nightRateEndHour: {
+    type: Number,
+    default: null,
+    min: 0,
+    max: 23,
+  },
   requiresLocationTracking: {
     type: Boolean,
     default: false,
