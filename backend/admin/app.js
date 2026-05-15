@@ -610,41 +610,141 @@ const renderBanners = async () => {
     const targetLabel = { all: '👥 Todos', client: '👤 Clientes', professional: '🔧 Profissionais' };
 
     c.innerHTML = `
-      <div class="section-card" style="margin-bottom:16px;">
-        <div class="section-header">
-          <h2>📸 Novo Banner</h2>
+      <style>
+        .banner-create-card {
+          margin-bottom: 18px;
+          padding: 18px;
+          border-radius: 16px;
+          background: linear-gradient(180deg, rgba(15, 25, 48, 0.92) 0%, rgba(8, 14, 30, 0.92) 100%);
+          border: 1px solid rgba(126, 155, 220, 0.25);
+          box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25);
+        }
+        .banner-create-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        .banner-create-title {
+          margin: 0;
+          font-size: 21px;
+          font-weight: 800;
+          color: #F4F7FF;
+          letter-spacing: 0.2px;
+        }
+        .banner-create-badge {
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.7px;
+          color: #0E1E3C;
+          background: linear-gradient(135deg, #8CE3FF, #6EA8FF);
+          padding: 5px 9px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .banner-help {
+          background: linear-gradient(90deg, rgba(255, 241, 197, 0.95), rgba(255, 248, 221, 0.95));
+          border: 1px solid #FFD770;
+          border-radius: 10px;
+          padding: 10px 12px;
+          margin-bottom: 14px;
+          font-size: 12px;
+          color: #5D4037;
+        }
+        .banner-form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(220px, 1fr));
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+        .banner-col-span-2 { grid-column: span 2; }
+        .banner-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .banner-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: #C9D6F3;
+          letter-spacing: 0.2px;
+        }
+        .banner-input {
+          width: 100%;
+          background: rgba(8, 13, 25, 0.9);
+          border: 1px solid rgba(120, 146, 201, 0.35);
+          border-radius: 10px;
+          color: #E8EEFF;
+          padding: 11px 12px;
+          font-size: 14px;
+          outline: none;
+        }
+        .banner-input:focus {
+          border-color: #7EB8FF;
+          box-shadow: 0 0 0 3px rgba(126, 184, 255, 0.18);
+        }
+        .banner-file {
+          padding: 9px;
+          cursor: pointer;
+        }
+        .banner-actions {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .banner-muted {
+          font-size: 11px;
+          color: #90A4D2;
+        }
+        @media (max-width: 900px) {
+          .banner-form-grid { grid-template-columns: 1fr; }
+          .banner-col-span-2 { grid-column: auto; }
+        }
+      </style>
+
+      <div class="section-card banner-create-card">
+        <div class="banner-create-head">
+          <h2 class="banner-create-title">📸 Novo Banner</h2>
+          <span class="banner-create-badge">Campanha</span>
         </div>
-        <div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#5D4037;">
+        <div class="banner-help">
           💡 <strong>Tamanho recomendado:</strong> 1080 × 1920 px (retrato, tela cheia) ou 1080 × 1080 px (quadrado). Máx. 15 MB. Formatos: JPG, PNG ou WEBP.
         </div>
         <form id="banner-form" enctype="multipart/form-data" onsubmit="event.preventDefault();submitBanner()">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-            <div style="grid-column:span 2;">
-              <label class="field-label">Título interno (para identificação)</label>
-              <input class="field-input" type="text" name="title" placeholder="Ex: Promo Verão Junho" maxlength="100" required style="width:100%;">
+          <div class="banner-form-grid">
+            <div class="banner-field banner-col-span-2">
+              <label class="banner-label">Título interno (para identificação)</label>
+              <input class="banner-input" type="text" name="title" placeholder="Ex: Promo Verão Junho" maxlength="100" required>
             </div>
-            <div>
-              <label class="field-label">Imagem do banner</label>
-              <input class="field-input" type="file" name="image" accept="image/jpeg,image/png,image/webp" required style="width:100%;">
+            <div class="banner-field">
+              <label class="banner-label">Imagem do banner</label>
+              <input class="banner-input banner-file" type="file" name="image" accept="image/jpeg,image/png,image/webp" required>
             </div>
-            <div>
-              <label class="field-label">Público-alvo</label>
-              <select class="field-input" name="targetProfile" style="width:100%;">
+            <div class="banner-field">
+              <label class="banner-label">Público-alvo</label>
+              <select class="banner-input" name="targetProfile">
                 <option value="all">👥 Todos</option>
                 <option value="client">👤 Apenas Clientes</option>
                 <option value="professional">🔧 Apenas Profissionais</option>
               </select>
             </div>
-            <div>
-              <label class="field-label">Início da exibição</label>
-              <input class="field-input" type="datetime-local" name="startAt" required style="width:100%;">
+            <div class="banner-field">
+              <label class="banner-label">Início da exibição</label>
+              <input class="banner-input" type="datetime-local" name="startAt" required>
             </div>
-            <div>
-              <label class="field-label">Fim da exibição</label>
-              <input class="field-input" type="datetime-local" name="endAt" required style="width:100%;">
+            <div class="banner-field">
+              <label class="banner-label">Fim da exibição</label>
+              <input class="banner-input" type="datetime-local" name="endAt" required>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" id="banner-submit-btn">📤 Criar Banner</button>
+          <div class="banner-actions">
+            <span class="banner-muted">O banner será exibido no app somente durante a janela informada.</span>
+            <button type="submit" class="btn btn-primary" id="banner-submit-btn">📤 Criar Banner</button>
+          </div>
         </form>
       </div>
 
