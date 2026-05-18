@@ -12,7 +12,7 @@ connectDB().then(() => {
   app.set('io', io);
 
   server.listen(PORT, () => {
-    console.log(`🚀 Servidor Já! rodando na porta ${PORT}`);
+    // Removed: console.log(`🚀 Servidor Já! rodando na porta ${PORT}`);
   });
 }).catch((err) => {
   console.error('Erro ao conectar banco de dados:', err);

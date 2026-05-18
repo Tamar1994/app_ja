@@ -9,7 +9,6 @@ const connectDB = async () => {
     await mongoose.connect(process.env.MONGODB_URI, {
       family: 4, // IPv4 only — evita ECONNREFUSED em querySrv no Node.js v22+
     });
-    console.log('✅ MongoDB conectado');
   } catch (error) {
     console.error('❌ Erro MongoDB:', error.message);
     throw error;

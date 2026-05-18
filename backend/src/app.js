@@ -89,7 +89,6 @@ app.post('/api/landing/waitlist', express.json(), async (req, res) => {
     console.error('[WAITLIST] Erro ao salvar:', err);
     return res.status(500).json({ message: 'Erro ao salvar cadastro' });
   }
-  console.log(`[WAITLIST] Novo cadastro: ${name || '?'} | ${email}`);
   res.json({ ok: true });
 });
 

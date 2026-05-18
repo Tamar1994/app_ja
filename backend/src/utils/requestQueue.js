@@ -58,11 +58,11 @@ function sendExpoPush(pushToken, title, body, data = {}) {
           if (ticket?.status === 'error') {
             console.error(`❌ Push FALHOU → ${String(pushToken).slice(-10)} | erro: ${ticket.message} | detalhe: ${JSON.stringify(ticket.details)}`);
           } else {
-            console.log(`📲 Push OK → ${String(pushToken).slice(-10)} | id: ${ticket?.id}`);
+            // console.log(`📲 Push OK → ${String(pushToken).slice(-10)} | id: ${ticket?.id}`);
           }
           resolve(ticket);
         } catch {
-          console.log(`📲 Push → ${String(pushToken).slice(-10)} | HTTP ${res.statusCode} | body: ${raw}`);
+          // console.log(`📲 Push → ${String(pushToken).slice(-10)} | HTTP ${res.statusCode} | body: ${raw}`);
           resolve(null);
         }
       });
@@ -171,8 +171,6 @@ async function dispatchToNextProfessional(requestId, io) {
     timeoutAt,
   });
 
-  console.log(`📢 Pedido ${requestId} → ${professional.name} (${professional._id}) | timeout: 2min`);
-
   // Enviar push notification (funciona mesmo com app fechado/tela desligada)
   if (professional.pushToken) {
     const city = request.address?.city || 'sua região';
@@ -208,8 +206,6 @@ async function dispatchToNextProfessional(requestId, io) {
       // Avisar profissional que o tempo expirou (fechar modal)
       io.to(`user_${professional._id}`).emit('request_expired', { requestId });
 
-      console.log(`⏰ Timeout: pedido ${requestId}, profissional ${professional.name} → próximo`);
-
       // Despachar para o próximo
       await dispatchToNextProfessional(requestId, io);
     } catch (err) {
@@ -228,7 +224,6 @@ function clearRequestTimer(requestId) {
   if (activeTimers.has(key)) {
     clearTimeout(activeTimers.get(key));
     activeTimers.delete(key);
-    console.log(`🧹 Timer limpo: pedido ${key}`);
   }
 }
 

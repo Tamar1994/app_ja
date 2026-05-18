@@ -40,10 +40,10 @@ const initSocket = (server) => {
       if (hasPermission(socket.admin, ADMIN_PERMISSIONS.SUPPORT_CHAT)) {
         socket.join('support_ops');
       }
-      console.log(`🛡️ Admin conectado: ${socket.admin.name} (${socket.admin.role})`);
+      console.log(`Admin conectado: ${socket.admin.name} (${socket.admin.role})`);
 
       socket.on('disconnect', () => {
-        console.log(`🛡️ Admin desconectado: ${socket.admin.name}`);
+        console.log(`Admin desconectado: ${socket.admin.name}`);
       });
       return;
     }
@@ -51,7 +51,7 @@ const initSocket = (server) => {
     const userId = socket.user._id.toString();
     // Cada usuário entra em sua sala privada
     socket.join(`user_${userId}`);
-    console.log(`🔌 Conectado: ${socket.user.name} (${socket.user.userType})`);
+    console.log(`Profissional entra na sala de disponíveis`);
 
     // Profissional entra na sala de disponíveis
     if (socket.user.userType === 'professional') {
@@ -80,7 +80,7 @@ const initSocket = (server) => {
     });
 
     socket.on('disconnect', () => {
-      console.log(`🔌 Desconectado: ${socket.user.name}`);
+      console.log(`Desconectado: ${socket.user.name}`);
     });
   });
 

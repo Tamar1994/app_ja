@@ -1778,6 +1778,7 @@ router.patch('/support/requests/:id/refund', adminAuth, requirePermission(ADMIN_
       request.payment.status = 'refunded';
       request.payment.refundedAt = new Date();
       request.payment.refundReason = reason || `Estorno de carteira por ${req.admin.name}`;
+      request.payment.refundReference = `wallet:${client._id}:${Date.now()}`;
       request.payment.refundDestination = 'wallet';
       await request.save();
 
@@ -2057,7 +2058,6 @@ router.patch('/stripe-config', adminAuth, requirePermission(ADMIN_PERMISSIONS.PA
     config.mode = mode;
     config.updatedBy = admin?.name || 'Admin';
     await config.save();
-    console.log(`💳 Stripe modo alterado para: ${mode} por ${config.updatedBy}`);
     res.json({ message: `Modo alterado para ${mode}`, mode });
   } catch {
     res.status(500).json({ message: 'Erro ao atualizar modo Stripe' });
