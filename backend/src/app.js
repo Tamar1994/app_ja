@@ -17,6 +17,7 @@ const paymentRoutes = require('./routes/payments');
 const couponRoutes = require('./routes/coupons');
 const specialistCertificatesRoutes = require('./routes/specialistCertificates');
 const bannerRoutes = require('./routes/banners');
+const suggestionsRoutes = require('./routes/suggestions');
 const TermsOfUse = require('./models/TermsOfUse');
 const Waitlist = require('./models/Waitlist');
 const RegionInterest = require('./models/RegionInterest');
@@ -66,6 +67,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/specialist-certificates', specialistCertificatesRoutes);
 app.use('/api/banners', bannerRoutes);
+app.use('/api/suggest-service', suggestionsRoutes);
 
 // Termos de uso — público
 app.get('/api/terms', async (req, res) => {

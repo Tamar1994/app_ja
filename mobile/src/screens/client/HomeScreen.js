@@ -328,10 +328,6 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.sectionTitle}>Peça novamente</Text>
                 <Text style={styles.repeatSubtitle}>Repetimos sua última solicitação com horário atualizado para agora.</Text>
               </View>
-              <View style={styles.repeatBadge}>
-                <Ionicons name="refresh-outline" size={14} color={colors.primary} />
-                <Text style={styles.repeatBadgeText}>1 toque</Text>
-              </View>
             </View>
 
             <TouchableOpacity style={styles.repeatCard} onPress={repeatLastRequest} activeOpacity={0.88}>
@@ -411,10 +407,6 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.sectionTitle}>Como funciona</Text>
               <Text style={styles.sectionSubtitle}>Uma experiência pensada para ser rápida, clara e bonita.</Text>
             </View>
-            <View style={styles.sectionBadge}>
-              <Ionicons name="sparkles" size={14} color={colors.primary} />
-              <Text style={styles.sectionBadgeText}>Fluxo premium</Text>
-            </View>
           </View>
 
           <LinearGradient
@@ -482,20 +474,22 @@ export default function HomeScreen({ navigation }) {
               </LinearGradient>
             </TouchableOpacity>
 
-            {smartSuggestion?.serviceType ? (
+            {smartSuggestion?.matched ? (
               <TouchableOpacity style={styles.smartSuggestionCard} onPress={acceptSuggestion} activeOpacity={0.85}>
                 <View style={styles.smartSuggestionTop}>
-                  <View>
-                    <Text style={styles.smartSuggestionLabel}>Sugestão da IA</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.smartSuggestionLabel}>Sugestão para você</Text>
                     <Text style={styles.smartSuggestionTitle}>{smartSuggestion.serviceType.name}</Text>
-                  </View>
-                  <View style={styles.smartSuggestionPill}>
-                    <Text style={styles.smartSuggestionPillText}>{Math.round((smartSuggestion.confidence || 0.5) * 100)}%</Text>
                   </View>
                 </View>
                 <Text style={styles.smartSuggestionText}>{smartSuggestion.explanation}</Text>
                 <Text style={styles.smartSuggestionCta}>Agendar {smartSuggestion.serviceType.name}</Text>
               </TouchableOpacity>
+            ) : smartSuggestion?.matched === false ? (
+              <View style={styles.smartNoMatchCard}>
+                <Ionicons name="alert-circle-outline" size={26} color={colors.textSecondary} style={{ marginBottom: 8 }} />
+                <Text style={styles.smartNoMatchText}>{smartSuggestion.message}</Text>
+              </View>
             ) : null}
 
             <TouchableOpacity style={styles.smartCloseBtn} onPress={() => setSmartSearchVisible(false)}>
@@ -755,7 +749,7 @@ const styles = StyleSheet.create({
   howStepRail: {
     width: 18,
     alignItems: 'center',
-    paddingTop: 18,
+    paddingTop: 30,
   },
   howStepDot: {
     width: 10,
@@ -869,6 +863,21 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   smartCloseText: { color: colors.textSecondary, fontWeight: '600' },
+  smartNoMatchCard: {
+    marginTop: spacing.md,
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  smartNoMatchText: {
+    textAlign: 'center',
+    color: colors.textSecondary,
+    lineHeight: 21,
+    fontSize: typography.fontSizes.sm,
+  },
   howIcon: {
     width: 48,
     height: 48,
