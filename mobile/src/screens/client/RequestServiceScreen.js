@@ -51,9 +51,10 @@ export default function RequestServiceScreen({ navigation, route }) {
   const [scheduledDate, setScheduledDate] = useState(getTomorrow());
   const [selectedTime, setSelectedTime] = useState('08:00');
   const [address, setAddress] = useState({
-    street: '', neighborhood: '', city: '', state: '', zipCode: '', complement: '',
+    street: '', number: '', neighborhood: '', city: '', state: '', zipCode: '', complement: '',
     coordinates: [0, 0],
   });
+  const [semNumero, setSemNumero] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError] = useState('');
   const [estimate, setEstimate] = useState(null);
@@ -149,7 +150,8 @@ export default function RequestServiceScreen({ navigation, route }) {
       const [geo] = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       setAddress(prev => ({
         ...prev,
-        street: `${geo.street || ''} ${geo.streetNumber || ''}`.trim(),
+        street: geo.street || '',
+        number: geo.streetNumber || '',
         neighborhood: geo.district || geo.subregion || '',
         city: geo.city || geo.subregion || geo.region || '',
         state: geo.region || '',
@@ -173,8 +175,8 @@ export default function RequestServiceScreen({ navigation, route }) {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = () => {
-    if (!address.street || !address.city) {
-      Alert.alert('Atenção', 'Preencha o endereço do serviço.'); return;
+    if (!address.street || (!address.number && !semNumero) || !address.city) {
+      Alert.alert('Atenção', 'Preencha rua, número (ou marque "Sem número") e cidade.'); return;
     }
 
     if (scheduleMode === 'later') {
@@ -188,12 +190,17 @@ export default function RequestServiceScreen({ navigation, route }) {
             Alert.alert('Serviço indisponível', message);
             return;
           }
+          const { number: _n, ...addrRest } = address;
+          const scheduledAddress = {
+            ...addrRest,
+            street: [address.street.trim(), semNumero ? 'S/N' : address.number.trim()].filter(Boolean).join(', '),
+          };
           const requestData = {
             serviceTypeSlug: serviceType?.slug,
             tierLabel: selectedTier.label,
             selectedUpsells: selectedUpsellKeys,
             notes,
-            address,
+            address: scheduledAddress,
             scheduledDate: getFinalScheduledDate(),
             isScheduled: true,
           };
@@ -221,11 +228,16 @@ export default function RequestServiceScreen({ navigation, route }) {
           return;
         }
 
-        const geocodeAddressText = [address.street, address.neighborhood, address.city, address.state, address.zipCode, 'Brasil']
+        const geocodeAddressText = [address.street, address.number, address.neighborhood, address.city, address.state, address.zipCode, 'Brasil']
           .map(s => String(s || '').trim()).filter(Boolean).join(', ');
 
         const finalizeNavigation = (coords = null) => {
-          const requestAddress = { ...address, coordinates: coords || address.coordinates };
+          const { number: _num, ...addrRest } = address;
+          const requestAddress = {
+            ...addrRest,
+            street: [address.street.trim(), semNumero ? 'S/N' : address.number.trim()].filter(Boolean).join(', '),
+            coordinates: coords || address.coordinates,
+          };
           const requestData = {
             serviceTypeSlug: serviceType?.slug,
             tierLabel: selectedTier.label,
@@ -492,12 +504,54 @@ export default function RequestServiceScreen({ navigation, route }) {
                 {!!cepError && <Text style={styles.cepErrorText}>{cepError}</Text>}
               </View>
 
+              {/* Logradouro + Número em linha */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Rua / Logradouro *</Text>
+                <View style={styles.streetRow}>
+                  <TextInput
+                    style={[styles.inputField, { flex: 1, marginRight: 8 }]}
+                    placeholder="Rua das Flores"
+                    placeholderTextColor={colors.textLight}
+                    value={address.street}
+                    onChangeText={v => setAddress(prev => ({ ...prev, street: v }))}
+                    returnKeyType="next"
+                  />
+                  <View style={styles.numberWrap}>
+                    <Text style={styles.numberLabel}>Nº *</Text>
+                    <TextInput
+                      style={[styles.inputField, styles.numberInput, semNumero && styles.inputDisabled]}
+                      placeholder={semNumero ? 'S/N' : '123'}
+                      placeholderTextColor={semNumero ? colors.primary : colors.textLight}
+                      value={semNumero ? '' : address.number}
+                      onChangeText={v => !semNumero && setAddress(prev => ({ ...prev, number: v }))}
+                      editable={!semNumero}
+                      returnKeyType="next"
+                    />
+                    <TouchableOpacity
+                      style={[styles.semNumeroBtn, semNumero && styles.semNumeroBtnActive]}
+                      onPress={() => {
+                        const next = !semNumero;
+                        setSemNumero(next);
+                        if (!next) setAddress(prev => ({ ...prev, number: '' }));
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={semNumero ? 'checkbox' : 'square-outline'}
+                        size={14}
+                        color={semNumero ? colors.primary : colors.textLight}
+                      />
+                      <Text style={[styles.semNumeroText, semNumero && styles.semNumeroTextActive]}>S/N</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
               {[
-                { label: 'Rua / Logradouro', key: 'street', placeholder: 'Rua das Flores, 123' },
                 { label: 'Bairro', key: 'neighborhood', placeholder: 'Centro' },
-                { label: 'Cidade', key: 'city', placeholder: 'São Paulo' },
+                { label: 'Cidade *', key: 'city', placeholder: 'São Paulo' },
                 { label: 'Estado', key: 'state', placeholder: 'SP' },
-                { label: 'Complemento', key: 'complement', placeholder: 'Apto 42, Bloco B' },
+                { label: 'Complemento', key: 'complement', placeholder: 'Apto 42, Bloco B (opcional)' },
               ].map(field => (
                 <View key={field.key} style={styles.inputGroup}>
                   <Text style={styles.label}>{field.label}</Text>
@@ -529,7 +583,7 @@ export default function RequestServiceScreen({ navigation, route }) {
                   { icon: 'pricetag-outline', label: 'Faixa', value: selectedTier?.label || '-' },
                   { icon: 'time-outline', label: 'Duração', value: formatDurationMin(selectedTier?.durationMinutes) },
                   ...(selectedUpsells.length > 0 ? [{ icon: 'add-circle-outline', label: 'Opcionais', value: selectedUpsells.map(u => u.label).join(', ') }] : []),
-                  { icon: 'location-outline', label: 'Endereço', value: `${address.street}, ${address.city}` },
+                  { icon: 'location-outline', label: 'Endereço', value: `${address.street}${address.number ? `, ${address.number}` : ''} - ${address.city}` },
                   { icon: 'calendar-outline', label: 'Data', value: scheduleMode === 'now' ? 'Agora (imediato)' : `${getDateLabel(scheduledDate)} às ${selectedTime}` },
                   ...(notes ? [{ icon: 'chatbubble-outline', label: 'Obs.', value: notes }] : []),
                 ].map((row, i, arr) => (
@@ -710,6 +764,18 @@ const styles = StyleSheet.create({
   locationBtnText: { color: colors.white, fontWeight: '700', fontSize: typography.fontSizes.md },
   inputGroup: {},
   cepRow: { flexDirection: 'row', alignItems: 'center' },
+  streetRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  numberWrap: { alignItems: 'flex-start' },
+  numberLabel: { fontSize: 11, color: colors.textLight, fontWeight: '600', marginBottom: 4 },
+  numberInput: { width: 72, textAlign: 'center' },
+  inputDisabled: { backgroundColor: '#F5F5F5', color: colors.textLight },
+  semNumeroBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    marginTop: 5, paddingVertical: 3, paddingHorizontal: 4, borderRadius: 6,
+  },
+  semNumeroBtnActive: { backgroundColor: 'rgba(255,107,0,0.08)' },
+  semNumeroText: { fontSize: 10, color: colors.textLight, fontWeight: '600' },
+  semNumeroTextActive: { color: colors.primary },
   cepInput: { flex: 1 },
   cepSpinner: { position: 'absolute', right: 14 },
   cepErrorText: { fontSize: typography.fontSizes.xs, color: colors.error, marginTop: 4, marginLeft: 4 },

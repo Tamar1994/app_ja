@@ -18,6 +18,8 @@ export default function ProfessionalAddressScreen({ navigation, route }) {
 
   const [zipCode, setZipCode]         = useState('');
   const [street, setStreet]           = useState('');
+  const [number, setNumber]           = useState('');
+  const [semNumero, setSemNumero]     = useState(false);
   const [neighborhood, setNeighborhood] = useState('');
   const [city, setCity]               = useState('');
   const [state, setState]             = useState('');
@@ -60,14 +62,16 @@ export default function ProfessionalAddressScreen({ navigation, route }) {
   };
 
   const handleSave = async () => {
-    if (!zipCode || !street || !city || !state) {
-      Alert.alert('Atenção', 'Preencha CEP, rua, cidade e estado para continuar.');
+    if (!zipCode || !street || (!number && !semNumero) || !city || !state) {
+      Alert.alert('Atenção', 'Preencha CEP, rua, número (ou marque "Sem número"), cidade e estado.');
       return;
     }
     setSubmitting(true);
     try {
       const { data } = await authAPI.saveProfessionalAddress({
-        zipCode, street, neighborhood, city, state, complement,
+        zipCode,
+        street: [street.trim(), semNumero ? 'S/N' : number.trim()].filter(Boolean).join(', '),
+        neighborhood, city, state, complement,
       });
       if (setUser) setUser(data.user);
       if (upgradeMode && navigation) {
@@ -139,16 +143,48 @@ export default function ProfessionalAddressScreen({ navigation, route }) {
             </View>
             {!!cepError && <Text style={styles.cepErrorText}>{cepError}</Text>}
 
-            {/* Rua */}
-            <Text style={styles.label}>Rua / Avenida *</Text>
-            <TextInput
-              style={styles.input}
-              value={street}
-              onChangeText={setStreet}
-              placeholder="Nome da rua"
-              placeholderTextColor={colors.textTertiary}
-              returnKeyType="next"
-            />
+            {/* Rua + Número em linha */}
+            <View style={styles.streetRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.label}>Rua / Avenida *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={street}
+                  onChangeText={setStreet}
+                  placeholder="Nome da rua"
+                  placeholderTextColor={colors.textTertiary}
+                  returnKeyType="next"
+                />
+              </View>
+              <View style={{ width: 80 }}>
+                <Text style={styles.label}>Nº *</Text>
+                <TextInput
+                  style={[styles.input, semNumero && styles.inputDisabled]}
+                  value={semNumero ? '' : number}
+                  onChangeText={v => !semNumero && setNumber(v)}
+                  placeholder={semNumero ? 'S/N' : '123'}
+                  placeholderTextColor={semNumero ? colors.primary : colors.textTertiary}
+                  editable={!semNumero}
+                  returnKeyType="next"
+                />
+                <TouchableOpacity
+                  style={[styles.semNumeroBtn, semNumero && styles.semNumeroBtnActive]}
+                  onPress={() => {
+                    const next = !semNumero;
+                    setSemNumero(next);
+                    if (!next) setNumber('');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={semNumero ? 'checkbox' : 'square-outline'}
+                    size={14}
+                    color={semNumero ? colors.primary : colors.textTertiary}
+                  />
+                  <Text style={[styles.semNumeroText, semNumero && styles.semNumeroTextActive]}>S/N</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
             {/* Bairro */}
             <Text style={styles.label}>Bairro</Text>
@@ -296,6 +332,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  streetRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  inputDisabled: { backgroundColor: '#F5F5F5' },
+  semNumeroBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    marginTop: 5, paddingVertical: 3, paddingHorizontal: 4, borderRadius: 6,
+  },
+  semNumeroBtnActive: { backgroundColor: 'rgba(255,107,0,0.08)' },
+  semNumeroText: { fontSize: 10, fontWeight: '600', color: colors.textTertiary },
+  semNumeroTextActive: { color: colors.primary },
   cepInput: {
     flex: 1,
   },
