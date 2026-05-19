@@ -108,6 +108,8 @@ const serviceRequestSchema = new mongoose.Schema({
     ref: 'User',
     default: null,
   },
+  // Quando definido, indica que o pedido foi aberto para todos os profissionais da cidade
+  cityWideNotifiedAt: { type: Date, default: null },
   acceptedAt: { type: Date, default: null },
   clientConfirmedAt: { type: Date, default: null },
   startedAt: { type: Date, default: null },

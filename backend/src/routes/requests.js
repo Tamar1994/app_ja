@@ -161,6 +161,8 @@ const hasAnyCommonValue = (arrA = [], arrB = []) => {
   return arrB.some((value) => set.has(value));
 };
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 async function isCityCovered(city = '', state = '') {
   const cityCandidates = Array.from(new Set([
     normalizeCityKey(city),
@@ -378,11 +380,23 @@ router.get('/', auth, async (req, res) => {
           .populate('client', 'name avatar')
           .sort({ updatedAt: -1, createdAt: -1 });
       } else {
+        const professionalCity = String(req.user?.professionalAddress?.city || '').trim();
+        const cityWideFilter = {
+          cityWideNotifiedAt: { $ne: null },
+          ...(professionalCity
+            ? { 'address.city': new RegExp(`^${escapeRegex(professionalCity)}$`, 'i') }
+            : {}),
+        };
+
         requests = await ServiceRequest.find({
           status: 'searching',
           client: { $ne: req.user._id },
-          currentAssignedTo: req.user._id,
+          ...(req.user.serviceTypeSlug ? { serviceTypeSlug: req.user.serviceTypeSlug } : {}),
           rejectedBy: { $ne: req.user._id },
+          $or: [
+            { currentAssignedTo: req.user._id },
+            cityWideFilter,
+          ],
         })
           .populate('client', 'name avatar')
           .sort({ createdAt: -1 });
@@ -546,12 +560,22 @@ router.patch('/:id/accept', auth, async (req, res) => {
   try {
     // Verificar conflito de agenda antes de aceitar
     const pending = await ServiceRequest.findOne({ _id: req.params.id, status: 'searching' })
-      .select('client details.scheduledDate details.durationMinutes')
+      .select('client serviceTypeSlug currentAssignedTo cityWideNotifiedAt details.scheduledDate details.durationMinutes')
       .lean();
     if (!pending) return res.status(400).json({ message: 'Solicitação não disponível' });
 
     if (pending.client?.toString() === req.user._id.toString()) {
       return res.status(403).json({ message: 'Você não pode aceitar uma solicitação criada pela sua própria conta.' });
+    }
+
+    if (req.user.serviceTypeSlug && pending.serviceTypeSlug && req.user.serviceTypeSlug !== pending.serviceTypeSlug) {
+      return res.status(403).json({ message: 'Você não está habilitado para este tipo de serviço.' });
+    }
+
+    const isCityWide = Boolean(pending.cityWideNotifiedAt);
+    const assignedToCurrentUser = pending.currentAssignedTo?.toString() === req.user._id.toString();
+    if (!isCityWide && !assignedToCurrentUser) {
+      return res.status(403).json({ message: 'Esta solicitação está atribuída a outro profissional no momento.' });
     }
 
     const conflict = await hasScheduleConflict(
@@ -564,13 +588,22 @@ router.patch('/:id/accept', auth, async (req, res) => {
     }
 
     const request = await ServiceRequest.findOneAndUpdate(
-      { _id: req.params.id, status: 'searching', client: { $ne: req.user._id } },
+      {
+        _id: req.params.id,
+        status: 'searching',
+        client: { $ne: req.user._id },
+        ...(req.user.serviceTypeSlug ? { serviceTypeSlug: req.user.serviceTypeSlug } : {}),
+        $or: [
+          { currentAssignedTo: req.user._id },
+          { cityWideNotifiedAt: { $ne: null } },
+        ],
+      },
       {
         status: 'accepted',
         professional: req.user._id,
         acceptedAt: new Date(),
         clientConfirmedAt: null,
-        $unset: { currentAssignedTo: '' },
+        $unset: { currentAssignedTo: '', cityWideNotifiedAt: '' },
       },
       { new: true }
     ).populate('client', 'name avatar phone pushToken');
