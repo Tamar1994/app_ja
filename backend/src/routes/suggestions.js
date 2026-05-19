@@ -4,6 +4,8 @@ const router = express.Router();
 const ServiceType = require('../models/ServiceType');
 const ServiceDemand = require('../models/ServiceDemand');
 
+const GEMINI_TIMEOUT_MS = 20000; // 20 segundos
+
 function callGemini(prompt) {
   return new Promise((resolve, reject) => {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -22,6 +24,7 @@ function callGemini(prompt) {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(bodyData),
       },
+      timeout: GEMINI_TIMEOUT_MS,
     };
 
     const req = https.request(options, (res) => {
@@ -38,6 +41,9 @@ function callGemini(prompt) {
       });
     });
 
+    req.on('timeout', () => {
+      req.destroy(new Error('Timeout na chamada ao Gemini'));
+    });
     req.on('error', reject);
     req.write(bodyData);
     req.end();
@@ -48,6 +54,7 @@ function callGemini(prompt) {
 // Body: { prompt: string }
 // Returns: { matched: true, serviceType, explanation } | { matched: false, message }
 router.post('/', async (req, res) => {
+  console.log('[suggest-service] recebendo requisição');
   try {
     const userPrompt = String(req.body?.prompt || '').trim().slice(0, 500);
     if (!userPrompt) {

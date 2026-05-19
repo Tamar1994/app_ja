@@ -5,7 +5,7 @@ import {
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   ActivityIndicator, View, Text, TouchableOpacity, StyleSheet,
-  Modal, Image, Dimensions, SafeAreaView,
+  Modal, Image, Dimensions, SafeAreaView, AppState,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -44,9 +44,22 @@ export default function RootNavigator() {
   const [blockedCity, setBlockedCity]   = useState('');
   const [blockedStateUF, setBlockedStateUF] = useState('');
   const [blockedCoords, setBlockedCoords]   = useState(null);
+  const appStateRef = useRef(AppState.currentState);
 
+  // Verifica na abertura inicial
   useEffect(() => {
     checkRegionCoverage();
+  }, []);
+
+  // Re-verifica toda vez que o app volta ao primeiro plano
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
+        checkRegionCoverage();
+      }
+      appStateRef.current = nextState;
+    });
+    return () => subscription.remove();
   }, []);
 
   const CACHE_KEY = '@regionCheck_v1';
@@ -54,19 +67,7 @@ export default function RootNavigator() {
 
   const checkRegionCoverage = async () => {
     try {
-      // 1. Verifica cache local (evita checar a cada abertura)
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { result, city, stateUF, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < CACHE_TTL) {
-          setBlockedCity(city || '');
-          setBlockedStateUF(stateUF || '');
-          setRegionState(result); // 'ok' ou 'blocked'
-          return;
-        }
-      }
-
-      // 2. Solicita permissão de localização
+      // 1. Solicita permissão de localização
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         // Sem permissão → não bloqueia (verificação ocorre no endereço depois)
@@ -74,13 +75,13 @@ export default function RootNavigator() {
         return;
       }
 
-      // 3. Obtém posição atual (precisão de cidade é suficiente)
+      // 2. Obtém posição atual (precisão de cidade é suficiente)
       const position = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
       const { latitude, longitude } = position.coords;
 
-      // 4. Geocodificação reversa para obter cidade/estado
+      // 3. Geocodificação reversa para obter cidade/estado
       const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
       const city     = geocode?.city || geocode?.subregion || '';
       const stateUF  = geocode?.region || '';
@@ -89,6 +90,23 @@ export default function RootNavigator() {
         // Sem cidade identificável → não bloqueia
         setRegionState('ok');
         return;
+      }
+
+      // 4. Verifica cache local — só aproveita se a cidade atual bater com a cidade em cache
+      //    Isso garante que mudar de cidade invalida automaticamente o resultado cacheado.
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { result, city: cachedCity, stateUF: cachedStateUF, timestamp } = JSON.parse(cached);
+        if (
+          Date.now() - timestamp < CACHE_TTL &&
+          cachedCity === city &&
+          cachedStateUF === stateUF
+        ) {
+          setBlockedCity(city);
+          setBlockedStateUF(stateUF);
+          setRegionState(result); // 'ok' ou 'blocked'
+          return;
+        }
       }
 
       // 5. Verifica cobertura no backend (com retry para cold start do servidor)
@@ -108,7 +126,7 @@ export default function RootNavigator() {
       setBlockedStateUF(stateUF);
       if (result === 'blocked') setBlockedCoords([longitude, latitude]);
 
-      // 6. Persiste cache
+      // 6. Persiste cache com a cidade atual
       await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({
         result, city, stateUF, timestamp: Date.now(),
       }));
