@@ -58,6 +58,7 @@ export default function HomeScreen({ navigation }) {
   const { on } = useSocket();
   const insets = useSafeAreaInsets();
   const [activeRequest, setActiveRequest] = useState(null);
+  const [recentRequest, setRecentRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [serviceTypes, setServiceTypes] = useState([]);
@@ -71,10 +72,18 @@ export default function HomeScreen({ navigation }) {
   const loadActiveRequest = async () => {
     try {
       const { data } = await requestAPI.list();
-      const active = data.requests.find((r) =>
-        ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress'].includes(r.status)
+      const requests = Array.isArray(data.requests) ? data.requests : [];
+      const activeStatuses = ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress'];
+      const active = requests.find((r) =>
+        activeStatuses.includes(r.status)
       );
+      const repeatable = requests.find((r) =>
+        !activeStatuses.includes(r.status)
+        && r.serviceTypeSlug
+        && r.details?.tierLabel
+      ) || null;
       setActiveRequest(active || null);
+      setRecentRequest(repeatable);
       return active;
     } catch {
       // sem requisição ativa
@@ -128,6 +137,7 @@ export default function HomeScreen({ navigation }) {
   const firstName = user?.name?.split(' ')[0] || 'Olá';
 
   const enabledServiceTypes = serviceTypes.filter((st) => st.status === 'enabled');
+  const serviceTypeBySlug = (slug) => serviceTypes.find((st) => st.slug === slug) || null;
 
   const openSmartSearch = () => {
     setSmartPrompt('');
@@ -167,6 +177,45 @@ export default function HomeScreen({ navigation }) {
       serviceType,
       initialNotes: smartPrompt,
     });
+  };
+
+  const repeatLastRequest = async () => {
+    if (!recentRequest?.serviceTypeSlug || !recentRequest?.details?.tierLabel) {
+      Alert.alert('Sem pedido recente', 'Ainda não encontramos um pedido anterior para repetir.');
+      return;
+    }
+
+    const serviceType = serviceTypeBySlug(recentRequest.serviceTypeSlug);
+    if (!serviceType) {
+      Alert.alert('Serviço indisponível', 'Não foi possível localizar o serviço deste pedido.');
+      return;
+    }
+
+    const requestData = {
+      serviceTypeSlug: recentRequest.serviceTypeSlug,
+      tierLabel: recentRequest.details.tierLabel,
+      selectedUpsells: Array.isArray(recentRequest.details.upsells) ? recentRequest.details.upsells : [],
+      notes: recentRequest.details.notes || '',
+      address: recentRequest.address || {},
+      scheduledDate: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    };
+
+    try {
+      const { data: estimate } = await requestAPI.estimate(
+        requestData.serviceTypeSlug,
+        requestData.tierLabel,
+        requestData.selectedUpsells,
+        requestData.scheduledDate,
+      );
+
+      navigation.navigate('Payment', {
+        requestData,
+        estimate,
+        serviceType,
+      });
+    } catch {
+      Alert.alert('Erro', 'Não foi possível repetir esse pedido agora.');
+    }
   };
 
   return (
@@ -272,6 +321,38 @@ export default function HomeScreen({ navigation }) {
           </View>
         ) : null}
 
+        {recentRequest ? (
+          <View style={styles.repeatSection}>
+            <View style={styles.repeatSectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Peça novamente</Text>
+                <Text style={styles.repeatSubtitle}>Repetimos sua última solicitação com horário atualizado para agora.</Text>
+              </View>
+              <View style={styles.repeatBadge}>
+                <Ionicons name="refresh-outline" size={14} color={colors.primary} />
+                <Text style={styles.repeatBadgeText}>1 toque</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.repeatCard} onPress={repeatLastRequest} activeOpacity={0.88}>
+              <View style={styles.repeatIconWrap}>
+                <Ionicons name="repeat-outline" size={22} color={colors.primary} />
+              </View>
+              <View style={styles.repeatContent}>
+                <Text style={styles.repeatTitle}>{recentRequest.serviceType?.name || serviceTypeBySlug(recentRequest.serviceTypeSlug)?.name || 'Serviço'}</Text>
+                <Text style={styles.repeatText} numberOfLines={2}>
+                  {recentRequest.details?.tierLabel || '-'} • {recentRequest.address?.city || 'Sua região'} • {' '}
+                  {recentRequest.status === 'completed' ? 'pedido concluído' : 'último pedido'}
+                </Text>
+              </View>
+              <View style={styles.repeatCta}>
+                <Text style={styles.repeatCtaText}>Repetir</Text>
+                <Ionicons name="arrow-forward" size={16} color={colors.white} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Serviços */}
         <Text style={styles.sectionTitle}>Serviços</Text>
         <View style={styles.servicesGrid}>
@@ -325,22 +406,46 @@ export default function HomeScreen({ navigation }) {
 
         {/* Como funciona */}
         <View style={styles.howSection}>
-          <Text style={styles.sectionTitle}>Como funciona</Text>
-          {[
-            { icon: 'clipboard-outline', label: '1. Solicite', desc: 'Informe horas, cômodos e endereço', color: '#FFF0E6' },
-            { icon: 'person-circle-outline', label: '2. Conectamos', desc: 'Um profissional próximo aceita o pedido', color: '#E8F0FE' },
-            { icon: 'checkmark-circle-outline', label: '3. Pronto!', desc: 'Acompanhe em tempo real e pague pelo app', color: '#E8F5E9' },
-          ].map((step, i) => (
-            <View key={i} style={styles.howCard}>
-              <View style={[styles.howIcon, { backgroundColor: step.color }]}>
-                <Ionicons name={step.icon} size={24} color={colors.primary} />
-              </View>
-              <View style={styles.howText}>
-                <Text style={styles.howLabel}>{step.label}</Text>
-                <Text style={styles.howDesc}>{step.desc}</Text>
-              </View>
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={styles.sectionTitle}>Como funciona</Text>
+              <Text style={styles.sectionSubtitle}>Uma experiência pensada para ser rápida, clara e bonita.</Text>
             </View>
-          ))}
+            <View style={styles.sectionBadge}>
+              <Ionicons name="sparkles" size={14} color={colors.primary} />
+              <Text style={styles.sectionBadgeText}>Fluxo premium</Text>
+            </View>
+          </View>
+
+          <LinearGradient
+            colors={['#FFFFFF', '#FFF7EF']}
+            style={styles.howPanel}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.howPanelGlow} />
+            {[
+              { icon: 'clipboard-outline', title: 'Solicite', desc: 'Descreva o que precisa e o app entende o pedido.', color: '#FF8C38' },
+              { icon: 'person-circle-outline', title: 'Conectamos', desc: 'O profissional certo recebe sua solicitação com prioridade.', color: '#2563EB' },
+              { icon: 'checkmark-circle-outline', title: 'Pronto', desc: 'Acompanhe, confirme e finalize tudo no aplicativo.', color: '#16A34A' },
+            ].map((step, index) => (
+              <View key={step.title} style={styles.howStepRow}>
+                <View style={styles.howStepRail}>
+                  <View style={[styles.howStepDot, { backgroundColor: step.color }]} />
+                  {index < 2 && <View style={styles.howStepLine} />}
+                </View>
+                <View style={styles.howStepCard}>
+                  <View style={[styles.howStepIcon, { backgroundColor: `${step.color}12` }]}>
+                    <Ionicons name={step.icon} size={22} color={step.color} />
+                  </View>
+                  <View style={styles.howStepText}>
+                    <Text style={styles.howStepTitle}>{step.title}</Text>
+                    <Text style={styles.howStepDesc}>{step.desc}</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </LinearGradient>
         </View>
       </ScrollView>
 
@@ -500,6 +605,66 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.xl,
   },
+  repeatSection: {
+    marginBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  repeatSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  repeatSubtitle: {
+    marginTop: 4,
+    color: colors.textLight,
+    fontSize: typography.fontSizes.sm,
+    lineHeight: 19,
+  },
+  repeatBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#FFF1E6',
+    borderWidth: 1,
+    borderColor: '#FFD7B3',
+  },
+  repeatBadgeText: { color: colors.primary, fontSize: 11, fontWeight: '800' },
+  repeatCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: 24,
+    padding: spacing.md,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: 'rgba(255,140,56,0.12)',
+    ...shadows.md,
+  },
+  repeatIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: '#FFF3E8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repeatContent: { flex: 1 },
+  repeatTitle: { fontSize: typography.fontSizes.md, fontWeight: '800', color: colors.textPrimary },
+  repeatText: { marginTop: 4, fontSize: typography.fontSizes.sm, color: colors.textSecondary, lineHeight: 18 },
+  repeatCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.primary,
+  },
+  repeatCtaText: { color: colors.white, fontSize: 12, fontWeight: '800' },
   serviceCard: {
     flex: 1,
     borderRadius: borderRadius.lg,
@@ -536,15 +701,109 @@ const styles = StyleSheet.create({
   },
   soonText: { fontSize: 10, color: colors.textLight, fontWeight: '600' },
   // How it works
-  howSection: { gap: spacing.sm },
-  howCard: {
-    backgroundColor: colors.white,
-    borderRadius: borderRadius.lg,
+  howSection: { gap: spacing.sm, marginTop: spacing.xs },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  sectionSubtitle: {
+    marginTop: 4,
+    color: colors.textLight,
+    fontSize: typography.fontSizes.sm,
+    lineHeight: 19,
+  },
+  sectionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FFF1E6',
+    borderWidth: 1,
+    borderColor: '#FFD7B3',
+  },
+  sectionBadgeText: {
+    color: '#C75A00',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  howPanel: {
+    borderRadius: 28,
     padding: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,140,56,0.14)',
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  howPanelGlow: {
+    position: 'absolute',
+    top: -30,
+    right: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(255,140,56,0.08)',
+  },
+  howStepRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'stretch',
+  },
+  howStepRail: {
+    width: 18,
+    alignItems: 'center',
+    paddingTop: 18,
+  },
+  howStepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: colors.white,
+    zIndex: 2,
+  },
+  howStepLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: 'rgba(255,140,56,0.15)',
+    marginTop: 6,
+    borderRadius: 999,
+  },
+  howStepCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    ...shadows.sm,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.8)',
+    marginBottom: 8,
+  },
+  howStepIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  howStepText: { flex: 1 },
+  howStepTitle: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  howStepDesc: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginTop: 3,
+    lineHeight: 19,
   },
   smartBackdrop: {
     flex: 1,
