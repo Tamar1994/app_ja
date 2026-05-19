@@ -45,6 +45,9 @@ app.get('/', (req, res) => {
 app.get('/qrcode', (req, res) => {
   res.sendFile(path.join(__dirname, '../landing/qrcode.html'));
 });
+app.get('/politica-de-privacidade', (req, res) => {
+  res.sendFile(path.join(__dirname, '../landing/politica-de-privacidade.html'));
+});
 
 // Rotas
 app.use('/api/auth', authRoutes);

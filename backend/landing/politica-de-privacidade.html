@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Política de Privacidade da Plataforma JÁ! – saiba como coletamos, usamos e protegemos seus dados pessoais." />
+  <title>Política de Privacidade – JÁ!</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #FF6B00;
+      --primary-light: #FF8C38;
+      --text: #1A1A2E;
+      --text-secondary: #555770;
+      --bg: #F9F9FB;
+      --card-bg: #FFFFFF;
+      --border: #EAEAF0;
+      --radius: 14px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #FF8C38, #FF6B00, #E55A00);
+      padding: 40px 24px 56px;
+      text-align: center;
+      color: #fff;
+    }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 52px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+
+    .logo-mark svg { width: 28px; height: 28px; fill: #fff; }
+
+    header h1 {
+      font-size: clamp(22px, 5vw, 30px);
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .header-meta {
+      font-size: 13px;
+      opacity: 0.85;
+      margin-top: 6px;
+    }
+
+    /* ── Main container ── */
+    main {
+      max-width: 780px;
+      margin: -28px auto 60px;
+      padding: 0 20px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: 0 2px 20px rgba(0,0,0,0.06);
+      padding: 40px 44px;
+    }
+
+    @media (max-width: 600px) {
+      .card { padding: 28px 22px; }
+    }
+
+    /* ── Introduction block ── */
+    .intro {
+      background: #FFF8F3;
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin-bottom: 36px;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    /* ── Sections ── */
+    section { margin-bottom: 36px; }
+
+    section:last-child { margin-bottom: 0; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .section-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #FF8C38, #FF6B00);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    p { color: var(--text-secondary); margin-bottom: 14px; }
+    p:last-child { margin-bottom: 0; }
+
+    /* ── Data list ── */
+    .data-list { list-style: none; padding: 0; margin: 12px 0 0; }
+
+    .data-list li {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 15px;
+    }
+
+    .data-list li:last-child { border-bottom: none; }
+
+    .data-list .bullet {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      margin-top: 8px;
+      flex-shrink: 0;
+    }
+
+    .data-list strong {
+      display: block;
+      color: var(--text);
+      font-weight: 700;
+      margin-bottom: 3px;
+      font-size: 15px;
+    }
+
+    /* ── Numbered list ── */
+    .numbered-list { list-style: none; padding: 0; counter-reset: item; }
+
+    .numbered-list li {
+      counter-increment: item;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+      color: var(--text-secondary);
+      font-size: 15px;
+    }
+
+    .numbered-list li::before {
+      content: counter(item);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #FFF0E6;
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    /* ── Rights cards ── */
+    .rights-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .right-item {
+      background: #F9F9FB;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .right-item strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .right-item span { font-size: 13px; color: var(--text-secondary); }
+
+    /* ── Contact block ── */
+    .contact-block {
+      background: linear-gradient(135deg, #FFF8F3, #FFF2E8);
+      border: 1.5px solid #FFD4B0;
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .contact-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .contact-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(255, 107, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .contact-icon svg { width: 20px; height: 20px; fill: var(--primary); }
+
+    .contact-row p { margin: 0; font-size: 15px; }
+    .contact-row a { color: var(--primary); text-decoration: none; font-weight: 600; }
+    .contact-row a:hover { text-decoration: underline; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      font-size: 13px;
+      color: #AAAABD;
+      padding: 0 20px 40px;
+    }
+
+    footer a { color: var(--primary); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-mark">
+      <!-- Shield icon -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L3 6v6c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V6L12 2zm-1 13l-3-3 1.41-1.41L11 12.17l4.59-4.58L17 9l-6 6z"/>
+      </svg>
+    </div>
+    <h1>Política de Privacidade</h1>
+    <p>Plataforma JÁ!</p>
+    <p class="header-meta">Última atualização: 19 de maio de 2026</p>
+  </header>
+
+  <main>
+    <div class="card">
+
+      <div class="intro">
+        A <strong>JÁ!</strong>, operada por <strong>JA! INTERMEDIACAO DE SERVICOS DIGITAIS INOVA SIMPLES (I.S.)</strong>, inscrita no CNPJ sob o nº <strong>66.668.999/0001-50</strong>, com sede em <strong>São José dos Campos/SP</strong>, tem o compromisso de proteger a sua privacidade e garantir a segurança dos seus dados pessoais.<br><br>
+        Esta Política explica como coletamos, usamos, compartilhamos e protegemos as informações de Clientes e Profissionais ("Usuários") ao utilizarem nosso aplicativo e serviços.
+      </div>
+
+      <!-- 1. Dados que coletamos -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">1</span>
+          Dados que Coletamos
+        </h2>
+        <p>Para que a Plataforma JÁ! funcione corretamente e conecte clientes a profissionais, coletamos os seguintes dados:</p>
+        <ul class="data-list">
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Dados de Cadastro</strong>
+              Nome completo, CPF, e-mail, número de telefone, data de nascimento e foto de perfil.
+            </div>
+          </li>
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Dados de Localização</strong>
+              Coletamos dados de localização precisa (GPS) ou aproximada quando o aplicativo está em uso. Isso é essencial para exibir profissionais próximos e para que o profissional encontre o endereço do serviço.
+            </div>
+          </li>
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Dados Financeiros</strong>
+              Informações de pagamento (cartão de crédito e chaves Pix). Esses dados são processados e armazenados de forma criptografada por nossos parceiros (Stripe e Nubank) e não são retidos nos servidores da JÁ!.
+            </div>
+          </li>
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Dados do Dispositivo e Uso</strong>
+              Modelo do aparelho, sistema operacional, endereço IP, tempo de uso do aplicativo e interações dentro da plataforma (avaliações, mensagens no chat interno e histórico de agendamentos).
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 2. Como usamos -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">2</span>
+          Como Usamos os Seus Dados
+        </h2>
+        <p>Os dados coletados são utilizados estritamente para:</p>
+        <ul class="numbered-list">
+          <li>Viabilizar a criação da conta e a conexão entre Clientes e Profissionais.</li>
+          <li>Processar os pagamentos e o split das taxas de intermediação e serviços.</li>
+          <li>Garantir a segurança dos usuários, verificando a identidade dos Profissionais cadastrados.</li>
+          <li>Prestar suporte ao cliente e resolver eventuais disputas.</li>
+          <li>Enviar comunicações importantes sobre agendamentos, cancelamentos ou mudanças nos Termos de Uso.</li>
+          <li>Cumprir obrigações legais e regulatórias.</li>
+        </ul>
+      </section>
+
+      <!-- 3. Compartilhamento -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">3</span>
+          Com Quem Compartilhamos os Seus Dados
+        </h2>
+        <p>A JÁ! <strong>não vende seus dados pessoais</strong>. O compartilhamento ocorre apenas nas seguintes situações:</p>
+        <ul class="data-list">
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Entre Usuários</strong>
+              O Cliente terá acesso ao nome, foto e avaliação do Profissional. O Profissional terá acesso ao nome e endereço do Cliente exclusivamente para a realização do serviço agendado.
+            </div>
+          </li>
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Parceiros de Pagamento</strong>
+              Com Stripe e/ou Nubank, estritamente para o processamento das transações financeiras.
+            </div>
+          </li>
+          <li>
+            <div class="bullet"></div>
+            <div>
+              <strong>Autoridades Legais</strong>
+              Caso seja exigido por lei, ordem judicial ou para investigar suspeitas de fraudes e violações de segurança.
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 4. Armazenamento e segurança -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">4</span>
+          Armazenamento e Segurança
+        </h2>
+        <p>Seus dados são armazenados em servidores seguros, utilizando criptografia e protocolos de segurança da informação (SSL/TLS). Mantemos seus dados apenas pelo tempo necessário para cumprir as finalidades descritas nesta Política ou para atender a prazos de guarda exigidos por lei, como o Marco Civil da Internet.</p>
+      </section>
+
+      <!-- 5. Direitos -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">5</span>
+          Seus Direitos (LGPD)
+        </h2>
+        <p>De acordo com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), você possui os seguintes direitos:</p>
+        <div class="rights-grid">
+          <div class="right-item">
+            <strong>Confirmação</strong>
+            <span>Confirmar a existência de tratamento dos seus dados.</span>
+          </div>
+          <div class="right-item">
+            <strong>Acesso</strong>
+            <span>Acessar os dados que temos sobre você.</span>
+          </div>
+          <div class="right-item">
+            <strong>Correção</strong>
+            <span>Corrigir dados incompletos, inexatos ou desatualizados.</span>
+          </div>
+          <div class="right-item">
+            <strong>Exclusão de Conta</strong>
+            <span>Solicitar a exclusão total da sua conta e dados, pelas configurações do app ou por e-mail.</span>
+          </div>
+          <div class="right-item">
+            <strong>Revogação</strong>
+            <span>Revogar o consentimento para uso de dados, como desligar o acesso ao GPS do aparelho.</span>
+          </div>
+          <div class="right-item">
+            <strong>Portabilidade</strong>
+            <span>Solicitar a portabilidade dos seus dados para outro fornecedor de serviços.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Alterações -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">6</span>
+          Alterações nesta Política
+        </h2>
+        <p>Podemos atualizar esta Política de Privacidade de tempos em tempos para refletir mudanças operacionais ou legais. Quando isso ocorrer, você será notificado dentro do aplicativo ou por e-mail, e a data de "Última atualização" no topo deste documento será alterada.</p>
+      </section>
+
+      <!-- 7. Contato -->
+      <section>
+        <h2 class="section-title">
+          <span class="section-number">7</span>
+          Como Entrar em Contato
+        </h2>
+        <p>Se você tiver dúvidas, solicitações de exclusão de conta ou quiser exercer seus direitos em relação aos seus dados, entre em contato:</p>
+        <div class="contact-block">
+          <div class="contact-row">
+            <div class="contact-icon">
+              <!-- Email icon -->
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+              </svg>
+            </div>
+            <p>E-mail de Privacidade: <a href="mailto:politicaprivacidade@chameja.app.br">politicaprivacidade@chameja.app.br</a></p>
+          </div>
+          <div class="contact-row">
+            <div class="contact-icon">
+              <!-- Location icon -->
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+            </div>
+            <p>Sede: São José dos Campos, SP – Brasil</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer>
+    <p>© 2026 JÁ! Intermediação de Serviços Digitais. Todos os direitos reservados.</p>
+    <p style="margin-top:6px;">CNPJ 66.668.999/0001-50 &nbsp;·&nbsp; <a href="/">Página inicial</a></p>
+  </footer>
+
+</body>
+</html>
