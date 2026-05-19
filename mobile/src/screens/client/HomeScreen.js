@@ -194,7 +194,7 @@ export default function HomeScreen({ navigation }) {
     const requestData = {
       serviceTypeSlug: recentRequest.serviceTypeSlug,
       tierLabel: recentRequest.details.tierLabel,
-      selectedUpsells: Array.isArray(recentRequest.details.upsells) ? recentRequest.details.upsells : [],
+      selectedUpsells: Array.isArray(recentRequest.details.upsells) ? recentRequest.details.upsells.map((u) => u.key).filter(Boolean) : [],
       notes: recentRequest.details.notes || '',
       address: recentRequest.address || {},
       scheduledDate: new Date(Date.now() + 5 * 60 * 1000).toISOString(),

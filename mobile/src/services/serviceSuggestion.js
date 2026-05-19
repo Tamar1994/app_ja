@@ -165,4 +165,4 @@ async function suggestServiceType(prompt = '', serviceTypes = []) {
   };
 }
 
-module.exports = { suggestServiceType };
+export { suggestServiceType };

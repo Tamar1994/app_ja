@@ -25,7 +25,7 @@ const computeNextWithdrawalAt = (lastRequestedAt) => {
 router.get('/summary', auth, async (req, res) => {
   try {
     const [user, recentTransactions, latestWithdrawal] = await Promise.all([
-      User.findById(req.user._id).select('wallet professional cpf userType'),
+      User.findById(req.user._id).select('wallet professional cpf userType activeProfile'),
       Transaction.find({ professional: req.user._id })
         .sort({ createdAt: -1 })
         .limit(10)
