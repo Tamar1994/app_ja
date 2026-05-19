@@ -384,7 +384,12 @@ const styles = StyleSheet.create({
   },
   availCardActive: {
     borderColor: colors.success,
-    backgroundColor: `${colors.success}05`,
+    backgroundColor: colors.white,
+    shadowColor: colors.success,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   availDot: {
     width: 12, height: 12, borderRadius: 6,
@@ -394,14 +399,14 @@ const styles = StyleSheet.create({
   availTitle: { fontSize: typography.fontSizes.md, fontWeight: '700', color: colors.textPrimary },
   availSub: { fontSize: typography.fontSizes.sm, color: colors.textSecondary, marginTop: 2 },
   availToggle: {
-    backgroundColor: colors.background,
+    backgroundColor: '#F7F9F8',
     borderRadius: borderRadius.full,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  availToggleActive: { backgroundColor: `${colors.success}15`, borderColor: colors.success },
+  availToggleActive: { backgroundColor: `${colors.success}10`, borderColor: colors.success },
   availToggleText: { fontSize: typography.fontSizes.sm, color: colors.textLight, fontWeight: '600' },
   availToggleTextActive: { color: colors.success },
   infoCard: {
