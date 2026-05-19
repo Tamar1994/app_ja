@@ -85,10 +85,12 @@ function sendExpoPush(pushToken, title, body, data = {}) {
  */
 async function findNextProfessional(request) {
   const User = require('../models/User');
+  const requesterId = (request?.client?._id || request?.client || '').toString();
 
   const excluded = [
     ...(request.rejectedBy || []).map(id => id.toString()),
     ...(request.currentAssignedTo ? [request.currentAssignedTo.toString()] : []),
+    ...(requesterId ? [requesterId] : []),
   ];
 
   const [longitude, latitude] = request?.address?.coordinates || [];
@@ -97,7 +99,8 @@ async function findNextProfessional(request) {
     && !(longitude === 0 && latitude === 0);
 
   const baseFilter = {
-    userType: 'professional',
+    $or: [{ userType: 'professional' }, { 'profileModes.professional': true }],
+    activeProfile: 'professional',
     'professional.isAvailable': true,
     _id: { $nin: excluded },
   };

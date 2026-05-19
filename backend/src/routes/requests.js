@@ -17,6 +17,16 @@ const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService
 
 const router = express.Router();
 
+const resolveActiveProfile = (user) => {
+  if (user?.activeProfile === 'client' || user?.activeProfile === 'professional') {
+    return user.activeProfile;
+  }
+  return user?.userType;
+};
+
+const isClientProfile = (user) => resolveActiveProfile(user) === 'client';
+const isProfessionalProfile = (user) => resolveActiveProfile(user) === 'professional';
+
 // Verifica conflito de agenda: 30min de buffer antes/depois de cada serviço agendado
 async function hasScheduleConflict(professionalId, scheduledDate, durationMinutes, excludeRequestId = null) {
   const BUFFER_MS = 30 * 60 * 1000;
@@ -238,7 +248,7 @@ router.post('/', auth, [
   body('address.city').notEmpty(),
   body('scheduledDate').isISO8601(),
 ], async (req, res) => {
-  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
+  if (!isClientProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas clientes podem solicitar serviços' });
   }
 
@@ -311,13 +321,14 @@ router.post('/', auth, [
 
 // GET /api/requests/scheduled-feed — pedidos agendados disponíveis para o profissional aceitar
 router.get('/scheduled-feed', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem acessar o feed de agendamentos' });
   }
   try {
     const requests = await ServiceRequest.find({
       requestType: 'scheduled',
       status: 'pending_professional',
+      client: { $ne: req.user._id },
       rejectedBy: { $ne: req.user._id },
       'details.scheduledDate': { $gt: new Date() },
     })
@@ -332,7 +343,7 @@ router.get('/scheduled-feed', auth, async (req, res) => {
 
 // GET /api/requests/my-schedule — agenda do profissional (confirmados)
 router.get('/my-schedule', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem acessar a agenda' });
   }
   try {
@@ -353,7 +364,7 @@ router.get('/my-schedule', auth, async (req, res) => {
 router.get('/', auth, async (req, res) => {
   try {
     let requests;
-    if (req.user.userType === 'client' || req.user.activeProfile === 'client') {
+    if (isClientProfile(req.user)) {
       requests = await ServiceRequest.find({ client: req.user._id })
         .populate('professional', 'name avatar professional.rating location')
         .sort({ createdAt: -1 });
@@ -369,6 +380,7 @@ router.get('/', auth, async (req, res) => {
       } else {
         requests = await ServiceRequest.find({
           status: 'searching',
+          client: { $ne: req.user._id },
           currentAssignedTo: req.user._id,
           rejectedBy: { $ne: req.user._id },
         })
@@ -397,7 +409,7 @@ router.get('/:id', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/professional-preparing — profissional se preparando
 router.patch('/:id/professional-preparing', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem alterar este status' });
   }
 
@@ -438,7 +450,7 @@ router.patch('/:id/professional-preparing', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/professional-on-the-way — profissional saiu para atendimento
 router.patch('/:id/professional-on-the-way', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem alterar este status' });
   }
 
@@ -479,7 +491,7 @@ router.patch('/:id/professional-on-the-way', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/professional-location — atualiza localização em tempo real durante deslocamento
 router.patch('/:id/professional-location', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem atualizar localização' });
   }
 
@@ -527,16 +539,20 @@ router.patch('/:id/professional-location', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/accept — profissional aceita (pedido imediato)
 router.patch('/:id/accept', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem aceitar' });
   }
 
   try {
     // Verificar conflito de agenda antes de aceitar
     const pending = await ServiceRequest.findOne({ _id: req.params.id, status: 'searching' })
-      .select('details.scheduledDate details.durationMinutes')
+      .select('client details.scheduledDate details.durationMinutes')
       .lean();
     if (!pending) return res.status(400).json({ message: 'Solicitação não disponível' });
+
+    if (pending.client?.toString() === req.user._id.toString()) {
+      return res.status(403).json({ message: 'Você não pode aceitar uma solicitação criada pela sua própria conta.' });
+    }
 
     const conflict = await hasScheduleConflict(
       req.user._id,
@@ -548,7 +564,7 @@ router.patch('/:id/accept', auth, async (req, res) => {
     }
 
     const request = await ServiceRequest.findOneAndUpdate(
-      { _id: req.params.id, status: 'searching' },
+      { _id: req.params.id, status: 'searching', client: { $ne: req.user._id } },
       {
         status: 'accepted',
         professional: req.user._id,
@@ -603,7 +619,7 @@ router.patch('/:id/accept', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/schedule-accept — profissional aceita do feed de agendamentos
 router.patch('/:id/schedule-accept', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem aceitar agendamentos' });
   }
 
@@ -612,9 +628,13 @@ router.patch('/:id/schedule-accept', auth, async (req, res) => {
       _id: req.params.id,
       requestType: 'scheduled',
       status: 'pending_professional',
-    }).select('details.scheduledDate details.durationMinutes client').lean();
+    }).select('client details.scheduledDate details.durationMinutes').lean();
 
     if (!pending) return res.status(400).json({ message: 'Agendamento não disponível' });
+
+    if (pending.client?.toString() === req.user._id.toString()) {
+      return res.status(403).json({ message: 'Você não pode aceitar um agendamento criado pela sua própria conta.' });
+    }
 
     const conflict = await hasScheduleConflict(
       req.user._id,
@@ -628,7 +648,7 @@ router.patch('/:id/schedule-accept', auth, async (req, res) => {
     }
 
     const request = await ServiceRequest.findOneAndUpdate(
-      { _id: req.params.id, requestType: 'scheduled', status: 'pending_professional' },
+      { _id: req.params.id, requestType: 'scheduled', status: 'pending_professional', client: { $ne: req.user._id } },
       {
         status: 'pending_client',
         professional: req.user._id,
@@ -672,7 +692,7 @@ router.patch('/:id/schedule-accept', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/schedule-reject — profissional recusa do feed de agendamentos
 router.patch('/:id/schedule-reject', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem recusar agendamentos' });
   }
   try {
@@ -776,7 +796,7 @@ router.patch('/:id/schedule-client-reject', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/reject — profissional recusa
 router.patch('/:id/reject', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem recusar' });
   }
 
@@ -800,7 +820,7 @@ router.patch('/:id/reject', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/client-reject — cliente recusa o profissional e busca outro
 router.patch('/:id/client-reject', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (!isClientProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas clientes podem recusar' });
   }
 
@@ -844,7 +864,7 @@ router.patch('/:id/client-reject', auth, async (req, res) => {
 
 // PATCH /api/requests/:id/client-confirm — cliente confirma o profissional aceito
 router.patch('/:id/client-confirm', auth, async (req, res) => {
-  if (req.user.userType !== 'client') {
+  if (!isClientProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas clientes podem confirmar' });
   }
 
@@ -1036,7 +1056,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
 // PATCH /api/requests/:id/cancel — cliente cancela
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
-    const filter = req.user.userType === 'client'
+    const clientProfile = isClientProfile(req.user);
+    const filter = clientProfile
       ? { _id: req.params.id, client: req.user._id, status: { $in: ['pending_professional', 'pending_client', 'scheduled', 'searching', 'accepted', 'preparing', 'on_the_way'] } }
       : { _id: req.params.id, professional: req.user._id, status: { $in: ['pending_client', 'scheduled', 'accepted', 'preparing', 'on_the_way'] } };
 
@@ -1053,13 +1074,13 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     await closeServiceChatForRequest(req.params.id, req.body.reason || 'Serviço cancelado');
 
     // Push para o outro lado: notificar sobre cancelamento
-    if (req.user.userType === 'client' && request.professional) {
+    if (clientProfile && request.professional) {
       User.findById(request.professional).select('pushToken').then((pro) => {
         if (pro?.pushToken) {
           sendExpoPush(pro.pushToken, '❌ Pedido cancelado', 'O cliente cancelou a solicitação de serviço.', { requestId: String(request._id) });
         }
       }).catch(() => {});
-    } else if (req.user.userType === 'professional') {
+    } else if (isProfessionalProfile(req.user)) {
       User.findById(request.client).select('pushToken').then((client) => {
         if (client?.pushToken) {
           sendExpoPush(client.pushToken, '❌ Pedido cancelado', 'O profissional cancelou o atendimento. Buscando outro profissional.', { requestId: String(request._id) });
