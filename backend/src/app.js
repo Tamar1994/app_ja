@@ -51,6 +51,12 @@ app.get('/qrcode', (req, res) => {
 app.get('/politica-de-privacidade', (req, res) => {
   res.sendFile(path.join(__dirname, '../landing/politica-de-privacidade.html'));
 });
+app.get('/excluir-conta', (req, res) => {
+  res.sendFile(path.join(__dirname, '../landing/excluir-conta.html'));
+});
+app.get('/excluir-dados', (req, res) => {
+  res.sendFile(path.join(__dirname, '../landing/excluir-dados.html'));
+});
 
 // Rotas
 app.use('/api/auth', authRoutes);
@@ -78,6 +84,21 @@ app.get('/api/terms', async (req, res) => {
   } catch {
     res.status(500).json({ message: 'Erro ao buscar termos de uso' });
   }
+});
+
+// Solicitação LGPD (exclusão/acesso/correção de dados) — página excluir-dados.html
+app.post('/api/lgpd/request', express.json(), async (req, res) => {
+  const { nome, email, tipo, descricao } = req.body || {};
+  if (!nome || !email || !tipo || !descricao) {
+    return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: 'E-mail inválido.' });
+  }
+  console.log(`[LGPD] Nova solicitação — tipo: ${tipo} | email: ${email} | nome: ${nome}`);
+  // Registra a solicitação em log. Uma integração de e-mail ou ticket
+  // pode ser adicionada aqui conforme necessário.
+  res.json({ ok: true });
 });
 
 // Waitlist da Landing Page

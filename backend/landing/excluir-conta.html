@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Saiba como excluir sua conta na plataforma JÁ! e quais dados são removidos ou mantidos." />
+  <title>Excluir Conta – JÁ!</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #FF6B00;
+      --primary-light: #FF8C38;
+      --danger: #E53935;
+      --danger-light: #FFEBEE;
+      --success: #2E7D32;
+      --success-light: #E8F5E9;
+      --warning: #F57C00;
+      --warning-light: #FFF3E0;
+      --text: #1A1A2E;
+      --text-secondary: #555770;
+      --bg: #F9F9FB;
+      --card-bg: #FFFFFF;
+      --border: #EAEAF0;
+      --radius: 14px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #FF8C38, #FF6B00, #E55A00);
+      padding: 40px 24px 56px;
+      text-align: center;
+      color: #fff;
+    }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 52px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+
+    .logo-mark svg { width: 28px; height: 28px; fill: #fff; }
+
+    header h1 {
+      font-size: clamp(22px, 5vw, 30px);
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .header-meta {
+      font-size: 13px;
+      opacity: 0.85;
+      margin-top: 6px;
+    }
+
+    /* ── Main container ── */
+    main {
+      max-width: 780px;
+      margin: -28px auto 60px;
+      padding: 0 20px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: 0 2px 20px rgba(0,0,0,0.06);
+      padding: 40px 44px;
+    }
+
+    @media (max-width: 600px) {
+      .card { padding: 28px 22px; }
+    }
+
+    /* ── Alert boxes ── */
+    .alert {
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 32px;
+      font-size: 15px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .alert-icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
+    .alert-text { color: var(--text-secondary); }
+    .alert-text strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+    .alert-warning {
+      background: var(--warning-light);
+      border-left: 4px solid var(--warning);
+    }
+    .alert-danger {
+      background: var(--danger-light);
+      border-left: 4px solid var(--danger);
+    }
+
+    /* ── Sections ── */
+    section { margin-bottom: 40px; }
+    section:last-child { margin-bottom: 0; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .icon-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .icon-badge-orange { background: #FFF0E6; }
+    .icon-badge-red    { background: var(--danger-light); }
+    .icon-badge-green  { background: var(--success-light); }
+    .icon-badge-gray   { background: #F3F3F7; }
+
+    /* ── Steps ── */
+    .steps { display: flex; flex-direction: column; gap: 16px; }
+
+    .step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #FF8C38, #FF6B00);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .step-content { flex: 1; }
+    .step-content strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 4px; }
+    .step-content p { font-size: 14px; color: var(--text-secondary); }
+
+    .step-path {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .step-pill {
+      background: #F3F3F7;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .step-arrow { color: var(--text-secondary); font-size: 12px; }
+
+    /* ── Data lists ── */
+    .data-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+
+    .data-list li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    .data-list li::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 8px;
+    }
+
+    .list-deleted li::before { background: var(--danger); }
+    .list-kept li::before   { background: #1565C0; }
+
+    .data-list li strong { color: var(--text); }
+
+    /* ── Two-column grid on desktop ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 620px) { .two-col { grid-template-columns: 1fr; } }
+
+    .col-card {
+      border-radius: 12px;
+      padding: 22px;
+    }
+    .col-card-red   { background: var(--danger-light); border: 1px solid #FFCDD2; }
+    .col-card-blue  { background: #E3F2FD; border: 1px solid #BBDEFB; }
+
+    .col-card h4 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .col-card-red h4  { color: var(--danger); }
+    .col-card-blue h4 { color: #1565C0; }
+
+    /* ── Contact box ── */
+    .contact-box {
+      background: #FFF8F3;
+      border: 1px solid #FFD4B0;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .contact-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; }
+
+    .btn-email {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #FF8C38, #FF6B00);
+      color: #fff;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 30px;
+      font-weight: 700;
+      font-size: 15px;
+      transition: opacity 0.2s;
+    }
+    .btn-email:hover { opacity: 0.88; }
+
+    .contact-note {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 14px;
+    }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 28px 20px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+    }
+
+    footer a { color: var(--primary); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+  </div>
+  <h1>Excluir Conta</h1>
+  <p class="header-meta">Plataforma JÁ! · Marketplace de Serviços</p>
+</header>
+
+<main>
+  <div class="card">
+
+    <div class="alert alert-warning">
+      <span class="alert-icon">⚠️</span>
+      <div class="alert-text">
+        <strong>Atenção: ação irreversível</strong>
+        A exclusão de conta é permanente. Após a conclusão, não será possível recuperar o histórico, avaliações ou saldo da carteira. Leia este guia antes de prosseguir.
+      </div>
+    </div>
+
+    <!-- Antes de excluir -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-orange">📋</span>
+        Antes de excluir sua conta
+      </h2>
+      <div class="steps">
+        <div class="step">
+          <span class="step-number">1</span>
+          <div class="step-content">
+            <strong>Saque seu saldo da carteira</strong>
+            <p>Se você possui saldo disponível na carteira digital, realize o saque antes de solicitar a exclusão. Após a exclusão, valores não sacados não poderão ser recuperados.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">2</span>
+          <div class="step-content">
+            <strong>Conclua ou cancele serviços em andamento</strong>
+            <p>Não é possível excluir a conta enquanto houver pedidos de serviço ativos ou em progresso. Conclua ou cancele todos antes de prosseguir.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">3</span>
+          <div class="step-content">
+            <strong>Certifique-se que deseja excluir</strong>
+            <p>O histórico completo, avaliações recebidas e dados do perfil serão removidos permanentemente.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Como excluir -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-orange">📱</span>
+        Como excluir pelo aplicativo
+      </h2>
+      <div class="steps">
+        <div class="step">
+          <span class="step-number">1</span>
+          <div class="step-content">
+            <strong>Acesse seu Perfil</strong>
+            <p>Abra o aplicativo JÁ! e toque na aba <strong>Perfil</strong> no menu inferior.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">2</span>
+          <div class="step-content">
+            <strong>Vá até Configurações</strong>
+            <div class="step-path">
+              <span class="step-pill">Perfil</span>
+              <span class="step-arrow">›</span>
+              <span class="step-pill">Configurações</span>
+              <span class="step-arrow">›</span>
+              <span class="step-pill">Excluir conta</span>
+            </div>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">3</span>
+          <div class="step-content">
+            <strong>Confirme com sua senha</strong>
+            <p>Por segurança, você deverá digitar sua senha atual para confirmar a exclusão.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">4</span>
+          <div class="step-content">
+            <strong>Conta excluída</strong>
+            <p>Sua conta é desativada imediatamente. Os dados são removidos permanentemente em até <strong>30 dias</strong>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Alternativa por e-mail -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-gray">✉️</span>
+        Não consegue acessar o aplicativo?
+      </h2>
+      <div class="contact-box">
+        <p>Se você não consegue acessar sua conta, envie um e-mail com o assunto <strong>"Excluir conta"</strong>, informando o nome completo e o e-mail cadastrado. Nossa equipe processará a solicitação em até <strong>5 dias úteis</strong>.</p>
+        <a class="btn-email" href="mailto:suporte@app-ja.com.br?subject=Excluir%20conta">
+          ✉️ suporte@app-ja.com.br
+        </a>
+        <p class="contact-note">Resposta em até 5 dias úteis • Atendimento em português</p>
+      </div>
+    </section>
+
+    <!-- O que é excluído / mantido -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-red">🗑️</span>
+        O que acontece com seus dados
+      </h2>
+      <div class="two-col">
+        <div class="col-card col-card-red">
+          <h4>🗑️ Dados removidos</h4>
+          <ul class="data-list list-deleted">
+            <li><span>Perfil, foto e dados pessoais</span></li>
+            <li><span>Endereço e localização</span></li>
+            <li><span>Histórico de serviços solicitados</span></li>
+            <li><span>Conversas e chats de suporte</span></li>
+            <li><span>Avaliações enviadas e recebidas</span></li>
+            <li><span>Certificados e documentos enviados</span></li>
+            <li><span>Notificações e preferências</span></li>
+            <li><span>Dados da carteira digital</span></li>
+          </ul>
+        </div>
+        <div class="col-card col-card-blue">
+          <h4>📁 Dados mantidos (obrigação legal)</h4>
+          <ul class="data-list list-kept">
+            <li><span><strong>Registros financeiros</strong> — mantidos por 5 anos conforme legislação fiscal brasileira (Lei 9.430/96)</span></li>
+            <li><span><strong>Logs de auditoria</strong> — mantidos por até 6 meses conforme Marco Civil da Internet (Lei 12.965/14)</span></li>
+            <li><span><strong>Dados anonimizados</strong> — estatísticas de uso sem identificação pessoal</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Prazo -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-green">⏱️</span>
+        Prazo de exclusão
+      </h2>
+      <div class="alert alert-warning" style="margin-bottom:0">
+        <span class="alert-icon">📅</span>
+        <div class="alert-text">
+          <strong>Até 30 dias para exclusão completa</strong>
+          A conta é desativada imediatamente após a confirmação. A remoção completa dos dados dos nossos sistemas (incluindo backups) ocorre em até <strong>30 dias corridos</strong>. Durante esse período, nenhum dado pessoal é utilizado para qualquer finalidade.
+        </div>
+      </div>
+    </section>
+
+    <!-- Links adicionais -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-gray">🔗</span>
+        Veja também
+      </h2>
+      <p style="font-size:15px; color:var(--text-secondary);">
+        Para solicitar cópias dos seus dados, corrigir informações ou exercer outros direitos previstos na LGPD, acesse nossa página de
+        <a href="/excluir-dados" style="color:var(--primary);font-weight:600;">Exclusão de Dados</a>.
+        Para entender como tratamos seus dados, consulte a
+        <a href="/politica-de-privacidade" style="color:var(--primary);font-weight:600;">Política de Privacidade</a>.
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <p>© 2024 JÁ! Serviços · <a href="/politica-de-privacidade">Política de Privacidade</a> · <a href="/excluir-dados">Exclusão de Dados</a></p>
+  <p style="margin-top:6px;">Dúvidas? <a href="mailto:suporte@app-ja.com.br">suporte@app-ja.com.br</a></p>
+</footer>
+
+</body>
+</html>

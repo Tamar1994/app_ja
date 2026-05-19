@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator,
+  Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
-import { uploadAPI } from '../../services/api';
+import { uploadAPI, userAPI } from '../../services/api';
 import ProfileSwitcher from '../../components/ProfileSwitcher';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
@@ -22,6 +23,37 @@ function buildImageUrl(path) {
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateUser } = useAuth();
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Excluir conta',
+      'Esta ação é permanente e irreversível. Seu perfil, histórico e dados serão removidos.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Continuar', style: 'destructive', onPress: () => { setDeletePassword(''); setDeleteModalVisible(true); } },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (!deletePassword) {
+      Alert.alert('Erro', 'Digite sua senha para confirmar.');
+      return;
+    }
+    setDeletingAccount(true);
+    try {
+      await userAPI.deleteAccount(deletePassword);
+      setDeleteModalVisible(false);
+      logout();
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível excluir a conta.');
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert('Sair', 'Deseja sair da sua conta?', [
@@ -107,6 +139,7 @@ export default function ProfileScreen({ navigation }) {
     { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: () => navigation.navigate('HelpCenter') },
     { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: () => navigation.navigate('Terms') },
     { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: null },
+    { icon: 'trash-outline', label: 'Excluir conta', color: '#FFEBEE', onPress: handleDeleteAccount, danger: true },
   ];
 
   return (
@@ -181,9 +214,9 @@ export default function ProfileScreen({ navigation }) {
                 onPress={item.onPress || undefined}
               >
                 <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
-                  <Ionicons name={item.icon} size={18} color={colors.textSecondary} />
+                  <Ionicons name={item.icon} size={18} color={item.danger ? colors.error : colors.textSecondary} />
                 </View>
-                <Text style={styles.menuLabel}>{item.label}</Text>
+                <Text style={[styles.menuLabel, item.danger && { color: colors.error }]}>{item.label}</Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.textLight} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
             ))}
@@ -198,6 +231,38 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.version}>Já! v1.0.0</Text>
         </View>
       </ScrollView>
+
+      {/* Modal exclusão de conta */}
+      <Modal visible={deleteModalVisible} transparent animationType="fade" onRequestClose={() => setDeleteModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name="warning-outline" size={36} color={colors.error} style={{ marginBottom: 12 }} />
+            <Text style={styles.modalTitle}>Excluir conta</Text>
+            <Text style={styles.modalBody}>Digite sua senha para confirmar. Esta ação é permanente e não pode ser desfeita.</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Sua senha"
+              placeholderTextColor="#999"
+              secureTextEntry
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.modalBtnDanger, deletingAccount && { opacity: 0.6 }]}
+              onPress={confirmDeleteAccount}
+              disabled={deletingAccount}
+            >
+              {deletingAccount
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.modalBtnText}>Excluir permanentemente</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setDeleteModalVisible(false)} disabled={deletingAccount}>
+              <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -325,5 +390,14 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: colors.error, fontWeight: '700', fontSize: typography.fontSizes.md },
   version: { textAlign: 'center', fontSize: typography.fontSizes.sm, color: colors.textLight },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalBox: { backgroundColor: '#fff', borderRadius: 20, padding: 28, width: '100%', alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary, marginBottom: 10 },
+  modalBody: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  modalInput: { width: '100%', borderWidth: 1.5, borderColor: colors.divider, borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 16, color: colors.textPrimary },
+  modalBtnDanger: { backgroundColor: colors.error, borderRadius: 30, paddingVertical: 14, width: '100%', alignItems: 'center', marginBottom: 10 },
+  modalBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  modalBtnCancel: { paddingVertical: 10, width: '100%', alignItems: 'center' },
+  modalBtnCancelText: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
 });
 

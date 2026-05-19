@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Solicite a exclusão dos seus dados pessoais na plataforma JÁ! conforme a Lei Geral de Proteção de Dados (LGPD)." />
+  <title>Exclusão de Dados – JÁ!</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #FF6B00;
+      --primary-light: #FF8C38;
+      --text: #1A1A2E;
+      --text-secondary: #555770;
+      --bg: #F9F9FB;
+      --card-bg: #FFFFFF;
+      --border: #EAEAF0;
+      --radius: 14px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #FF8C38, #FF6B00, #E55A00);
+      padding: 40px 24px 56px;
+      text-align: center;
+      color: #fff;
+    }
+
+    .logo-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 52px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+
+    .logo-mark svg { width: 28px; height: 28px; fill: #fff; }
+
+    header h1 {
+      font-size: clamp(22px, 5vw, 30px);
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+
+    .header-meta { font-size: 13px; opacity: 0.85; margin-top: 6px; }
+
+    /* ── Main container ── */
+    main {
+      max-width: 780px;
+      margin: -28px auto 60px;
+      padding: 0 20px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      box-shadow: 0 2px 20px rgba(0,0,0,0.06);
+      padding: 40px 44px;
+    }
+
+    @media (max-width: 600px) {
+      .card { padding: 28px 22px; }
+    }
+
+    /* ── Intro ── */
+    .intro {
+      background: #FFF8F3;
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin-bottom: 36px;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    .intro strong { color: var(--text); }
+
+    /* ── Sections ── */
+    section { margin-bottom: 40px; }
+    section:last-child { margin-bottom: 0; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .icon-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .icon-badge-orange { background: #FFF0E6; }
+    .icon-badge-gray   { background: #F3F3F7; }
+
+    /* ── Rights grid ── */
+    .rights-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 600px) { .rights-grid { grid-template-columns: 1fr; } }
+
+    .right-item {
+      background: #F9F9FB;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .right-item-icon { font-size: 22px; margin-bottom: 8px; }
+    .right-item h4 { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .right-item p  { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+    /* ── Data table ── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+    .data-table th {
+      background: #F3F3F7;
+      text-align: left;
+      padding: 12px 16px;
+      font-weight: 700;
+      color: var(--text);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .data-table th:first-child { border-radius: 8px 0 0 8px; }
+    .data-table th:last-child  { border-radius: 0 8px 8px 0; }
+
+    .data-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-secondary);
+      vertical-align: top;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table td strong { color: var(--text); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .badge-red   { background: #FFEBEE; color: #C62828; }
+    .badge-blue  { background: #E3F2FD; color: #1565C0; }
+    .badge-green { background: #E8F5E9; color: #2E7D32; }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 20px; }
+
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-family: inherit;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .form-group textarea { resize: vertical; min-height: 100px; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
+
+    .form-note {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+    }
+
+    .btn-submit {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #FF8C38, #FF6B00);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      padding: 14px 36px;
+      border-radius: 30px;
+      font-weight: 700;
+      font-size: 16px;
+      width: 100%;
+      justify-content: center;
+      transition: opacity 0.2s;
+      margin-top: 8px;
+    }
+    .btn-submit:hover { opacity: 0.88; }
+
+    #form-success {
+      display: none;
+      background: #E8F5E9;
+      border: 1px solid #A5D6A7;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      color: #2E7D32;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    #form-error {
+      display: none;
+      background: #FFEBEE;
+      border: 1px solid #FFCDD2;
+      border-radius: 10px;
+      padding: 16px;
+      color: #C62828;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+
+    /* ── Timeline ── */
+    .timeline { display: flex; flex-direction: column; gap: 0; }
+
+    .timeline-item {
+      display: flex;
+      gap: 16px;
+      position: relative;
+    }
+
+    .timeline-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 17px;
+      top: 36px;
+      bottom: -4px;
+      width: 2px;
+      background: var(--border);
+    }
+
+    .timeline-dot {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #FF8C38, #FF6B00);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      z-index: 1;
+    }
+
+    .timeline-content {
+      flex: 1;
+      padding-bottom: 24px;
+    }
+
+    .timeline-content strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 4px; }
+    .timeline-content p { font-size: 14px; color: var(--text-secondary); }
+
+    /* ── Contact alt ── */
+    .contact-alt {
+      background: #F9F9FB;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      text-align: center;
+      margin-top: 24px;
+    }
+    .contact-alt p { font-size: 14px; color: var(--text-secondary); margin-bottom: 12px; }
+    .contact-alt a { color: var(--primary); font-weight: 600; text-decoration: none; }
+    .contact-alt a:hover { text-decoration: underline; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      padding: 28px 20px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--primary); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+  </div>
+  <h1>Exclusão de Dados</h1>
+  <p class="header-meta">Plataforma JÁ! · Seus direitos pela LGPD</p>
+</header>
+
+<main>
+  <div class="card">
+
+    <div class="intro">
+      Em conformidade com a <strong>Lei Geral de Proteção de Dados (LGPD – Lei 13.709/2018)</strong>, você tem o direito de solicitar a exclusão, portabilidade, correção ou acesso aos seus dados pessoais a qualquer momento. Esta página detalha como exercer esses direitos.
+    </div>
+
+    <!-- Seus direitos -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-orange">⚖️</span>
+        Seus direitos pela LGPD
+      </h2>
+      <div class="rights-grid">
+        <div class="right-item">
+          <div class="right-item-icon">🗑️</div>
+          <h4>Exclusão</h4>
+          <p>Solicite a remoção dos seus dados pessoais desnecessários ou tratados sem consentimento.</p>
+        </div>
+        <div class="right-item">
+          <div class="right-item-icon">📋</div>
+          <h4>Acesso</h4>
+          <p>Solicite uma cópia de todos os dados pessoais que armazenamos sobre você.</p>
+        </div>
+        <div class="right-item">
+          <div class="right-item-icon">✏️</div>
+          <h4>Correção</h4>
+          <p>Solicite a atualização de dados incompletos, inexatos ou desatualizados.</p>
+        </div>
+        <div class="right-item">
+          <div class="right-item-icon">🚫</div>
+          <h4>Oposição</h4>
+          <p>Oponha-se ao tratamento de dados realizado sem consentimento ou com base em interesse legítimo.</p>
+        </div>
+        <div class="right-item">
+          <div class="right-item-icon">📦</div>
+          <h4>Portabilidade</h4>
+          <p>Solicite seus dados em formato estruturado para transferência a outro serviço.</p>
+        </div>
+        <div class="right-item">
+          <div class="right-item-icon">ℹ️</div>
+          <h4>Informação</h4>
+          <p>Obtenha informações sobre com quais entidades compartilhamos seus dados.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quais dados tratamos -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-orange">📂</span>
+        Dados pessoais que tratamos
+      </h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Categoria</th>
+            <th>Dados</th>
+            <th>Pode excluir?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Identificação</strong></td>
+            <td>Nome, e-mail, CPF, telefone, foto de perfil</td>
+            <td><span class="badge badge-red">Excluível</span></td>
+          </tr>
+          <tr>
+            <td><strong>Localização</strong></td>
+            <td>Endereço, coordenadas GPS (cache temporário)</td>
+            <td><span class="badge badge-red">Excluível</span></td>
+          </tr>
+          <tr>
+            <td><strong>Serviços</strong></td>
+            <td>Histórico de pedidos, avaliações, conversas</td>
+            <td><span class="badge badge-red">Excluível</span></td>
+          </tr>
+          <tr>
+            <td><strong>Documentos</strong></td>
+            <td>Certificados, documentos enviados por profissionais</td>
+            <td><span class="badge badge-red">Excluível</span></td>
+          </tr>
+          <tr>
+            <td><strong>Financeiro</strong></td>
+            <td>Registros de transações, histórico de pagamentos</td>
+            <td><span class="badge badge-blue">Mantido (legal)</span></td>
+          </tr>
+          <tr>
+            <td><strong>Logs de acesso</strong></td>
+            <td>Registros de autenticação e auditoria</td>
+            <td><span class="badge badge-blue">Mantido (legal)</span></td>
+          </tr>
+          <tr>
+            <td><strong>Estatísticas</strong></td>
+            <td>Dados de uso anonimizados (sem identificação pessoal)</td>
+            <td><span class="badge badge-green">Anônimo</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size:13px;color:var(--text-secondary);margin-top:12px;">
+        * Dados financeiros são mantidos por 5 anos conforme a legislação fiscal (Lei 9.430/96). Logs de acesso são mantidos por 6 meses conforme o Marco Civil da Internet (Lei 12.965/14).
+      </p>
+    </section>
+
+    <!-- Formulário de solicitação -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-orange">📝</span>
+        Enviar solicitação
+      </h2>
+
+      <div id="form-success">
+        ✅ Solicitação recebida! Responderemos em até 15 dias úteis no e-mail informado.
+      </div>
+
+      <form id="deletion-form" novalidate>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="nome">Nome completo *</label>
+            <input type="text" id="nome" name="nome" placeholder="Seu nome" required />
+          </div>
+          <div class="form-group">
+            <label for="email">E-mail cadastrado *</label>
+            <input type="email" id="email" name="email" placeholder="email@exemplo.com" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="tipo">Tipo de solicitação *</label>
+          <select id="tipo" name="tipo" required>
+            <option value="">Selecione...</option>
+            <option value="exclusao-total">Exclusão completa de dados (encerra a conta)</option>
+            <option value="exclusao-parcial">Exclusão de dados específicos (mantém a conta)</option>
+            <option value="acesso">Acesso a cópia dos meus dados</option>
+            <option value="correcao">Correção de dados incorretos</option>
+            <option value="portabilidade">Portabilidade dos dados</option>
+            <option value="oposicao">Oposição ao tratamento</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="descricao">Descrição da solicitação *</label>
+          <textarea id="descricao" name="descricao" placeholder="Descreva com detalhes o que você deseja. Ex: quais dados específicos quer excluir, o motivo, etc." required></textarea>
+          <p class="form-note">Quanto mais detalhada a descrição, mais rápida será a resposta.</p>
+        </div>
+
+        <div id="form-error"></div>
+
+        <button type="submit" class="btn-submit">
+          📨 Enviar solicitação
+        </button>
+      </form>
+
+      <div class="contact-alt">
+        <p>Prefere enviar por e-mail diretamente? Escreva com o assunto <strong>"Solicitação LGPD"</strong> para:</p>
+        <a href="mailto:suporte@app-ja.com.br?subject=Solicita%C3%A7%C3%A3o%20LGPD">suporte@app-ja.com.br</a>
+      </div>
+    </section>
+
+    <!-- Prazo de resposta -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-gray">⏱️</span>
+        Prazo de resposta
+      </h2>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-dot">1</div>
+          <div class="timeline-content">
+            <strong>Confirmação imediata</strong>
+            <p>Você recebe uma confirmação automática de recebimento da solicitação.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">2</div>
+          <div class="timeline-content">
+            <strong>Análise em até 15 dias úteis</strong>
+            <p>Nossa equipe analisa e processa a solicitação conforme previsto na LGPD (Art. 19). Casos complexos podem levar até 30 dias.</p>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot">3</div>
+          <div class="timeline-content">
+            <strong>Execução e confirmação</strong>
+            <p>Você recebe a confirmação da ação realizada e, se aplicável, a cópia dos dados solicitados.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DPO / Contato -->
+    <section>
+      <h2 class="section-title">
+        <span class="icon-badge icon-badge-gray">🔗</span>
+        Veja também
+      </h2>
+      <p style="font-size:15px;color:var(--text-secondary);">
+        Para excluir toda a sua conta e todos os dados associados, acesse a página
+        <a href="/excluir-conta" style="color:var(--primary);font-weight:600;">Excluir Conta</a>.
+        Para entender como tratamos seus dados, consulte a
+        <a href="/politica-de-privacidade" style="color:var(--primary);font-weight:600;">Política de Privacidade</a>.
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <p>© 2024 JÁ! Serviços · <a href="/politica-de-privacidade">Política de Privacidade</a> · <a href="/excluir-conta">Excluir Conta</a></p>
+  <p style="margin-top:6px;">Encarregado de Dados (DPO): <a href="mailto:suporte@app-ja.com.br">suporte@app-ja.com.br</a></p>
+</footer>
+
+<script>
+  const form = document.getElementById('deletion-form');
+  const successBox = document.getElementById('form-success');
+  const errorBox = document.getElementById('form-error');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+
+    const nome      = document.getElementById('nome').value.trim();
+    const email     = document.getElementById('email').value.trim();
+    const tipo      = document.getElementById('tipo').value;
+    const descricao = document.getElementById('descricao').value.trim();
+
+    if (!nome || !email || !tipo || !descricao) {
+      errorBox.textContent = 'Por favor, preencha todos os campos obrigatórios.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errorBox.textContent = 'Informe um e-mail válido.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    const btn = form.querySelector('.btn-submit');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    try {
+      const res = await fetch('/api/lgpd/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome, email, tipo, descricao }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Erro ao enviar solicitação.');
+      }
+
+      form.style.display = 'none';
+      successBox.style.display = 'block';
+    } catch (err) {
+      errorBox.textContent = err.message || 'Não foi possível enviar. Tente novamente ou envie por e-mail.';
+      errorBox.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '📨 Enviar solicitação';
+    }
+  });
+</script>
+
+</body>
+</html>
