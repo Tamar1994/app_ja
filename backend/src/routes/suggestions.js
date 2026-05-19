@@ -93,13 +93,23 @@ Solicitação do usuário: "${userPrompt}"`;
 
     const rawText = await callGemini(geminiPrompt);
 
-    // Limpar possíveis blocos de código markdown
-    const cleaned = rawText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    // Extrair o objeto JSON da resposta — o Gemini às vezes adiciona texto
+    // antes/depois ou retorna blocos de código markdown.
+    console.log('[suggest-service] resposta Gemini (200 chars):', rawText.slice(0, 200));
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
 
     let parsed;
+    if (!jsonMatch) {
+      console.error('[suggest-service] JSON não encontrado na resposta:', rawText);
+      return res.json({
+        matched: false,
+        message: 'Não conseguimos interpretar a solicitação. Tente descrever de outra forma.',
+      });
+    }
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(jsonMatch[0]);
     } catch {
+      console.error('[suggest-service] falha ao parsear JSON:', jsonMatch[0]);
       return res.json({
         matched: false,
         message: 'Não conseguimos interpretar a solicitação. Tente descrever de outra forma.',
