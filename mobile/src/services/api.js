@@ -47,6 +47,8 @@ export const requestAPI = {
     api.post('/requests/estimate', { serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate }),
   checkCoverage: (city, state = '') =>
     api.get('/requests/coverage', { params: { city, state } }),
+  registerInterest: (data) =>
+    api.post('/coverage/interest', data),
   create: (data) => api.post('/requests', data),
   list: (scope = null) => api.get(`/requests${scope ? `?scope=${scope}` : ''}`),
   getById: (id) => api.get(`/requests/${id}`),

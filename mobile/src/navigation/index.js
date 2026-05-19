@@ -8,10 +8,12 @@ import {
   Modal, Image, Dimensions, SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
-import { bannerAPI } from '../services/api';
+import { bannerAPI, requestAPI } from '../services/api';
 
 import AuthNavigator from './AuthNavigator';
 import ClientNavigator from './ClientNavigator';
@@ -20,6 +22,7 @@ import DocumentUploadScreen from '../screens/auth/DocumentUploadScreen';
 import PendingApprovalScreen from '../screens/auth/PendingApprovalScreen';
 import AcceptTermsScreen from '../screens/auth/AcceptTermsScreen';
 import ProfessionalAddressScreen from '../screens/auth/ProfessionalAddressScreen';
+import RegionUnavailableScreen from '../screens/auth/RegionUnavailableScreen';
 
 const Stack = createNativeStackNavigator();
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -34,6 +37,89 @@ export default function RootNavigator() {
   const [activeBanner, setActiveBanner] = useState(null);
   const [bannerVisible, setBannerVisible] = useState(false);
   const bannerFetchedForUser = useRef(null);
+
+  // ── Verificação de cobertura regional ──────────────────────────────
+  // 'checking' enquanto obtém localização | 'ok' = cidade atendida | 'blocked' = não atendida
+  const [regionState, setRegionState]   = useState('checking');
+  const [blockedCity, setBlockedCity]   = useState('');
+  const [blockedStateUF, setBlockedStateUF] = useState('');
+  const [blockedCoords, setBlockedCoords]   = useState(null);
+
+  useEffect(() => {
+    checkRegionCoverage();
+  }, []);
+
+  const CACHE_KEY = '@regionCheck_v1';
+  const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 horas
+
+  const checkRegionCoverage = async () => {
+    try {
+      // 1. Verifica cache local (evita checar a cada abertura)
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { result, city, stateUF, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_TTL) {
+          setBlockedCity(city || '');
+          setBlockedStateUF(stateUF || '');
+          setRegionState(result); // 'ok' ou 'blocked'
+          return;
+        }
+      }
+
+      // 2. Solicita permissão de localização
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        // Sem permissão → não bloqueia (verificação ocorre no endereço depois)
+        setRegionState('ok');
+        return;
+      }
+
+      // 3. Obtém posição atual (precisão de cidade é suficiente)
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const { latitude, longitude } = position.coords;
+
+      // 4. Geocodificação reversa para obter cidade/estado
+      const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const city     = geocode?.city || geocode?.subregion || '';
+      const stateUF  = geocode?.region || '';
+
+      if (!city) {
+        // Sem cidade identificável → não bloqueia
+        setRegionState('ok');
+        return;
+      }
+
+      // 5. Verifica cobertura no backend
+      const { data } = await requestAPI.checkCoverage(city, stateUF);
+      const result = data.covered ? 'ok' : 'blocked';
+
+      setBlockedCity(city);
+      setBlockedStateUF(stateUF);
+      if (result === 'blocked') setBlockedCoords([longitude, latitude]);
+
+      // 6. Persiste cache
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({
+        result, city, stateUF, timestamp: Date.now(),
+      }));
+
+      // 7. Se não atendida, registra interesse anonimamente (sem e-mail)
+      if (result === 'blocked') {
+        requestAPI.registerInterest({
+          city,
+          state: stateUF,
+          coordinates: [longitude, latitude],
+        }).catch(() => {});
+      }
+
+      setRegionState(result);
+    } catch {
+      // Qualquer erro (sem rede, timeout, etc.) → não bloqueia
+      setRegionState('ok');
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────
 
   // Fetch active banner once per authenticated session per user
   useEffect(() => {
@@ -51,7 +137,7 @@ export default function RootNavigator() {
       .catch(() => {});
   }, [user?._id]);
 
-  if (loading) {
+  if (loading || regionState === 'checking') {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary }}>
         <ActivityIndicator size="large" color={colors.white} />
@@ -70,6 +156,16 @@ export default function RootNavigator() {
           <Text style={styles.retryText}>Tentar novamente</Text>
         </TouchableOpacity>
       </View>
+    );
+  }
+
+  if (regionState === 'blocked') {
+    return (
+      <RegionUnavailableScreen
+        city={blockedCity}
+        state={blockedStateUF}
+        coordinates={blockedCoords}
+      />
     );
   }
 

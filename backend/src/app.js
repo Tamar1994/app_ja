@@ -19,6 +19,7 @@ const specialistCertificatesRoutes = require('./routes/specialistCertificates');
 const bannerRoutes = require('./routes/banners');
 const TermsOfUse = require('./models/TermsOfUse');
 const Waitlist = require('./models/Waitlist');
+const RegionInterest = require('./models/RegionInterest');
 
 const app = express();
 
@@ -93,6 +94,38 @@ app.post('/api/landing/waitlist', express.json(), async (req, res) => {
     return res.status(500).json({ message: 'Erro ao salvar cadastro' });
   }
   res.json({ ok: true });
+});
+
+// Interesse de cobertura regional — salva cidades não atendidas para comunicações futuras
+app.post('/api/coverage/interest', express.json(), async (req, res) => {
+  const { city, state, coordinates, email } = req.body || {};
+  const cleanEmail = email ? String(email).trim().toLowerCase() : null;
+  const cleanCity  = String(city  || '').trim();
+  const cleanState = String(state || '').trim();
+  const cleanCoords = Array.isArray(coordinates) ? coordinates : null;
+
+  try {
+    if (cleanEmail && cleanEmail.includes('@')) {
+      // Upsert: se o e-mail já existe, atualiza a cidade; se não, cria
+      await RegionInterest.findOneAndUpdate(
+        { email: cleanEmail },
+        { $set: { city: cleanCity, state: cleanState, coordinates: cleanCoords, source: 'app' } },
+        { upsert: true, new: true }
+      );
+    } else {
+      // Sem e-mail: registra anonimamente para contar demanda por cidade
+      await RegionInterest.create({
+        city: cleanCity,
+        state: cleanState,
+        coordinates: cleanCoords,
+        source: 'app',
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[COVERAGE INTEREST]', err.message);
+    res.status(500).json({ message: 'Erro ao registrar interesse' });
+  }
 });
 
 // Health check
