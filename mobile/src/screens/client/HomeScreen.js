@@ -2,17 +2,26 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions, Image,
+  Modal, TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceTypeAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { suggestServiceType } from '../../services/serviceSuggestion';
 
 
 const { width } = Dimensions.get('window');
 const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
+
+function buildImageUrl(path) {
+  if (!path) return null;
+  if (String(path).startsWith('http://') || String(path).startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
 
 const STATUS_LABELS = {
   searching: 'Buscando profissional...',
@@ -47,10 +56,16 @@ const STATUS_ICONS = {
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
   const { on } = useSocket();
+  const insets = useSafeAreaInsets();
   const [activeRequest, setActiveRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [serviceTypes, setServiceTypes] = useState([]);
+  const [smartSearchVisible, setSmartSearchVisible] = useState(false);
+  const [smartPrompt, setSmartPrompt] = useState('');
+  const [smartLoading, setSmartLoading] = useState(false);
+  const [smartSuggestion, setSmartSuggestion] = useState(null);
+  const [smartError, setSmartError] = useState('');
   const pollRef = useRef(null);
 
   const loadActiveRequest = async () => {
@@ -110,7 +125,49 @@ export default function HomeScreen({ navigation }) {
 
   const onRefresh = () => { setRefreshing(true); loadActiveRequest(); loadServiceTypes(); };
 
-  const firstName = user.name.split(' ')[0];
+  const firstName = user?.name?.split(' ')[0] || 'Olá';
+
+  const enabledServiceTypes = serviceTypes.filter((st) => st.status === 'enabled');
+
+  const openSmartSearch = () => {
+    setSmartPrompt('');
+    setSmartSuggestion(null);
+    setSmartError('');
+    setSmartSearchVisible(true);
+  };
+
+  const runSmartSuggestion = async () => {
+    if (!smartPrompt.trim()) {
+      setSmartError('Digite o que você precisa.');
+      return;
+    }
+
+    if (!enabledServiceTypes.length) {
+      setSmartError('Nenhum serviço disponível no momento.');
+      return;
+    }
+
+    setSmartLoading(true);
+    setSmartError('');
+    try {
+      const result = await suggestServiceType(smartPrompt, enabledServiceTypes);
+      setSmartSuggestion(result);
+    } catch {
+      setSmartError('Não foi possível sugerir um serviço agora.');
+    } finally {
+      setSmartLoading(false);
+    }
+  };
+
+  const acceptSuggestion = () => {
+    const serviceType = smartSuggestion?.serviceType;
+    if (!serviceType?.slug) return;
+    setSmartSearchVisible(false);
+    navigation.navigate('RequestService', {
+      serviceType,
+      initialNotes: smartPrompt,
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -119,19 +176,23 @@ export default function HomeScreen({ navigation }) {
       {/* Header com gradiente */}
       <LinearGradient
         colors={['#FF8C38', '#FF6B00', '#E55A00']}
-        style={styles.header}
+        style={[styles.header, { paddingTop: insets.top + spacing.sm }]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.headerTop}>
-          <View>
+          <View style={styles.headerTextBlock}>
             <Text style={styles.greeting}>Olá, {firstName}! 👋</Text>
             <Text style={styles.headerSub}>O que você precisa hoje?</Text>
           </View>
-          <TouchableOpacity style={styles.avatarBtn} onPress={() => navigation.navigate('ProfileTab')}>
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>{user.name[0].toUpperCase()}</Text>
-            </View>
+          <TouchableOpacity style={styles.avatarBtn} onPress={() => navigation.navigate('ProfileTab')} activeOpacity={0.85}>
+            {user?.avatar ? (
+              <Image source={{ uri: buildImageUrl(user.avatar) }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase() || '?'}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -139,7 +200,7 @@ export default function HomeScreen({ navigation }) {
         {!activeRequest && !loading && (
           <TouchableOpacity
             style={styles.headerSearchBtn}
-            onPress={() => navigation.navigate('RequestService')}
+            onPress={openSmartSearch}
             activeOpacity={0.9}
           >
             <Ionicons name="search-outline" size={18} color={colors.textLight} />
@@ -283,6 +344,62 @@ export default function HomeScreen({ navigation }) {
         </View>
       </ScrollView>
 
+      <Modal
+        visible={smartSearchVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSmartSearchVisible(false)}
+      >
+        <View style={styles.smartBackdrop}>
+          <View style={styles.smartCard}>
+            <View style={styles.smartHandle} />
+            <Text style={styles.smartTitle}>O que você precisa hoje?</Text>
+            <Text style={styles.smartSubtitle}>Digite em linguagem natural e eu sugiro o serviço ideal.</Text>
+
+            <TextInput
+              value={smartPrompt}
+              onChangeText={setSmartPrompt}
+              placeholder="Ex: preciso limpar a casa e passar roupa"
+              placeholderTextColor={colors.textLight}
+              style={styles.smartInput}
+              multiline
+            />
+
+            {smartError ? <Text style={styles.smartError}>{smartError}</Text> : null}
+
+            <TouchableOpacity style={styles.smartActionBtn} onPress={runSmartSuggestion} activeOpacity={0.9}>
+              <LinearGradient colors={colors.gradientPrimary} style={styles.smartActionGradient}>
+                {smartLoading ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.smartActionText}>Sugerir serviço</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {smartSuggestion?.serviceType ? (
+              <TouchableOpacity style={styles.smartSuggestionCard} onPress={acceptSuggestion} activeOpacity={0.85}>
+                <View style={styles.smartSuggestionTop}>
+                  <View>
+                    <Text style={styles.smartSuggestionLabel}>Sugestão da IA</Text>
+                    <Text style={styles.smartSuggestionTitle}>{smartSuggestion.serviceType.name}</Text>
+                  </View>
+                  <View style={styles.smartSuggestionPill}>
+                    <Text style={styles.smartSuggestionPillText}>{Math.round((smartSuggestion.confidence || 0.5) * 100)}%</Text>
+                  </View>
+                </View>
+                <Text style={styles.smartSuggestionText}>{smartSuggestion.explanation}</Text>
+                <Text style={styles.smartSuggestionCta}>Agendar {smartSuggestion.serviceType.name}</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity style={styles.smartCloseBtn} onPress={() => setSmartSearchVisible(false)}>
+              <Text style={styles.smartCloseText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -291,7 +408,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
     paddingBottom: spacing.xl,
   },
   headerTop: {
@@ -308,6 +424,7 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontSize: typography.fontSizes.sm, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   avatarBtn: {},
+  headerTextBlock: { flex: 1, paddingRight: spacing.md },
   avatarPlaceholder: {
     width: 46,
     height: 46,
@@ -317,6 +434,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.4)',
+  },
+  avatarImage: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   avatarText: { color: colors.white, fontSize: typography.fontSizes.lg, fontWeight: '700' },
   headerSearchBtn: {
@@ -421,6 +546,70 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...shadows.sm,
   },
+  smartBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  smartCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 10,
+    paddingBottom: 24,
+    ...shadows.lg,
+  },
+  smartHandle: {
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
+  smartTitle: { fontSize: typography.fontSizes.xl, fontWeight: '800', color: colors.textPrimary },
+  smartSubtitle: { fontSize: typography.fontSizes.sm, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.md },
+  smartInput: {
+    minHeight: 92,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    color: colors.textPrimary,
+    textAlignVertical: 'top',
+    backgroundColor: colors.background,
+  },
+  smartError: { color: colors.error, fontSize: typography.fontSizes.sm, marginTop: 8 },
+  smartActionBtn: { marginTop: spacing.md, borderRadius: borderRadius.full, overflow: 'hidden' },
+  smartActionGradient: { paddingVertical: 14, alignItems: 'center' },
+  smartActionText: { color: colors.white, fontSize: typography.fontSizes.md, fontWeight: '700' },
+  smartSuggestionCard: {
+    marginTop: spacing.md,
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: `${colors.primary}20`,
+    backgroundColor: `${colors.primary}08`,
+  },
+  smartSuggestionTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  smartSuggestionLabel: { fontSize: typography.fontSizes.xs, color: colors.textLight, textTransform: 'uppercase', fontWeight: '700' },
+  smartSuggestionTitle: { fontSize: typography.fontSizes.lg, fontWeight: '800', color: colors.textPrimary, marginTop: 2 },
+  smartSuggestionPill: {
+    backgroundColor: `${colors.primary}12`,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  smartSuggestionPillText: { color: colors.primary, fontWeight: '800', fontSize: 12 },
+  smartSuggestionText: { color: colors.textSecondary, marginTop: 8, lineHeight: 20 },
+  smartSuggestionCta: { marginTop: 10, color: colors.primary, fontWeight: '800' },
+  smartCloseBtn: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: spacing.sm,
+  },
+  smartCloseText: { color: colors.textSecondary, fontWeight: '600' },
   howIcon: {
     width: 48,
     height: 48,

@@ -39,13 +39,14 @@ function getTomorrow() {
 
 export default function RequestServiceScreen({ navigation, route }) {
   const serviceType = route?.params?.serviceType || null;
+  const initialNotes = String(route?.params?.initialNotes || '').trim();
   const priceTiers = Array.isArray(serviceType?.priceTiers) ? serviceType.priceTiers : [];
   const upsellOptions = Array.isArray(serviceType?.upsells) ? serviceType.upsells : [];
 
   const [step, setStep] = useState(1);
   const [selectedTier, setSelectedTier] = useState(priceTiers[0] || null);
   const [selectedUpsellKeys, setSelectedUpsellKeys] = useState([]);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(initialNotes);
   const [scheduleMode, setScheduleMode] = useState('now');
   const [scheduledDate, setScheduledDate] = useState(getTomorrow());
   const [selectedTime, setSelectedTime] = useState('08:00');
