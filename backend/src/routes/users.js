@@ -5,6 +5,8 @@ const Review = require('../models/Review');
 
 const router = express.Router();
 
+const isProfessionalProfile = (user) => user?.activeProfile === 'professional' || user?.userType === 'professional';
+
 // GET /api/users/me — perfil do usuário logado
 router.get('/me', auth, async (req, res) => {
   // req.user vem do middleware auth — mas pode não ter os novos campos (professionalAddress, selfieUrl, etc.)
@@ -145,7 +147,7 @@ router.patch('/me/location', auth, async (req, res) => {
 
 // PATCH /api/users/me/availability — profissional liga/desliga disponibilidade
 router.patch('/me/availability', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem alterar disponibilidade' });
   }
 
