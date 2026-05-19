@@ -378,6 +378,10 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='coverage-cities'?'active':''}" onclick="navTo('coverage-cities')">
             <span class="icon">🗺️</span> Cidades Atendidas
           </div>` : ''}
+          ${hasPermission(PERMISSIONS.ACCESS_MANAGEMENT) || hasPermission(PERMISSIONS.SERVICE_MANAGEMENT) ? `
+          <div class="nav-item ${currentPage==='registro'?'active':''}" onclick="navTo('registro')">
+            <span class="icon">🚪</span> Controle de Cadastros
+          </div>` : ''}
           ${hasPermission(PERMISSIONS.ACCESS_MANAGEMENT) ? `
           <div class="nav-item ${currentPage==='admins'?'active':''}" onclick="navTo('admins')">
             <span class="icon">🛡️</span> Equipe Admin
@@ -442,6 +446,7 @@ const navTo = (page) => {
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
     push: [PERMISSIONS.USER_MANAGEMENT],
+    registro: [PERMISSIONS.SERVICE_MANAGEMENT, PERMISSIONS.ACCESS_MANAGEMENT],
   };
   const required = pagePermissionMap[page] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
@@ -471,6 +476,7 @@ const navTo = (page) => {
     'pause-types': 'Tipos de Pausa',
     admins: 'Equipe Admin',
     push: 'Campanhas Push',
+    registro: 'Controle de Cadastros',
   }[page] || page;
   renderPage();
 };
@@ -493,12 +499,13 @@ const renderPage = () => {
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
     push: [PERMISSIONS.USER_MANAGEMENT],
+    registro: [PERMISSIONS.SERVICE_MANAGEMENT, PERMISSIONS.ACCESS_MANAGEMENT],
   };
   const required = pagePermissionMap[currentPage] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns };
+  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns, registro: renderRegistroConfig };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -4749,6 +4756,83 @@ const sendPushCampaign = async () => {
   } finally {
     sendBtn.disabled = false;
     sendBtn.textContent = '📤 Enviar Campanha';
+  }
+};
+
+// ── CONTROLE DE CADASTROS ──────────────────────────────────────────
+const renderRegistroConfig = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', '/app-config');
+    const isSuperAdmin = adminData?.role === 'super_admin';
+    const renderCard = (flag, title, icon, desc, color) => {
+      const active = !!data[flag];
+      const activeColor = color || '#22C55E';
+      return `
+      <div style="flex:1;min-width:260px;border:2px solid ${active ? activeColor : 'rgba(255,255,255,0.12)'};border-radius:16px;padding:28px;background:${active ? `rgba(${color === '#FF6B00' ? '255,107,0' : '34,197,94'},0.08)` : 'rgba(255,255,255,0.04)'};transition:all .2s;">
+        <div style="font-size:36px;margin-bottom:12px;">${icon}</div>
+        <div style="font-weight:700;font-size:17px;color:${active ? '#EDF0FF' : '#8C97BC'};margin-bottom:6px;">${title}</div>
+        <div style="font-size:13px;color:#8C97BC;margin-bottom:20px;line-height:1.5;">${desc}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <span style="font-size:13px;font-weight:600;color:${active ? activeColor : '#8C97BC'};">${active ? '● ATIVO' : '○ DESATIVADO'}</span>
+          ${isSuperAdmin ? `
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="toggle-${flag}" ${active ? 'checked' : ''} style="display:none;" onchange="toggleRegistroFlag('${flag}', this.checked)" />
+            <div onclick="document.getElementById('toggle-${flag}').click()" style="width:48px;height:26px;border-radius:13px;background:${active ? activeColor : 'rgba(255,255,255,0.15)'};position:relative;cursor:pointer;transition:background .2s;">
+              <div style="position:absolute;top:3px;${active ? 'right:3px' : 'left:3px'};width:20px;height:20px;border-radius:50%;background:#fff;transition:all .2s;"></div>
+            </div>
+          </label>` : `<span style="font-size:12px;color:#8C97BC;font-style:italic;">Somente super_admin</span>`}
+        </div>
+      </div>`;
+    };
+
+    c.innerHTML = `
+      <div class="card" style="max-width:700px;">
+        <h3 style="margin:0 0 6px;font-size:18px;color:#EDF0FF;">🚪 Flags de Abertura de Cadastro</h3>
+        <p style="color:#8C97BC;margin:0 0 28px;font-size:14px;line-height:1.6;">
+          Controla quais tipos de conta podem ser criados no aplicativo.<br>
+          <strong style="color:#FF8C38;">Use para lançar profissionais antes dos clientes.</strong>
+          Somente super_admin pode alterar estas flags.
+        </p>
+
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:24px;">
+          ${renderCard('allowProfessionalRegistration', 'Cadastro de Profissionais', '🔧',
+            'Profissionais podem criar conta no app, enviar documentos e aguardar aprovação.', '#FF8C38')}
+          ${renderCard('allowClientRegistration', 'Cadastro de Clientes', '🏠',
+            'Clientes podem criar conta no app, verificar identidade e solicitar serviços.', '#22C55E')}
+        </div>
+
+        <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:16px 20px;">
+          <div style="font-size:13px;font-weight:600;color:#8C97BC;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.6px;">Como funciona no app</div>
+          <ul style="margin:0;padding-left:18px;color:#8C97BC;font-size:13px;line-height:1.9;">
+            <li><strong style="color:#EDF0FF;">Ambos ativos</strong> → exibe botões "Cliente" e "Profissional" no cadastro</li>
+            <li><strong style="color:#EDF0FF;">Só profissional ativo</strong> → exibe apenas o botão "Profissional"</li>
+            <li><strong style="color:#EDF0FF;">Só cliente ativo</strong> → exibe apenas o botão "Cliente"</li>
+            <li><strong style="color:#EDF0FF;">Ambos desativados</strong> → exibe mensagem de "em breve" e oculta o formulário</li>
+          </ul>
+        </div>
+
+        ${data.updatedBy ? `
+        <div style="margin-top:16px;font-size:12px;color:#8C97BC;border-top:1px solid rgba(255,255,255,0.07);padding-top:12px;">
+          Última alteração por <strong>${escHtml(data.updatedBy)}</strong>
+          ${data.updatedAt ? ' em ' + new Date(data.updatedAt).toLocaleString('pt-BR') : ''}
+        </div>` : ''}
+      </div>`;
+  } catch (err) {
+    document.getElementById('page-content').innerHTML =
+      `<div style="color:#EF4444;padding:24px;">Erro ao carregar configuração: ${escHtml(err.message)}</div>`;
+  }
+};
+
+const toggleRegistroFlag = async (flag, value) => {
+  try {
+    await req('PATCH', '/app-config', { [flag]: value });
+    showAlert(value ? 'Cadastro habilitado!' : 'Cadastro desabilitado!', 'success');
+    renderRegistroConfig();
+  } catch (err) {
+    showAlert('Erro: ' + err.message);
+    renderRegistroConfig(); // revert UI
   }
 };
 

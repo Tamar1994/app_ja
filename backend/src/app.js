@@ -21,6 +21,7 @@ const suggestionsRoutes = require('./routes/suggestions');
 const TermsOfUse = require('./models/TermsOfUse');
 const Waitlist = require('./models/Waitlist');
 const RegionInterest = require('./models/RegionInterest');
+const AppConfig = require('./models/AppConfig');
 
 const app = express();
 
@@ -127,6 +128,20 @@ app.post('/api/coverage/interest', express.json(), async (req, res) => {
   } catch (err) {
     console.error('[COVERAGE INTEREST]', err.message);
     res.status(500).json({ message: 'Erro ao registrar interesse' });
+  }
+});
+
+// Configuração de cadastros — público (lido pelo app na tela de registro)
+app.get('/api/app-config', async (req, res) => {
+  try {
+    const config = await AppConfig.getSingleton();
+    res.json({
+      allowClientRegistration:       config.allowClientRegistration,
+      allowProfessionalRegistration: config.allowProfessionalRegistration,
+    });
+  } catch {
+    // Fallback seguro: libera ambos os tipos caso o banco esteja indisponível
+    res.json({ allowClientRegistration: true, allowProfessionalRegistration: true });
   }
 });
 

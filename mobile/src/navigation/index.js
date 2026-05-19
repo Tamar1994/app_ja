@@ -91,9 +91,18 @@ export default function RootNavigator() {
         return;
       }
 
-      // 5. Verifica cobertura no backend
-      const { data } = await requestAPI.checkCoverage(city, stateUF);
-      const result = data.covered ? 'ok' : 'blocked';
+      // 5. Verifica cobertura no backend (com retry para cold start do servidor)
+      let coverageData;
+      try {
+        const res = await requestAPI.checkCoverage(city, stateUF);
+        coverageData = res.data;
+      } catch {
+        // Retry único após 4 s — trata cold start do Render.com na primeira abertura
+        await new Promise(r => setTimeout(r, 4000));
+        const res = await requestAPI.checkCoverage(city, stateUF);
+        coverageData = res.data;
+      }
+      const result = coverageData.covered ? 'ok' : 'blocked';
 
       setBlockedCity(city);
       setBlockedStateUF(stateUF);

@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Animated, TextInput,
   TouchableOpacity, Alert, KeyboardAvoidingView,
-  Platform, StatusBar, ScrollView,
+  Platform, StatusBar, ScrollView, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -88,10 +88,12 @@ export default function RegionUnavailableScreen({ city, state, coordinates }) {
               </LinearGradient>
             </Animated.View>
 
-            {/* Logo / Badge */}
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>JÁ!</Text>
-            </View>
+            {/* Logo */}
+            <Image
+              source={require('../../../assets/logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
 
             {/* Textos principais */}
             <Text style={styles.title}>
@@ -230,18 +232,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,107,0,0.2)',
   },
-  badge: {
-    backgroundColor: '#FF6B00',
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    borderRadius: 20,
+  logo: {
+    width: 110,
+    height: 44,
     marginBottom: 24,
-  },
-  badgeText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 16,
-    letterSpacing: 2,
   },
   title: {
     fontSize: 26,

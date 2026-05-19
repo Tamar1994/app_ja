@@ -26,6 +26,11 @@ export default function RegisterScreen({ navigation }) {
   const [serviceTypes, setServiceTypes] = useState([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [selectedProfessions, setSelectedProfessions] = useState([]);
+  const [regConfig, setRegConfig] = useState({
+    allowClientRegistration: true,
+    allowProfessionalRegistration: true,
+    loading: true,
+  });
 
   const toggleProfession = (id) => {
     setSelectedProfessions((prev) =>
@@ -40,6 +45,21 @@ export default function RegisterScreen({ navigation }) {
       .then(data => setServiceTypes(data.serviceTypes || []))
       .catch(() => {})
       .finally(() => setLoadingTypes(false));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${BASE_URL}/app-config`)
+      .then(r => r.json())
+      .then(cfg => {
+        setRegConfig({ ...cfg, loading: false });
+        // Auto-seleciona o tipo disponível quando apenas um está liberado
+        if (!cfg.allowClientRegistration && cfg.allowProfessionalRegistration) {
+          setUserType('professional');
+        } else if (cfg.allowClientRegistration && !cfg.allowProfessionalRegistration) {
+          setUserType('client');
+        }
+      })
+      .catch(() => setRegConfig({ allowClientRegistration: true, allowProfessionalRegistration: true, loading: false }));
   }, []);
 
   const maskCPF = (v) => {
@@ -142,44 +162,67 @@ export default function RegisterScreen({ navigation }) {
           <View style={styles.card}>
             {/* Seletor de tipo */}
             <Text style={styles.sectionLabel}>Como vai usar o Já!?</Text>
-            <View style={styles.typeSelector}>
-              <TouchableOpacity
-                style={[styles.typeBtn, userType === 'client' && styles.typeBtnActive]}
-                onPress={() => setUserType('client')}
-                activeOpacity={0.8}
-              >
-                {userType === 'client' ? (
-                  <LinearGradient colors={colors.gradientPrimary} style={styles.typeGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Ionicons name="home" size={20} color={colors.white} />
-                    <Text style={[styles.typeBtnText, styles.typeBtnTextActive]}>Cliente</Text>
-                  </LinearGradient>
-                ) : (
-                  <View style={styles.typeInner}>
-                    <Ionicons name="home-outline" size={20} color={colors.textSecondary} />
-                    <Text style={styles.typeBtnText}>Cliente</Text>
-                  </View>
+
+            {regConfig.loading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginBottom: spacing.xl }} />
+            ) : !regConfig.allowClientRegistration && !regConfig.allowProfessionalRegistration ? (
+              /* Ambos desativados — mostra aviso "em breve" */
+              <View style={styles.comingSoonCard}>
+                <Ionicons name="time-outline" size={40} color={colors.primary} style={{ marginBottom: 12 }} />
+                <Text style={styles.comingSoonTitle}>Cadastros em breve!</Text>
+                <Text style={styles.comingSoonText}>
+                  Ainda não estamos realizando cadastros na plataforma.{'\n'}
+                  Em breve iremos disponibilizar — mantenha-se informado!
+                </Text>
+              </View>
+            ) : (
+              /* Exibe apenas os tipos permitidos */
+              <View style={styles.typeSelector}>
+                {regConfig.allowClientRegistration && (
+                  <TouchableOpacity
+                    style={[styles.typeBtn, userType === 'client' && styles.typeBtnActive]}
+                    onPress={() => setUserType('client')}
+                    activeOpacity={0.8}
+                  >
+                    {userType === 'client' ? (
+                      <LinearGradient colors={colors.gradientPrimary} style={styles.typeGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                        <Ionicons name="home" size={20} color={colors.white} />
+                        <Text style={[styles.typeBtnText, styles.typeBtnTextActive]}>Cliente</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.typeInner}>
+                        <Ionicons name="home-outline" size={20} color={colors.textSecondary} />
+                        <Text style={styles.typeBtnText}>Cliente</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeBtn, userType === 'professional' && styles.typeBtnActivePro]}
-                onPress={() => setUserType('professional')}
-                activeOpacity={0.8}
-              >
-                {userType === 'professional' ? (
-                  <LinearGradient colors={colors.gradientSecondary} style={styles.typeGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Ionicons name="briefcase" size={20} color={colors.white} />
-                    <Text style={[styles.typeBtnText, styles.typeBtnTextActive]}>Profissional</Text>
-                  </LinearGradient>
-                ) : (
-                  <View style={styles.typeInner}>
-                    <Ionicons name="briefcase-outline" size={20} color={colors.textSecondary} />
-                    <Text style={styles.typeBtnText}>Profissional</Text>
-                  </View>
+                {regConfig.allowProfessionalRegistration && (
+                  <TouchableOpacity
+                    style={[styles.typeBtn, userType === 'professional' && styles.typeBtnActivePro]}
+                    onPress={() => setUserType('professional')}
+                    activeOpacity={0.8}
+                  >
+                    {userType === 'professional' ? (
+                      <LinearGradient colors={colors.gradientSecondary} style={styles.typeGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                        <Ionicons name="briefcase" size={20} color={colors.white} />
+                        <Text style={[styles.typeBtnText, styles.typeBtnTextActive]}>Profissional</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.typeInner}>
+                        <Ionicons name="briefcase-outline" size={20} color={colors.textSecondary} />
+                        <Text style={styles.typeBtnText}>Profissional</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
 
             <View style={styles.form}>
+              {/* Oculta o formulário inteiro quando os cadastros estão desativados */}
+              {(!regConfig.loading && !regConfig.allowClientRegistration && !regConfig.allowProfessionalRegistration) ? null : (
+              <>
               {fields.map((field) => (
                 <View key={field.key} style={styles.inputGroup}>
                   <Text style={styles.label}>{field.label}</Text>
@@ -334,6 +377,8 @@ export default function RegisterScreen({ navigation }) {
                     : <Text style={styles.btnPrimaryText}>Criar minha conta</Text>}
                 </LinearGradient>
               </TouchableOpacity>
+            </> 
+            )}
             </View>
 
             <View style={styles.footer}>
@@ -491,6 +536,29 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.fontSizes.md,
     fontWeight: '700',
+  },
+  comingSoonCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
+    backgroundColor: '#FFF8F3',
+    borderRadius: borderRadius.xl,
+    borderWidth: 1.5,
+    borderColor: colors.primary + '33',
+  },
+  comingSoonTitle: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: '800',
+    color: colors.primary,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  comingSoonText: {
+    fontSize: typography.fontSizes.md,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   profGrid: {
     flexDirection: 'row',

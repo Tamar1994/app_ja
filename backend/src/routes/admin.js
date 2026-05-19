@@ -17,6 +17,7 @@ const ServiceCoverageCity = require('../models/ServiceCoverageCity');
 const HelpTopic = require('../models/HelpTopic');
 const StripeConfig = require('../models/StripeConfig');
 const TermsOfUse = require('../models/TermsOfUse');
+const AppConfig = require('../models/AppConfig');
 const Waitlist = require('../models/Waitlist');
 const Coupon = require('../models/Coupon');
 const CouponClaim = require('../models/CouponClaim');
@@ -2646,6 +2647,52 @@ router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USE
   } catch (err) {
     console.error('[push-campaign]', err);
     res.status(500).json({ message: 'Erro ao enviar campanha push.' });
+  }
+});
+
+// ── Configuração de cadastros do app ──────────────────────────────
+// GET /api/admin/app-config
+router.get('/app-config', adminAuth, async (req, res) => {
+  try {
+    const config = await AppConfig.getSingleton();
+    res.json({
+      allowClientRegistration:       config.allowClientRegistration,
+      allowProfessionalRegistration: config.allowProfessionalRegistration,
+      updatedBy:  config.updatedBy,
+      updatedAt:  config.updatedAt,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao buscar configuração de cadastro.' });
+  }
+});
+
+// PATCH /api/admin/app-config
+router.patch('/app-config', adminAuth, requireRole('super_admin'), async (req, res) => {
+  try {
+    const { allowClientRegistration, allowProfessionalRegistration } = req.body;
+    const config = await AppConfig.getSingleton();
+    if (allowClientRegistration !== undefined)
+      config.allowClientRegistration = !!allowClientRegistration;
+    if (allowProfessionalRegistration !== undefined)
+      config.allowProfessionalRegistration = !!allowProfessionalRegistration;
+    config.updatedBy = req.admin.email || req.admin.name;
+    await config.save();
+    await logAudit({
+      module: 'app_config',
+      action: 'registration_flags_updated',
+      actorType: 'admin',
+      actorAdminId: req.admin._id,
+      severity: 'normal',
+      message: `Flags de cadastro atualizadas — clientes: ${config.allowClientRegistration} | profissionais: ${config.allowProfessionalRegistration}`,
+    });
+    res.json({
+      allowClientRegistration:       config.allowClientRegistration,
+      allowProfessionalRegistration: config.allowProfessionalRegistration,
+      updatedBy:  config.updatedBy,
+      updatedAt:  config.updatedAt,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao atualizar configuração de cadastro.' });
   }
 });
 
