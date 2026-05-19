@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
+  FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { requestAPI } from '../../services/api';
+import { requestAPI, serviceTypeAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { formatDuration } from '../../utils/format';
+
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
 
 const STATUS_LABELS = {
   pending_professional: 'Buscando profissional',
@@ -48,13 +50,30 @@ const STATUS_ICONS = {
 
 export default function HistoryScreen({ navigation }) {
   const [requests, setRequests] = useState([]);
+  const [serviceTypesBySlug, setServiceTypesBySlug] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const { data } = await requestAPI.list();
-      setRequests(data.requests);
+      const [requestsRes, serviceTypesRes] = await Promise.all([
+        requestAPI.list(),
+        serviceTypeAPI.list().catch(() => ({ data: { serviceTypes: [] } })),
+      ]);
+
+      setRequests(requestsRes.data.requests || []);
+
+      const serviceTypes = serviceTypesRes.data.serviceTypes || [];
+      const mapped = serviceTypes.reduce((acc, st) => {
+        if (!st?.slug) return acc;
+        acc[st.slug] = {
+          name: st.name,
+          icon: st.icon,
+          imageUrl: st.imageUrl,
+        };
+        return acc;
+      }, {});
+      setServiceTypesBySlug(mapped);
     } catch {
       // ignora
     } finally {
@@ -65,8 +84,39 @@ export default function HistoryScreen({ navigation }) {
 
   useEffect(() => { load(); }, []);
 
+  const getServiceMeta = (item) => {
+    const byRequest = item?.serviceType;
+    if (byRequest?.name || byRequest?.imageUrl || byRequest?.icon) {
+      return {
+        name: byRequest.name || 'Serviço',
+        icon: byRequest.icon || 'briefcase-outline',
+        imageUrl: byRequest.imageUrl || null,
+      };
+    }
+
+    const fromCatalog = serviceTypesBySlug[item?.serviceTypeSlug];
+    if (fromCatalog) {
+      return {
+        name: fromCatalog.name || 'Serviço',
+        icon: fromCatalog.icon || 'briefcase-outline',
+        imageUrl: fromCatalog.imageUrl || null,
+      };
+    }
+
+    return {
+      name: 'Serviço',
+      icon: 'home',
+      imageUrl: null,
+    };
+  };
+
   const renderItem = ({ item }) => {
     const isActive = ['searching', 'accepted', 'preparing', 'on_the_way', 'in_progress'].includes(item.status);
+    const serviceMeta = getServiceMeta(item);
+    const iconImageUri = serviceMeta.imageUrl
+      ? `${API_BASE}${serviceMeta.imageUrl}`
+      : null;
+
     return (
       <TouchableOpacity
         style={styles.card}
@@ -93,10 +143,14 @@ export default function HistoryScreen({ navigation }) {
       >
         <View style={styles.cardTop}>
           <View style={styles.cardIconWrap}>
-            <Ionicons name="home" size={22} color={colors.primary} />
+            {iconImageUri ? (
+              <Image source={{ uri: iconImageUri }} style={styles.cardServiceImage} resizeMode="contain" />
+            ) : (
+              <Ionicons name={serviceMeta.icon || 'briefcase-outline'} size={22} color={colors.primary} />
+            )}
           </View>
           <View style={styles.cardInfo}>
-            <Text style={styles.cardService}>{item.serviceType?.name || 'Serviço'}</Text>
+            <Text style={styles.cardService}>{serviceMeta.name}</Text>
             <Text style={styles.cardDate}>
               {new Date(item.details.scheduledDate).toLocaleDateString('pt-BR', {
                 day: '2-digit', month: 'short', year: 'numeric',
@@ -216,6 +270,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF0E6',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cardServiceImage: {
+    width: 26,
+    height: 26,
   },
   cardInfo: { flex: 1 },
   cardService: { fontSize: typography.fontSizes.md, fontWeight: '700', color: colors.textPrimary },
