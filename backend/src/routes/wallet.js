@@ -10,6 +10,8 @@ const router = express.Router();
 const WITHDRAWAL_MIN_AMOUNT = 50;
 const WITHDRAWAL_COOLDOWN_DAYS = 7;
 
+const isProfessionalProfile = (user) => user?.activeProfile === 'professional' || user?.userType === 'professional';
+
 const normalizeCpf = (value) => String(value || '').replace(/\D+/g, '');
 
 const computeNextWithdrawalAt = (lastRequestedAt) => {
@@ -35,7 +37,7 @@ router.get('/summary', auth, async (req, res) => {
 
     const nextWithdrawalAt = computeNextWithdrawalAt(latestWithdrawal?.requestedAt);
     const now = new Date();
-    const canRequestWithdrawal = user.userType === 'professional'
+    const canRequestWithdrawal = isProfessionalProfile(user)
       && Number(user.wallet?.balance || 0) >= WITHDRAWAL_MIN_AMOUNT
       && (!nextWithdrawalAt || now >= nextWithdrawalAt);
 
@@ -141,7 +143,7 @@ router.get('/earnings', auth, async (req, res) => {
 
 // GET /api/wallet/withdrawals/my — histórico do profissional (sem comprovante interno)
 router.get('/withdrawals/my', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais possuem saque' });
   }
 
@@ -170,7 +172,7 @@ router.get('/withdrawals/my', auth, async (req, res) => {
 
 // POST /api/wallet/withdrawals/request — solicitar saque PIX manual
 router.post('/withdrawals/request', auth, async (req, res) => {
-  if (req.user.userType !== 'professional') {
+  if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem solicitar saque' });
   }
 

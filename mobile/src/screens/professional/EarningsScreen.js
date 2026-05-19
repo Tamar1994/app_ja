@@ -46,7 +46,18 @@ export default function EarningsScreen() {
       setEarnings(e.data);
       setWithdrawals(w.data.withdrawals || []);
     } catch {
-      // silencioso
+      setSummary((prev) => prev || {
+        balance: 0,
+        totalEarned: 0,
+        totalServices: 0,
+        transactions: [],
+        withdrawalRules: { minAmount: 50, cooldownDays: 7 },
+        canRequestWithdrawal: false,
+        nextWithdrawalAt: null,
+        latestWithdrawal: null,
+      });
+      setEarnings((prev) => prev || { grouped: [], total: 0, count: 0, avg: 0 });
+      setWithdrawals((prev) => prev || []);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -188,8 +199,13 @@ export default function EarningsScreen() {
                 </Text>
               )}
             </>
-          ) : (
+          ) : loading ? (
             <ActivityIndicator color="#fff" style={{ marginVertical: 24 }} />
+          ) : (
+            <>
+              <Text style={styles.balanceLabel}>Saldo disponível</Text>
+              <Text style={styles.balanceValue}>{fmt(0)}</Text>
+            </>
           )}
         </LinearGradient>
 
