@@ -33,7 +33,16 @@ function callGemini(prompt) {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
+          // Gemini retorna { error: { message, status, code } } em caso de chave inválida,
+          // quota excedida, etc. Rejeitar explicitamente para expor o erro real nos logs.
+          if (json.error) {
+            return reject(new Error(`Gemini API error (${json.error.status || res.statusCode}): ${json.error.message}`));
+          }
+          const finishReason = json.candidates?.[0]?.finishReason;
           const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (!text) {
+            console.error('[suggest-service] Gemini retornou texto vazio — finishReason:', finishReason, '| estrutura:', JSON.stringify(json).slice(0, 300));
+          }
           resolve(text);
         } catch {
           reject(new Error('Falha ao interpretar resposta do Gemini'));
