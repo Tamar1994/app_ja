@@ -116,6 +116,7 @@ export default function ProfessionalProfileScreen({ navigation }) {
   };
 
   const menuItems = [
+    { icon: 'create-outline', label: 'Editar perfil', color: '#E8F0FE', onPress: () => navigation.navigate('ProfileEdit') },
     { icon: 'shield-checkmark-outline', label: 'Segurança e privacidade', color: '#E8F0FE', onPress: () => navigation.navigate('Security') },
     { icon: 'ticket-outline', label: 'Carteira de cupons', color: '#E8F5E9', onPress: () => navigation.navigate('CouponWallet') },
     { icon: 'chatbubble-ellipses-outline', label: 'Falar com suporte', color: '#E3F2FD', onPress: () => navigation.navigate('SupportChat') },

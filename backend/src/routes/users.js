@@ -2,6 +2,8 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Review = require('../models/Review');
+const ServiceType = require('../models/ServiceType');
+const AddressUpdateRequest = require('../models/AddressUpdateRequest');
 
 const router = express.Router();
 
@@ -208,6 +210,89 @@ router.get('/:id/reviews', auth, async (req, res) => {
     res.json({ reviews });
   } catch {
     res.status(500).json({ message: 'Erro ao buscar avaliações' });
+  }
+});
+
+// PATCH /api/users/me/professions — atualizar profissões do profissional
+router.patch('/me/professions', auth, async (req, res) => {
+  try {
+    const { slugs } = req.body;
+    if (!Array.isArray(slugs) || slugs.length === 0) {
+      return res.status(400).json({ message: 'Selecione ao menos uma profissão.' });
+    }
+
+    // Validate slugs against enabled service types
+    const validTypes = await ServiceType.find({ slug: { $in: slugs }, status: 'enabled' }).select('slug');
+    const validSlugs = validTypes.map((t) => t.slug);
+    const invalid = slugs.filter((s) => !validSlugs.includes(s));
+    if (invalid.length > 0) {
+      return res.status(400).json({ message: `Profissão inválida ou desabilitada: ${invalid.join(', ')}` });
+    }
+
+    await User.findByIdAndUpdate(req.user._id, {
+      serviceTypeSlugs: validSlugs,
+      serviceTypeSlug: validSlugs[0],
+    });
+
+    res.json({ message: 'Profissões atualizadas com sucesso!', serviceTypeSlugs: validSlugs });
+  } catch (err) {
+    console.error('[patch professions]', err);
+    res.status(500).json({ message: 'Erro ao atualizar profissões' });
+  }
+});
+
+// GET /api/users/me/address-update — verifica se há pedido de atualização de endereço pendente
+router.get('/me/address-update', auth, async (req, res) => {
+  try {
+    const pending = await AddressUpdateRequest.findOne({
+      professional: req.user._id,
+      status: 'pending',
+    }).sort({ createdAt: -1 });
+
+    if (pending) {
+      return res.json({ pending: true, request: pending });
+    }
+    res.json({ pending: false });
+  } catch (err) {
+    console.error('[get address-update]', err);
+    res.status(500).json({ message: 'Erro ao verificar atualização de endereço' });
+  }
+});
+
+// POST /api/users/me/address-update — submeter nova solicitação de atualização de endereço
+router.post('/me/address-update', auth, async (req, res) => {
+  try {
+    // Bloquear se já há pedido pendente
+    const existing = await AddressUpdateRequest.findOne({
+      professional: req.user._id,
+      status: 'pending',
+    });
+    if (existing) {
+      return res.status(409).json({ message: 'Você já possui uma solicitação de endereço em análise.' });
+    }
+
+    const { newAddress, proofUrl } = req.body;
+    if (!newAddress?.street || !newAddress?.city || !newAddress?.state || !newAddress?.zipCode) {
+      return res.status(400).json({ message: 'Preencha todos os campos obrigatórios do endereço.' });
+    }
+    if (!proofUrl) {
+      return res.status(400).json({ message: 'Anexe o comprovante de endereço.' });
+    }
+
+    const user = await User.findById(req.user._id).select('professionalAddress');
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' });
+
+    const request = await AddressUpdateRequest.create({
+      professional: req.user._id,
+      oldAddress: user.professionalAddress || {},
+      newAddress,
+      proofUrl,
+    });
+
+    res.status(201).json({ message: 'Solicitação enviada! Analisaremos em até 24 horas.', request });
+  } catch (err) {
+    console.error('[post address-update]', err);
+    res.status(500).json({ message: 'Erro ao enviar solicitação de endereço' });
   }
 });
 

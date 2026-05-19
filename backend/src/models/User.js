@@ -103,6 +103,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Profissões adicionais (o profissional pode atuar em múltiplas categorias)
+  serviceTypeSlugs: {
+    type: [String],
+    default: [],
+  },
   selfieUrl: {
     type: String,
     default: null,

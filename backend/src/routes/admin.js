@@ -26,6 +26,7 @@ const AuditLog = require('../models/AuditLog');
 const SpecialistCertificate = require('../models/SpecialistCertificate');
 const Review = require('../models/Review');
 const AdBanner = require('../models/AdBanner');
+const AddressUpdateRequest = require('../models/AddressUpdateRequest');
 const {
   adminAuth,
   requireRole,
@@ -37,7 +38,7 @@ const {
   ALL_PERMISSION_VALUES,
   DEFAULT_ROLE_PERMISSIONS,
 } = require('../middleware/adminAuth');
-const { sendApprovalEmail, sendRejectionEmail } = require('../services/emailService');
+const { sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
 const { clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
@@ -2693,6 +2694,84 @@ router.patch('/app-config', adminAuth, requireRole('super_admin'), async (req, r
     });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao atualizar configuração de cadastro.' });
+  }
+});
+
+// ── ADDRESS UPDATE REQUESTS ────────────────────────────────────────
+
+// GET /api/admin/address-updates — listar solicitações de atualização de endereço
+router.get('/address-updates', adminAuth, requirePermission(ADMIN_PERMISSIONS.USER_MANAGEMENT), async (req, res) => {
+  try {
+    const { status = 'pending', page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const filter = {};
+    if (status !== 'all') filter.status = status;
+
+    const [requests, total] = await Promise.all([
+      AddressUpdateRequest.find(filter)
+        .populate('professional', 'name email phone professionalAddress')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit)),
+      AddressUpdateRequest.countDocuments(filter),
+    ]);
+
+    res.json({ requests, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+  } catch (err) {
+    console.error('[admin address-updates GET]', err);
+    res.status(500).json({ message: 'Erro ao buscar solicitações de endereço.' });
+  }
+});
+
+// PATCH /api/admin/address-updates/:id/approve — aprovar atualização de endereço
+router.patch('/address-updates/:id/approve', adminAuth, requirePermission(ADMIN_PERMISSIONS.USER_MANAGEMENT), async (req, res) => {
+  try {
+    const request = await AddressUpdateRequest.findById(req.params.id).populate('professional', 'name email professionalAddress');
+    if (!request) return res.status(404).json({ message: 'Solicitação não encontrada.' });
+    if (request.status !== 'pending') return res.status(409).json({ message: 'Solicitação já processada.' });
+
+    // Approve: update user address and mark request
+    await User.findByIdAndUpdate(request.professional._id, {
+      professionalAddress: request.newAddress,
+    });
+
+    request.status = 'approved';
+    request.reviewedBy = req.admin.email;
+    request.reviewedAt = new Date();
+    await request.save();
+
+    // Send email notification
+    try {
+      await sendAddressUpdateApprovedEmail(request.professional.email, request.professional.name);
+    } catch {}
+
+    res.json({ message: 'Endereço aprovado e atualizado com sucesso.' });
+  } catch (err) {
+    console.error('[admin address-updates approve]', err);
+    res.status(500).json({ message: 'Erro ao aprovar solicitação.' });
+  }
+});
+
+// PATCH /api/admin/address-updates/:id/reject — rejeitar atualização de endereço
+router.patch('/address-updates/:id/reject', adminAuth, requirePermission(ADMIN_PERMISSIONS.USER_MANAGEMENT), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    if (!reason) return res.status(400).json({ message: 'Informe o motivo da rejeição.' });
+
+    const request = await AddressUpdateRequest.findById(req.params.id).populate('professional', 'name email');
+    if (!request) return res.status(404).json({ message: 'Solicitação não encontrada.' });
+    if (request.status !== 'pending') return res.status(409).json({ message: 'Solicitação já processada.' });
+
+    request.status = 'rejected';
+    request.reviewedBy = req.admin.email;
+    request.reviewedAt = new Date();
+    request.rejectionReason = reason;
+    await request.save();
+
+    res.json({ message: 'Solicitação rejeitada.' });
+  } catch (err) {
+    console.error('[admin address-updates reject]', err);
+    res.status(500).json({ message: 'Erro ao rejeitar solicitação.' });
   }
 });
 

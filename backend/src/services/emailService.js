@@ -37,4 +37,12 @@ const sendRejectionEmail = async (email, name, reason) => {
   });
 };
 
-module.exports = { sendVerificationEmail, sendApprovalEmail, sendRejectionEmail };
+const sendAddressUpdateApprovedEmail = async (email, name) => {
+  await sendMail({
+    to: email,
+    subject: 'Seu endereço foi atualizado - Já!',
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#f5f6fa;padding:32px;border-radius:16px;">${logoHtml}<div style="background:#fff;border-radius:12px;padding:28px;text-align:center;margin-bottom:20px;border-top:4px solid #00C853;"><div style="font-size:48px;margin-bottom:12px;">&#127968;</div><h2 style="color:#1A1A2E;margin-bottom:8px;">Endereço Atualizado!</h2><p style="color:#5C6B7A;">Olá, <strong>${name}</strong>! Seu novo endereço foi aprovado e já está ativo no seu perfil.</p></div><p style="color:#5C6B7A;line-height:1.6;">Seu cadastro foi atualizado com sucesso. Você pode verificar o novo endereço diretamente no seu perfil no app <strong>Já!</strong>.</p></div>`,
+  });
+};
+
+module.exports = { sendVerificationEmail, sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail };

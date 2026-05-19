@@ -39,6 +39,9 @@ export const userAPI = {
     api.delete('/users/me', { data: { password } }),
   enableProfile: (profile) => api.post('/users/me/profiles', { profile }),
   switchProfile: (profile) => api.patch('/users/me/active-profile', { profile }),
+  updateProfessions: (slugs) => api.patch('/users/me/professions', { slugs }),
+  getAddressUpdateStatus: () => api.get('/users/me/address-update'),
+  submitAddressUpdate: (data) => api.post('/users/me/address-update', data),
 };
 
 // Solicitações de serviço
@@ -178,6 +181,10 @@ export const bannerAPI = {
 export const uploadAPI = {
   avatar: (formData) =>
     api.post('/upload/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  addressUpdateProof: (formData) =>
+    api.post('/upload/address-update-proof', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
 };

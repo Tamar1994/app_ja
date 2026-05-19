@@ -21,6 +21,7 @@ import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 import RequestDetailsScreen from '../screens/shared/RequestDetailsScreen';
 import ScheduleScreen from '../screens/professional/ScheduleScreen';
+import ProfileEditScreen from '../screens/professional/ProfileEditScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -49,6 +50,7 @@ function ProfileStack() {
       <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
       <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
       <Stack.Screen name="SupportChat" component={SupportChatScreen} />
+      <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
     </Stack.Navigator>
   );
 }

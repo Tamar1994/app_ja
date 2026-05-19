@@ -328,6 +328,9 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='approvals'?'active':''}" onclick="navTo('approvals')">
             <span class="icon">🔍</span> Aprovações
             ${pendingBadge > 0 ? `<span class="nav-badge">${pendingBadge}</span>` : ''}
+          </div>
+          <div class="nav-item ${currentPage==='address-updates'?'active':''}" onclick="navTo('address-updates')">
+            <span class="icon">🏠</span> Atualiz. de Endereço
           </div>` : ''}
           <div class="nav-group-label">Gestão</div>
           ${hasPermission(PERMISSIONS.USER_MANAGEMENT) ? `
@@ -447,6 +450,7 @@ const navTo = (page) => {
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
     push: [PERMISSIONS.USER_MANAGEMENT],
     registro: [PERMISSIONS.SERVICE_MANAGEMENT, PERMISSIONS.ACCESS_MANAGEMENT],
+    'address-updates': [PERMISSIONS.USER_MANAGEMENT],
   };
   const required = pagePermissionMap[page] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
@@ -477,6 +481,7 @@ const navTo = (page) => {
     admins: 'Equipe Admin',
     push: 'Campanhas Push',
     registro: 'Controle de Cadastros',
+    'address-updates': 'Atualizações de Endereço',
   }[page] || page;
   renderPage();
 };
@@ -500,12 +505,13 @@ const renderPage = () => {
     admins: [PERMISSIONS.ACCESS_MANAGEMENT],
     push: [PERMISSIONS.USER_MANAGEMENT],
     registro: [PERMISSIONS.SERVICE_MANAGEMENT, PERMISSIONS.ACCESS_MANAGEMENT],
+    'address-updates': [PERMISSIONS.USER_MANAGEMENT],
   };
   const required = pagePermissionMap[currentPage] || [PERMISSIONS.DASHBOARD];
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns, registro: renderRegistroConfig };
+  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns, registro: renderRegistroConfig, 'address-updates': renderAddressUpdates };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -4756,6 +4762,109 @@ const sendPushCampaign = async () => {
   } finally {
     sendBtn.disabled = false;
     sendBtn.textContent = '📤 Enviar Campanha';
+  }
+};
+
+// ── ATUALIZAÇÕES DE ENDEREÇO ───────────────────────────────────────
+const renderAddressUpdates = async (page = 1) => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const statusFilter = window._addrStatusFilter || 'pending';
+    const data = await req('GET', `/address-updates?status=${statusFilter}&page=${page}&limit=15`);
+    const fmtAddr = (a) => a ? [a.street, a.neighborhood, a.city, a.state, a.zipCode].filter(Boolean).join(', ') : '—';
+    const fmtDate = (d) => d ? new Date(d).toLocaleString('pt-BR') : '—';
+
+    c.innerHTML = `
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div style="display:flex;gap:8px;">
+          ${['pending','approved','rejected','all'].map(s => `
+            <button class="btn ${statusFilter===s?'btn-primary':'btn-outline'}" style="font-size:13px;padding:6px 14px;" onclick="window._addrStatusFilter='${s}';renderAddressUpdates(1)">
+              ${s==='pending'?'Pendentes':s==='approved'?'Aprovadas':s==='rejected'?'Rejeitadas':'Todas'}
+            </button>
+          `).join('')}
+        </div>
+        <span style="color:#8892A4;font-size:13px;">${data.total} solicitação(ões)</span>
+      </div>
+      ${data.requests.length === 0 ? `<div class="empty-state"><div class="empty-icon">🏠</div><p>Nenhuma solicitação encontrada.</p></div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        ${data.requests.map(r => `
+          <div class="card" style="padding:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+              <div>
+                <div style="font-weight:700;font-size:15px;color:#1A1A2E;">${escHtml(r.professional?.name || '—')}</div>
+                <div style="color:#8892A4;font-size:13px;">${escHtml(r.professional?.email || '—')}</div>
+                <div style="margin-top:4px;">
+                  <span class="badge ${r.status==='pending'?'badge-warning':r.status==='approved'?'badge-success':'badge-danger'}">
+                    ${r.status==='pending'?'Pendente':r.status==='approved'?'Aprovado':'Rejeitado'}
+                  </span>
+                </div>
+              </div>
+              <div style="color:#8892A4;font-size:12px;text-align:right;">
+                Enviado em<br>${fmtDate(r.createdAt)}
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+              <div style="background:#f8f9fa;border-radius:8px;padding:12px;">
+                <div style="font-size:12px;color:#8892A4;margin-bottom:4px;font-weight:600;">ENDEREÇO ATUAL</div>
+                <div style="font-size:13px;color:#1A1A2E;">${escHtml(fmtAddr(r.oldAddress))}</div>
+              </div>
+              <div style="background:#e8f4fd;border-radius:8px;padding:12px;border:1px solid #bee3f8;">
+                <div style="font-size:12px;color:#2b6cb0;margin-bottom:4px;font-weight:600;">NOVO ENDEREÇO</div>
+                <div style="font-size:13px;color:#1A1A2E;">${escHtml(fmtAddr(r.newAddress))}</div>
+                ${r.newAddress?.complement ? `<div style="font-size:12px;color:#8892A4;">Complemento: ${escHtml(r.newAddress.complement)}</div>` : ''}
+              </div>
+            </div>
+            <div style="margin-bottom:16px;">
+              <div style="font-size:12px;color:#8892A4;margin-bottom:8px;font-weight:600;">COMPROVANTE</div>
+              <a href="${escHtml(r.proofUrl)}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;color:#FF6B00;text-decoration:none;font-size:13px;border:1px solid #FF6B00;border-radius:6px;padding:6px 12px;">
+                📎 Ver comprovante
+              </a>
+            </div>
+            ${r.status === 'rejected' && r.rejectionReason ? `
+              <div style="background:#fff5f5;border-radius:8px;padding:12px;border-left:3px solid #e53e3e;margin-bottom:12px;">
+                <div style="font-size:12px;color:#e53e3e;font-weight:600;margin-bottom:2px;">MOTIVO DA REJEIÇÃO</div>
+                <div style="font-size:13px;color:#1A1A2E;">${escHtml(r.rejectionReason)}</div>
+              </div>
+            ` : ''}
+            ${r.status === 'pending' ? `
+              <div style="display:flex;gap:10px;">
+                <button class="btn btn-success" style="flex:1;" onclick="approveAddressUpdate('${r._id}')">✓ Aprovar</button>
+                <button class="btn btn-danger" style="flex:1;" onclick="rejectAddressUpdate('${r._id}')">✕ Rejeitar</button>
+              </div>
+            ` : `
+              <div style="font-size:12px;color:#8892A4;">Revisado por ${escHtml(r.reviewedBy||'—')} em ${fmtDate(r.reviewedAt)}</div>
+            `}
+          </div>
+        `).join('')}
+      </div>
+      <div class="pagination">${renderPagination(page, data.pages, 'renderAddressUpdates')}</div>
+    `;
+  } catch (err) {
+    c.innerHTML = `<div class="empty-state"><p>Erro ao carregar solicitações.</p></div>`;
+  }
+};
+
+const approveAddressUpdate = async (id) => {
+  if (!confirm('Aprovar atualização de endereço? O perfil do profissional será atualizado imediatamente.')) return;
+  try {
+    await req('PATCH', `/address-updates/${id}/approve`);
+    showAlert('Endereço aprovado com sucesso!', 'success');
+    renderAddressUpdates();
+  } catch (err) {
+    showAlert(err.message || 'Erro ao aprovar solicitação.');
+  }
+};
+
+const rejectAddressUpdate = async (id) => {
+  const reason = prompt('Informe o motivo da rejeição:');
+  if (!reason?.trim()) return;
+  try {
+    await req('PATCH', `/address-updates/${id}/reject`, { reason: reason.trim() });
+    showAlert('Solicitação rejeitada.', 'success');
+    renderAddressUpdates();
+  } catch (err) {
+    showAlert(err.message || 'Erro ao rejeitar solicitação.');
   }
 };
 

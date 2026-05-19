@@ -272,4 +272,18 @@ router.post('/residence-proof', auth, residenceUpload.single('residenceProof'), 
   }
 });
 
+// POST /api/upload/address-update-proof
+// Upload do comprovante para atualização de endereço do profissional.
+// Retorna apenas a URL — o vínculo é feito ao criar o AddressUpdateRequest.
+router.post('/address-update-proof', auth, residenceUpload.single('proof'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+    const proofUrl = `/uploads/${req.file.filename}`;
+    res.json({ proofUrl });
+  } catch (err) {
+    console.error('[address-update-proof]', err);
+    res.status(500).json({ message: 'Erro ao enviar comprovante.' });
+  }
+});
+
 module.exports = router;
