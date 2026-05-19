@@ -228,7 +228,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.logoutText}>Sair da conta</Text>
           </TouchableOpacity>
 
-          <Text style={styles.version}>Já! v1.0.0</Text>
+          <Text style={styles.version}>Já! v1.0.1</Text>
         </View>
       </ScrollView>
 
