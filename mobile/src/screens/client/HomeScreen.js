@@ -170,8 +170,11 @@ export default function HomeScreen({ navigation }) {
   };
 
   const acceptSuggestion = () => {
-    const serviceType = smartSuggestion?.serviceType;
-    if (!serviceType?.slug) return;
+    const suggested = smartSuggestion?.serviceType;
+    if (!suggested?.slug) return;
+    // Usa o objeto completo local (com priceTiers e upsells) em vez do retorno
+    // parcial da IA (que só traz slug, name e description)
+    const serviceType = serviceTypeBySlug(suggested.slug) || suggested;
     setSmartSearchVisible(false);
     navigation.navigate('RequestService', {
       serviceType,
