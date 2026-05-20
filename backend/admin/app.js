@@ -4887,8 +4887,8 @@ const renderRegistroConfig = async () => {
           <span style="font-size:13px;font-weight:600;color:${active ? activeColor : '#8C97BC'};">${active ? '● ATIVO' : '○ DESATIVADO'}</span>
           ${isSuperAdmin ? `
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input type="checkbox" id="toggle-${flag}" ${active ? 'checked' : ''} style="display:none;" onchange="toggleRegistroFlag('${flag}', this.checked)" />
-            <div onclick="document.getElementById('toggle-${flag}').click()" style="width:48px;height:26px;border-radius:13px;background:${active ? activeColor : 'rgba(255,255,255,0.15)'};position:relative;cursor:pointer;transition:background .2s;">
+            <input type="checkbox" id="toggle-${flag}" ${active ? 'checked' : ''} style="position:absolute;opacity:0;width:0;height:0;" onchange="toggleRegistroFlag('${flag}', this.checked)" />
+            <div style="width:48px;height:26px;border-radius:13px;background:${active ? activeColor : 'rgba(255,255,255,0.15)'};position:relative;transition:background .2s;">
               <div style="position:absolute;top:3px;${active ? 'right:3px' : 'left:3px'};width:20px;height:20px;border-radius:50%;background:#fff;transition:all .2s;"></div>
             </div>
           </label>` : `<span style="font-size:12px;color:#8C97BC;font-style:italic;">Somente super_admin</span>`}

@@ -101,9 +101,19 @@ export default function RegionUnavailableScreen({ city, state, coordinates }) {
               <Text style={styles.titleHighlight}>{displayCity}</Text>
             </Text>
 
+            {/* Badge de destaque "Em Breve" */}
+            <View style={styles.soonBadgeWrap}>
+              <View style={styles.soonBadge}>
+                <Ionicons name="time-outline" size={16} color="#FF8C38" />
+                <Text style={styles.soonBadgeText}>Em breve na sua cidade!</Text>
+              </View>
+              <Text style={styles.soonBadgeSub}>
+                Estamos crescendo rápido e você será um dos primeiros a saber quando chegarmos.
+              </Text>
+            </View>
+
             <Text style={styles.subtitle}>
-              Estamos crescendo rápido e em breve estaremos na sua cidade!
-              Cadastre seu e-mail abaixo e você será um dos primeiros a saber.
+              Cadastre seu e-mail abaixo e você será notificado assim que a JÁ! chegar em {displayCity}.
             </Text>
 
             {/* Bullet points de benefícios */}
@@ -255,6 +265,38 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 28,
+  },
+  soonBadgeWrap: {
+    width: '100%',
+    backgroundColor: 'rgba(255,140,56,0.10)',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,140,56,0.35)',
+    padding: 18,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  soonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,140,56,0.18)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  soonBadgeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FF8C38',
+    letterSpacing: 0.3,
+  },
+  soonBadgeSub: {
+    fontSize: 13,
+    color: 'rgba(255,200,140,0.85)',
+    textAlign: 'center',
+    lineHeight: 19,
   },
   bullets: {
     width: '100%',

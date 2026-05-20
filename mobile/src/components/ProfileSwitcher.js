@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { userAPI } from '../services/api';
+import api, { userAPI } from '../services/api';
 import { colors, typography, spacing, borderRadius } from '../theme';
 
 export default function ProfileSwitcher({ onSwitch, navigation }) {
@@ -45,6 +45,20 @@ export default function ProfileSwitcher({ onSwitch, navigation }) {
   };
 
   const enableClientProfile = async () => {
+    // Verifica se o cadastro de clientes está habilitado antes de prosseguir
+    try {
+      const { data: cfg } = await api.get('/app-config');
+      if (!cfg.allowClientRegistration) {
+        Alert.alert(
+          'Cadastro temporariamente indisponível',
+          'O cadastro de novos clientes está pausado no momento. Em breve estará disponível novamente!',
+        );
+        return;
+      }
+    } catch {
+      // Se não conseguir verificar, permite prosseguir
+    }
+
     Alert.alert(
       'Criar perfil cliente',
       'Isso criara um perfil de cliente nesta conta. Deseja continuar?',
