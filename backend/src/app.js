@@ -1,3 +1,6 @@
+const mongoSanitize = require('express-mongo-sanitize');
+// Proteção contra NoSQL injection
+app.use(mongoSanitize());
 const express = require('express');
 const cors = require('cors');
 const { apiLimiter, loginLimiter } = require('./middleware/rateLimit');

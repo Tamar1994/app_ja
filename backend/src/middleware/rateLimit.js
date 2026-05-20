@@ -1,9 +1,9 @@
 const rateLimit = require('express-rate-limit');
 
-// Limita a 100 requisições por 15 minutos por IP
+// Limita a 1000 requisições por 15 minutos por IP (ajustado para produção)
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100,
+  max: 1000,
   message: { message: 'Muitas requisições deste IP, tente novamente mais tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
