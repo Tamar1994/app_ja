@@ -1,4 +1,6 @@
 const mongoSanitize = require('express-mongo-sanitize');
+const app = express();
+
 // Proteção contra NoSQL injection
 app.use(mongoSanitize());
 const express = require('express');
