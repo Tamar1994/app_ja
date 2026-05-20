@@ -3,7 +3,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const express = require('express');
 const cors = require('cors');
 const { apiLimiter, loginLimiter } = require('./middleware/rateLimit');
-const securityHeaders = require('./middleware/securityHeaders');
+const { apiHeaders, adminHeaders } = require('./middleware/securityHeaders');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
@@ -32,8 +32,8 @@ const app = express();
 // Proteção contra NoSQL injection
 app.use(mongoSanitize());
 
-// Helmet: headers de segurança
-app.use(securityHeaders);
+// Helmet: headers de segurança para rotas de API
+app.use(apiHeaders);
 
 // CORS restrito (ajuste os domínios conforme necessário)
 app.use(cors({
@@ -65,11 +65,11 @@ app.use(express.json());
 // Servir arquivos de upload
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Servir painel admin
-app.use('/admin', express.static(path.join(__dirname, '../admin')));
+// Servir painel admin (CSP permissivo para inline handlers)
+app.use('/admin', adminHeaders, express.static(path.join(__dirname, '../admin')));
 
-// Servir painel dedicado de suporte
-app.use('/suportsystem', express.static(path.join(__dirname, '../suportsystem')));
+// Servir painel dedicado de suporte (CSP permissivo para inline handlers)
+app.use('/suportsystem', adminHeaders, express.static(path.join(__dirname, '../suportsystem')));
 
 // Landing Page — raiz do domínio
 app.use('/landing', express.static(path.join(__dirname, '../landing')));
