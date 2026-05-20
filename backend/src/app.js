@@ -35,9 +35,6 @@ const app = express();
 app.use(mongoSanitize());
 
 // Helmet: headers de segurança
-app.use(helmet());
-
-// Helmet: headers de segurança
 app.use(securityHeaders);
 
 // CORS restrito (ajuste os domínios conforme necessário)
