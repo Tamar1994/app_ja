@@ -1,8 +1,5 @@
 const mongoSanitize = require('express-mongo-sanitize');
-const app = express();
 
-// Proteção contra NoSQL injection
-app.use(mongoSanitize());
 const express = require('express');
 const cors = require('cors');
 const { apiLimiter, loginLimiter } = require('./middleware/rateLimit');
@@ -30,6 +27,10 @@ const Waitlist = require('./models/Waitlist');
 const RegionInterest = require('./models/RegionInterest');
 const AppConfig = require('./models/AppConfig');
 
+const app = express();
+
+// Proteção contra NoSQL injection
+app.use(mongoSanitize());
 
 // Helmet: headers de segurança
 app.use(securityHeaders);
