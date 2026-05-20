@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const { apiLimiter, loginLimiter } = require('./middleware/rateLimit');
+const securityHeaders = require('./middleware/securityHeaders');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
@@ -23,9 +25,26 @@ const Waitlist = require('./models/Waitlist');
 const RegionInterest = require('./models/RegionInterest');
 const AppConfig = require('./models/AppConfig');
 
+
 const app = express();
 
-app.use(cors());
+// Helmet: headers de segurança
+app.use(securityHeaders);
+
+// CORS restrito (ajuste os domínios conforme necessário)
+app.use(cors({
+  origin: [
+    'https://appja.com.br',
+    'https://www.appja.com.br',
+    'https://admin.appja.com.br',
+    'http://localhost:3000',
+    'http://localhost:5173',
+  ],
+  credentials: true,
+}));
+
+// Rate limiting global
+app.use(apiLimiter);
 
 // Webhook Stripe precisa de raw body ANTES do express.json()
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
@@ -58,6 +77,8 @@ app.get('/excluir-dados', (req, res) => {
   res.sendFile(path.join(__dirname, '../landing/excluir-dados.html'));
 });
 
+// Rate limiting específico para login
+app.use('/api/auth/login', loginLimiter, authRoutes);
 // Rotas
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
