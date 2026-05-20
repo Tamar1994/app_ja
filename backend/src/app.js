@@ -29,6 +29,11 @@ const AppConfig = require('./models/AppConfig');
 
 const app = express();
 
+// Necessário para que o Express confie no proxy do Render/Heroku/etc.
+// Sem isso, o rate limiter vê todos os usuários com o mesmo IP (IP do proxy)
+// e o limite de 1000 req/15min é compartilhado por TODOS os usuários juntos.
+app.set('trust proxy', 1);
+
 // CORS aberto para API (segurança real é feita via JWT em cada rota)
 app.use(cors());
 
