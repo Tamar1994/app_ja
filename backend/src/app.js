@@ -31,8 +31,6 @@ const RegionInterest = require('./models/RegionInterest');
 const AppConfig = require('./models/AppConfig');
 
 
-const app = express();
-
 // Helmet: headers de segurança
 app.use(securityHeaders);
 
