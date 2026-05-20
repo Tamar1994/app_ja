@@ -87,13 +87,26 @@ export default function RootNavigator() {
         return;
       }
 
-      // 2. Obtém posição atual (precisão de cidade é suficiente — Low é mais rápido)
+      // 2. Verifica cache ANTES de pedir GPS — evita espera do GPS em toda abertura do app
+      //    O cache é válido por 6h; usuário que mudar de cidade verá atualização após esse prazo.
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { result, city: cachedCity, stateUF: cachedStateUF, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_TTL) {
+          setBlockedCity(cachedCity);
+          setBlockedStateUF(cachedStateUF);
+          setRegionState(result); // 'ok' ou 'blocked' — retorno imediato sem GPS
+          return;
+        }
+      }
+
+      // 3. Cache ausente ou expirado — obtém posição atual
       const position = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Low,
       });
       const { latitude, longitude } = position.coords;
 
-      // 3. Geocodificação reversa para obter cidade/estado
+      // 4. Geocodificação reversa para obter cidade/estado
       const [geocode] = await Location.reverseGeocodeAsync({ latitude, longitude });
       const city     = geocode?.city || geocode?.subregion || '';
       const stateUF  = geocode?.region || '';
@@ -102,23 +115,6 @@ export default function RootNavigator() {
         // Sem cidade identificável → não bloqueia
         setRegionState('ok');
         return;
-      }
-
-      // 4. Verifica cache local — só aproveita se a cidade atual bater com a cidade em cache
-      //    Isso garante que mudar de cidade invalida automaticamente o resultado cacheado.
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const { result, city: cachedCity, stateUF: cachedStateUF, timestamp } = JSON.parse(cached);
-        if (
-          Date.now() - timestamp < CACHE_TTL &&
-          cachedCity === city &&
-          cachedStateUF === stateUF
-        ) {
-          setBlockedCity(city);
-          setBlockedStateUF(stateUF);
-          setRegionState(result); // 'ok' ou 'blocked'
-          return;
-        }
       }
 
       // 5. Verifica cobertura no backend — falha rápida se offline

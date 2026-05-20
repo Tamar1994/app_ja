@@ -11,7 +11,9 @@ router.get('/active', auth, async (req, res) => {
       active: true,
       startAt: { $lte: now },
       endAt: { $gte: now },
-      targetProfile: { $in: ['all', req.user.userType] },
+      // Usa activeProfile (perfil ativo atual) em vez de userType
+      // para suportar usuários dual-role (ex: cliente que também é profissional)
+      targetProfile: { $in: ['all', req.user.activeProfile || req.user.userType] },
     }).sort({ startAt: -1 }).lean();
 
     res.json({ banner: banner || null });
