@@ -3,7 +3,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const express = require('express');
 const cors = require('cors');
 const { apiLimiter, loginLimiter } = require('./middleware/rateLimit');
-const { apiHeaders, adminHeaders } = require('./middleware/securityHeaders');
+const { adminHeaders } = require('./middleware/securityHeaders');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
@@ -29,31 +29,8 @@ const AppConfig = require('./models/AppConfig');
 
 const app = express();
 
-// Proteção contra NoSQL injection
-app.use(mongoSanitize());
-
-// Helmet: headers de segurança para rotas de API
-app.use(apiHeaders);
-
-// CORS restrito (ajuste os domínios conforme necessário)
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permite web (lista branca) e apps nativos (origin undefined)
-    const allowed = [
-      'https://chameja.app.br',
-      'https://www.chameja.app.br',
-      'https://chameja.app.br/admin',
-      'http://localhost:3000',
-      'http://localhost:5173',
-    ];
-    if (!origin || allowed.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-}));
+// CORS aberto para API (segurança real é feita via JWT em cada rota)
+app.use(cors());
 
 // Rate limiting global
 app.use(apiLimiter);
@@ -61,6 +38,9 @@ app.use(apiLimiter);
 // Webhook Stripe precisa de raw body ANTES do express.json()
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
+
+// Proteção contra NoSQL injection (deve rodar DEPOIS do express.json para ter o body parseado)
+app.use(mongoSanitize());
 
 // Servir arquivos de upload
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
