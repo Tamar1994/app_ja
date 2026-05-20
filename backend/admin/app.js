@@ -163,6 +163,10 @@ const req = async (method, path, body) => {
   };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API + path, opts);
+  if (r.status === 401) {
+    doLogout();
+    return;
+  }
   const data = await r.json();
   if (!r.ok) throw new Error(data.message || 'Erro');
   return data;
@@ -175,6 +179,10 @@ const stReq = async (method, path, body) => {
   };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API_ST + path, opts);
+  if (r.status === 401) {
+    doLogout();
+    return;
+  }
   const data = await r.json();
   if (!r.ok) throw new Error(data.message || 'Erro');
   return data;
@@ -198,6 +206,10 @@ const paymentReq = async (method, path, body) => {
   };
   if (body) opts.body = JSON.stringify(body);
   const r = await fetch(API_PAYMENTS + path, opts);
+  if (r.status === 401) {
+    doLogout();
+    return;
+  }
   const data = await r.json();
   if (!r.ok) throw new Error(data.message || 'Erro');
   return data;
@@ -209,6 +221,10 @@ const multipartReq = async (method, path, formData) => {
     headers: { Authorization: `Bearer ${adminToken}` },
     body: formData,
   });
+  if (r.status === 401) {
+    doLogout();
+    return;
+  }
   const data = await r.json();
   if (!r.ok) throw new Error(data.message || 'Erro');
   return data;
