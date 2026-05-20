@@ -1,3 +1,5 @@
+const helmet = require('helmet');
+
 const mongoSanitize = require('express-mongo-sanitize');
 
 const express = require('express');
@@ -33,17 +35,28 @@ const app = express();
 app.use(mongoSanitize());
 
 // Helmet: headers de segurança
+app.use(helmet());
+
+// Helmet: headers de segurança
 app.use(securityHeaders);
 
 // CORS restrito (ajuste os domínios conforme necessário)
 app.use(cors({
-  origin: [
-    'https://chameja.app.br',
-    'https://www.chameja.app.br',
-    'https://chameja.app.br/admin',
-    'http://localhost:3000',
-    'http://localhost:5173',
-  ],
+  origin: function (origin, callback) {
+    // Permite web (lista branca) e apps nativos (origin undefined)
+    const allowed = [
+      'https://chameja.app.br',
+      'https://www.chameja.app.br',
+      'https://chameja.app.br/admin',
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ];
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }));
 
