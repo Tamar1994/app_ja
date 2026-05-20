@@ -45,17 +45,25 @@ export default function RootNavigator() {
   const [blockedStateUF, setBlockedStateUF] = useState('');
   const [blockedCoords, setBlockedCoords]   = useState(null);
   const appStateRef = useRef(AppState.currentState);
+  // Guard: impede chamadas concorrentes (causa o loop de resume/pause que destrói o app)
+  const isCheckingCoverageRef = useRef(false);
 
   // Verifica na abertura inicial
   useEffect(() => {
     checkRegionCoverage();
   }, []);
 
-  // Re-verifica toda vez que o app volta ao primeiro plano
+  // Re-verifica quando o app volta ao primeiro plano — mas SEM mostrar diálogo de permissão
+  // (requestForegroundPermissionsAsync exibe um diálogo que causa AppState inactive→active,
+  //  disparando este listener novamente e criando um loop infinito que destrói o app)
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState) => {
+    const subscription = AppState.addEventListener('change', async (nextState) => {
       if (appStateRef.current.match(/inactive|background/) && nextState === 'active') {
-        checkRegionCoverage();
+        // Só re-verifica se a permissão já foi concedida anteriormente (sem mostrar diálogo)
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          checkRegionCoverage();
+        }
       }
       appStateRef.current = nextState;
     });
@@ -66,6 +74,10 @@ export default function RootNavigator() {
   const CACHE_TTL = 6 * 60 * 60 * 1000; // 6 horas
 
   const checkRegionCoverage = async () => {
+    // Impede execução concorrente — sem este guard, múltiplas chamadas simultâneas
+    // causam um loop de onHostResume/onHostPause que destrói a surface do React Native
+    if (isCheckingCoverageRef.current) return;
+    isCheckingCoverageRef.current = true;
     try {
       // 1. Solicita permissão de localização
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -143,6 +155,8 @@ export default function RootNavigator() {
     } catch {
       // Qualquer erro (sem rede, timeout, etc.) → não bloqueia
       setRegionState('ok');
+    } finally {
+      isCheckingCoverageRef.current = false;
     }
   };
   // ──────────────────────────────────────────────────────────────────
