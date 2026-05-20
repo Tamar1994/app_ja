@@ -75,9 +75,9 @@ export default function RootNavigator() {
         return;
       }
 
-      // 2. Obtém posição atual (precisão de cidade é suficiente)
+      // 2. Obtém posição atual (precisão de cidade é suficiente — Low é mais rápido)
       const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.Low,
       });
       const { latitude, longitude } = position.coords;
 
@@ -109,16 +109,15 @@ export default function RootNavigator() {
         }
       }
 
-      // 5. Verifica cobertura no backend (com retry para cold start do servidor)
+      // 5. Verifica cobertura no backend — falha rápida se offline
       let coverageData;
       try {
         const res = await requestAPI.checkCoverage(city, stateUF);
         coverageData = res.data;
       } catch {
-        // Retry único após 4 s — trata cold start do Render.com na primeira abertura
-        await new Promise(r => setTimeout(r, 4000));
-        const res = await requestAPI.checkCoverage(city, stateUF);
-        coverageData = res.data;
+        // Erro de rede ou backend indisponível → não bloqueia o usuário
+        setRegionState('ok');
+        return;
       }
       const result = coverageData.covered ? 'ok' : 'blocked';
 

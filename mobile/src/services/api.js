@@ -5,7 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 // Em produção: a variável aponta para a URL do Render
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
 
-const api = axios.create({ baseURL: BASE_URL });
+const api = axios.create({ baseURL: BASE_URL, timeout: 20000 });
 
 // Interceptor: injeta o token em todas as requisições
 api.interceptors.request.use(async (config) => {
