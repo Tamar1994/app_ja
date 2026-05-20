@@ -63,7 +63,7 @@ function callGemini(prompt) {
 // Body: { prompt: string }
 // Returns: { matched: true, serviceType, explanation } | { matched: false, message }
 router.post('/', async (req, res) => {
-  console.log('[suggest-service] recebendo requisição');
+
   try {
     const userPrompt = String(req.body?.prompt || '').trim().slice(0, 500);
     if (!userPrompt) {
@@ -104,7 +104,7 @@ Solicitação do usuário: "${userPrompt}"`;
 
     // Extrair o objeto JSON da resposta — o Gemini às vezes adiciona texto
     // antes/depois ou retorna blocos de código markdown.
-    console.log('[suggest-service] resposta Gemini (200 chars):', rawText.slice(0, 200));
+
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
 
     let parsed;
