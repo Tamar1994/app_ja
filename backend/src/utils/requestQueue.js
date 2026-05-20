@@ -221,7 +221,7 @@ async function dispatchToNextProfessional(requestId, io) {
       io.to(`user_${professional._id}`).emit('new_request', {
         requestId: request._id,
         isSpecialist: !!request.isSpecialist,
-        client: { name: request.client?.name || 'Cliente' },
+        client: { name: request.client?.name || 'Cliente', avatar: request.client?.avatar || null },
         details: request.details,
         address: request.address,
         pricing: request.pricing,
@@ -273,7 +273,7 @@ async function dispatchToNextProfessional(requestId, io) {
   io.to(`user_${professional._id}`).emit('new_request', {
     requestId: request._id,
     isSpecialist: !!request.isSpecialist,
-    client: { name: request.client?.name || 'Cliente' },
+    client: { name: request.client?.name || 'Cliente', avatar: request.client?.avatar || null },
     details: request.details,
     address: request.address,
     pricing: request.pricing,

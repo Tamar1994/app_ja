@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
-  Vibration, Animated, Dimensions,
+  Vibration, Animated, Dimensions, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,13 @@ import { colors, typography, spacing, borderRadius } from '../theme';
 import { formatDuration } from '../utils/format';
 
 const { width, height } = Dimensions.get('window');
+
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
+const buildImageUrl = (path) => {
+  if (!path) return null;
+  if (String(path).startsWith('http')) return path;
+  return `${API_BASE}${path}`;
+};
 
 // Padrão de vibração: toca 600ms, pausa 400ms, toca 600ms (repete)
 const VIBRATION_PATTERN = [0, 600, 400, 600, 400, 600];
@@ -143,9 +150,18 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
               }]}
             />
             <Animated.View style={[styles.iconCircle, { transform: [{ scale: pulse }] }]}>
-              <LinearGradient colors={['#FF8C38', '#FF6B00']} style={styles.iconGradient}>
-                <Ionicons name="briefcase" size={38} color="#fff" />
-              </LinearGradient>
+              {buildImageUrl(request?.client?.avatar) ? (
+                <Image
+                  source={{ uri: buildImageUrl(request.client.avatar) }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <LinearGradient colors={['#FF8C38', '#FF6B00']} style={styles.iconGradient}>
+                  <Text style={styles.avatarInitial}>
+                    {(request?.client?.name || 'C').charAt(0).toUpperCase()}
+                  </Text>
+                </LinearGradient>
+              )}
             </Animated.View>
           </View>
 
@@ -276,6 +292,16 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+  },
+  avatarInitial: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#fff',
   },
   clientName: {
     fontSize: 26,

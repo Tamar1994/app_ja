@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, ScrollView,
+  ActivityIndicator, ScrollView, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, borderRadius } from '../../theme';
 import { requestAPI } from '../../services/api';
+
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
+const buildImageUrl = (path) => {
+  if (!path) return null;
+  if (String(path).startsWith('http')) return path;
+  return `${API_BASE}${path}`;
+};
 
 export default function ProfessionalFoundScreen({ route, navigation }) {
   const { requestId, professional } = route.params;
@@ -74,12 +81,19 @@ export default function ProfessionalFoundScreen({ route, navigation }) {
         <View style={styles.card}>
           {/* Avatar */}
           <View style={styles.avatarContainer}>
-            <LinearGradient
-              colors={[colors.primary, '#FF8C38']}
-              style={styles.avatarGradient}
-            >
-              <Text style={styles.avatarInitials}>{initials}</Text>
-            </LinearGradient>
+            {buildImageUrl(professional?.avatar) ? (
+              <Image
+                source={{ uri: buildImageUrl(professional.avatar) }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <LinearGradient
+                colors={[colors.primary, '#FF8C38']}
+                style={styles.avatarGradient}
+              >
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </LinearGradient>
+            )}
             {/* Selo de verificado */}
             <View style={styles.verifiedBadge}>
               <Ionicons name="shield-checkmark" size={16} color="#fff" />
@@ -209,6 +223,11 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   avatarInitials: {
     fontSize: 34,
