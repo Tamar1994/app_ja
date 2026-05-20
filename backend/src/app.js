@@ -38,9 +38,9 @@ app.use(securityHeaders);
 // CORS restrito (ajuste os domínios conforme necessário)
 app.use(cors({
   origin: [
-    'https://appja.com.br',
-    'https://www.appja.com.br',
-    'https://admin.appja.com.br',
+    'https://chameja.app.br',
+    'https://www.chameja.app.br',
+    'https://chameja.app.br/admin',
     'http://localhost:3000',
     'http://localhost:5173',
   ],
