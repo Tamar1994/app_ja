@@ -503,7 +503,6 @@ export default function DashboardScreen({ navigation }) {
                   <Text style={styles.priceCardValue}>
                     R$ {(selectedRequest.pricing.estimated * 0.85).toFixed(2)}
                   </Text>
-                  <Text style={styles.priceCardDetail}>após taxa da plataforma (15%)</Text>
                 </LinearGradient>
 
                 <View style={styles.modalActions}>
