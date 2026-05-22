@@ -13,10 +13,15 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.ja.app",
+      "bundleIdentifier": "com.chamejabr.app",
+      "buildNumber": "1",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "O Já! precisa da sua localização para encontrar profissionais próximos.",
-        "NSLocationAlwaysUsageDescription": "O Já! usa sua localização para mostrar sua posição aos clientes."
+        "NSLocationAlwaysUsageDescription": "O Já! usa sua localização para mostrar sua posição aos clientes.",
+        "NSCameraUsageDescription": "O Já! precisa acessar sua câmera para fotografar documentos e comprovantes de serviço.",
+        "NSPhotoLibraryUsageDescription": "O Já! precisa acessar sua galeria para enviar documentos e fotos de serviço.",
+        "NSPhotoLibraryAddUsageDescription": "O Já! precisa salvar fotos na sua galeria."
       }
     },
     "android": {
@@ -43,7 +48,7 @@
       [
         "@stripe/stripe-react-native",
         {
-          "merchantIdentifier": "merchant.com.ja.app",
+          "merchantIdentifier": "merchant.com.chamejabr.app",
           "enableGooglePay": false
         }
       ],
@@ -60,6 +65,14 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "O Já! precisa da sua localização para conectar você com profissionais próximos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Já! precisa acessar sua galeria para enviar documentos e fotos de serviço.",
+          "cameraPermission": "O Já! precisa acessar sua câmera para fotografar documentos e comprovantes de serviço.",
+          "microphonePermission": false
         }
       ],
       "expo-secure-store",

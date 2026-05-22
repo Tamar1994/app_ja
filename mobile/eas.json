@@ -15,13 +15,26 @@
       }
     },
     "production": {
-      "autoIncrement": true, 
+      "autoIncrement": true,
       "channel": "production",
       "android": {
         "buildType": "app-bundle"
       },
+      "ios": {
+        "simulator": false,
+        "credentialsSource": "remote"
+      },
       "env": {
         "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "adriano.tamar@gmail.com",
+        "ascAppId": "6771898396",
+        "appleTeamId": "265JD98U5P"
       }
     }
   }
