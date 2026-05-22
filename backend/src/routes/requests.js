@@ -369,7 +369,7 @@ router.get('/', auth, async (req, res) => {
     let requests;
     if (isClientProfile(req.user)) {
       requests = await ServiceRequest.find({ client: req.user._id })
-        .populate('professional', 'name avatar professional.rating location')
+        .populate('professional', 'name avatar phone professional.rating professional.totalReviews location')
         .sort({ createdAt: -1 });
     } else {
       const { scope = 'available' } = req.query;
