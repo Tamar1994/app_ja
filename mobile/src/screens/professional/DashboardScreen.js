@@ -575,7 +575,7 @@ export default function DashboardScreen({ navigation }) {
                     R$ {((selectedScheduledRequest.pricing?.estimated || 0) * (1 - (selectedScheduledRequest.pricing?.platformFeePercent || 15) / 100)).toFixed(2)}
                   </Text>
                   <Text style={[styles.earningsNote, { color: colors.textLight, fontSize: 11 }]}>
-                    Pagamento após conclusão · buffer de 30min para deslocamento
+                    Pagamento já realizado pelo cliente · buffer de 30min para deslocamento
                   </Text>
                 </View>
 

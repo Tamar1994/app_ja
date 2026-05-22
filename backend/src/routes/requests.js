@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
@@ -10,6 +11,7 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction');
 const CouponRedemption = require('../models/CouponRedemption');
 const ServiceCoverageCity = require('../models/ServiceCoverageCity');
+const ClientWalletTransaction = require('../models/ClientWalletTransaction');
 const { dispatchToNextProfessional, clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
@@ -266,7 +268,6 @@ router.post('/', auth, [
     notes,
     address,
     scheduledDate,
-    isScheduled = false,
   } = req.body;
 
   const coverage = await isCityCovered(address?.city, address?.state);
@@ -289,8 +290,8 @@ router.post('/', auth, [
       client: req.user._id,
       serviceTypeSlug,
       requiresLocationTracking: pricing.serviceType?.requiresLocationTracking || false,
-      requestType: isScheduled ? 'scheduled' : 'immediate',
-      status: isScheduled ? 'pending_professional' : 'searching',
+      requestType: 'immediate',
+      status: 'searching',
       details: {
         tierLabel,
         durationMinutes: pricing.tier.durationMinutes,
@@ -306,11 +307,10 @@ router.post('/', auth, [
         platformFeePercent: pricing.platformFeePercent,
         platformFee:        pricing.platformFee,
       },
-      payment: isScheduled ? { status: 'pending' } : undefined,
     });
 
     const io = req.app.get('io');
-    if (io && !isScheduled) {
+    if (io) {
       dispatchToNextProfessional(request._id, io);
     }
 
@@ -330,6 +330,7 @@ router.get('/scheduled-feed', auth, async (req, res) => {
     const requests = await ServiceRequest.find({
       requestType: 'scheduled',
       status: 'pending_professional',
+      'payment.status': 'paid',
       client: { $ne: req.user._id },
       rejectedBy: { $ne: req.user._id },
       'details.scheduledDate': { $gt: new Date() },
@@ -1086,6 +1087,51 @@ router.patch('/:id/complete', auth, async (req, res) => {
   }
 });
 
+// Estorna pagamento de agendamento para a carteira do cliente
+async function refundScheduledPaymentToWallet(preCancel) {
+  const refundAmount = Number(preCancel.pricing?.final || preCancel.pricing?.estimated || 0);
+  if (refundAmount <= 0) return;
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const user = await User.findById(preCancel.client).session(session);
+      if (!user) return;
+
+      if (!user.clientWallet) user.clientWallet = { balance: 0 };
+      user.clientWallet.balance = Number(((user.clientWallet.balance || 0) + refundAmount).toFixed(2));
+      await user.save({ session });
+
+      await ClientWalletTransaction.create([{
+        user: preCancel.client,
+        serviceRequest: preCancel._id,
+        type: 'credit_refund',
+        source: 'support_refund_wallet',
+        amount: refundAmount,
+        balanceAfterClientWallet: user.clientWallet.balance,
+        balanceAfterProfessionalWallet: Number(user.wallet?.balance || 0),
+        metadata: { label: 'Estorno de agendamento cancelado' },
+      }], { session });
+
+      await ServiceRequest.findByIdAndUpdate(preCancel._id, { 'payment.status': 'refunded' }).session(session);
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  // Notifica cliente sobre o estorno
+  User.findById(preCancel.client).select('pushToken').then((u) => {
+    if (u?.pushToken) {
+      sendExpoPush(
+        u.pushToken,
+        '💰 Estorno processado',
+        `R$ ${refundAmount.toFixed(2)} devolvidos à sua carteira Já!`,
+        { screen: 'Wallet' },
+      );
+    }
+  }).catch(() => {});
+}
+
 // PATCH /api/requests/:id/cancel — cliente cancela
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
@@ -1094,7 +1140,11 @@ router.patch('/:id/cancel', auth, async (req, res) => {
       ? { _id: req.params.id, client: req.user._id, status: { $in: ['pending_professional', 'pending_client', 'scheduled', 'searching', 'accepted', 'preparing', 'on_the_way'] } }
       : { _id: req.params.id, professional: req.user._id, status: { $in: ['pending_client', 'scheduled', 'accepted', 'preparing', 'on_the_way'] } };
 
-    const request = await ServiceRequest.findOneAndUpdate(filter, {
+    // Captura estado original antes de cancelar (para lógica de estorno)
+    const preCancel = await ServiceRequest.findOne(filter).lean();
+    if (!preCancel) return res.status(400).json({ message: 'Não foi possível cancelar' });
+
+    const request = await ServiceRequest.findByIdAndUpdate(preCancel._id, {
       status: 'cancelled',
       cancelledAt: new Date(),
       cancelReason: req.body.reason || '',
@@ -1107,18 +1157,30 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     await closeServiceChatForRequest(req.params.id, req.body.reason || 'Serviço cancelado');
 
     // Push para o outro lado: notificar sobre cancelamento
-    if (clientProfile && request.professional) {
-      User.findById(request.professional).select('pushToken').then((pro) => {
+    if (clientProfile && preCancel.professional) {
+      User.findById(preCancel.professional).select('pushToken').then((pro) => {
         if (pro?.pushToken) {
           sendExpoPush(pro.pushToken, '❌ Pedido cancelado', 'O cliente cancelou a solicitação de serviço.', { requestId: String(request._id) });
         }
       }).catch(() => {});
     } else if (isProfessionalProfile(req.user)) {
-      User.findById(request.client).select('pushToken').then((client) => {
+      User.findById(preCancel.client).select('pushToken').then((client) => {
         if (client?.pushToken) {
           sendExpoPush(client.pushToken, '❌ Pedido cancelado', 'O profissional cancelou o atendimento. Buscando outro profissional.', { requestId: String(request._id) });
         }
       }).catch(() => {});
+    }
+
+    // Estornar pagamento se agendamento pago foi cancelado antes do início do serviço
+    const preServiceStatuses = ['pending_professional', 'pending_client', 'scheduled'];
+    if (
+      preCancel.requestType === 'scheduled' &&
+      preCancel.payment?.status === 'paid' &&
+      preServiceStatuses.includes(preCancel.status)
+    ) {
+      refundScheduledPaymentToWallet(preCancel).catch((err) => {
+        console.error('[cancel refund]', err);
+      });
     }
 
     res.json({ request });

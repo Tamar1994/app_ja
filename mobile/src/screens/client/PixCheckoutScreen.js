@@ -30,6 +30,7 @@ function formatRemaining(seconds) {
 
 export default function PixCheckoutScreen({ navigation, route }) {
   const initialCharge = route.params?.charge || {};
+  const isScheduled = !!route.params?.isScheduled;
   const [charge, setCharge] = useState(initialCharge);
   const [status, setStatus] = useState(initialCharge.status || 'pending');
   const [remainingSeconds, setRemainingSeconds] = useState(() => {
@@ -69,7 +70,7 @@ export default function PixCheckoutScreen({ navigation, route }) {
       }
 
       if (data.status === 'paid' && data.requestId) {
-        navigation.replace('Searching', { requestId: data.requestId });
+        navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.requestId });
       }
     } catch {
       // Falha de rede nao deve interromper o fluxo.

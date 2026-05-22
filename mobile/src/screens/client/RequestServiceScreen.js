@@ -172,52 +172,12 @@ export default function RequestServiceScreen({ navigation, route }) {
     setStep(step + 1);
   };
 
-  const [submitting, setSubmitting] = useState(false);
-
   const handleSubmit = () => {
     if (!address.street || (!address.number && !semNumero) || !address.city) {
       Alert.alert('Atenção', 'Preencha rua, número (ou marque "Sem número") e cidade.'); return;
     }
 
-    if (scheduleMode === 'later') {
-      // Agendamento: cria o pedido diretamente sem pagamento antecipado
-      setSubmitting(true);
-      requestAPI.checkCoverage(address.city, address.state)
-        .then(({ data }) => {
-          if (!data.covered) {
-            const message = data.message || 'No momento a solicitação não está disponível na sua cidade.';
-            setCoverageNotice(message);
-            Alert.alert('Serviço indisponível', message);
-            return;
-          }
-          const { number: _n, ...addrRest } = address;
-          const scheduledAddress = {
-            ...addrRest,
-            street: [address.street.trim(), semNumero ? 'S/N' : address.number.trim()].filter(Boolean).join(', '),
-          };
-          const requestData = {
-            serviceTypeSlug: serviceType?.slug,
-            tierLabel: selectedTier.label,
-            selectedUpsells: selectedUpsellKeys,
-            notes,
-            address: scheduledAddress,
-            scheduledDate: getFinalScheduledDate(),
-            isScheduled: true,
-          };
-          return requestAPI.create(requestData)
-            .then(({ data: res }) => {
-              navigation.replace('ScheduledPending', { requestId: res.request._id, requestData, estimate });
-            });
-        })
-        .catch(err => {
-          const message = err?.response?.data?.message || 'Não foi possível criar o agendamento. Tente novamente.';
-          Alert.alert('Erro', message);
-        })
-        .finally(() => setSubmitting(false));
-      return;
-    }
-
-    // Pedido imediato: segue para pagamento
+    // Pedido imediato ou agendado: ambos seguem para pagamento
     setCheckingCoverage(true);
     requestAPI.checkCoverage(address.city, address.state)
       .then(({ data }) => {
@@ -245,6 +205,7 @@ export default function RequestServiceScreen({ navigation, route }) {
             notes,
             address: requestAddress,
             scheduledDate: getFinalScheduledDate(),
+            isScheduled: scheduleMode === 'later',
           };
           navigation.navigate('Payment', { requestData, estimate, serviceType });
         };
@@ -628,13 +589,13 @@ export default function RequestServiceScreen({ navigation, route }) {
               </LinearGradient>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.btnNextWrap} onPress={handleSubmit} disabled={checkingCoverage || submitting} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.btnNextWrap} onPress={handleSubmit} disabled={checkingCoverage} activeOpacity={0.85}>
               <LinearGradient colors={colors.gradientPrimary} style={styles.btnNext}>
-                {(checkingCoverage || submitting)
+                {checkingCoverage
                   ? <ActivityIndicator color={colors.white} />
-                  : <Ionicons name={scheduleMode === 'later' ? 'calendar-outline' : 'lock-closed'} size={18} color={colors.white} />}
+                  : <Ionicons name="lock-closed" size={18} color={colors.white} />}
                 <Text style={styles.btnNextText}>
-                  {submitting ? 'Agendando...' : checkingCoverage ? 'Validando...' : scheduleMode === 'later' ? 'Confirmar Agendamento' : 'Ir para Pagamento'}
+                  {checkingCoverage ? 'Validando...' : scheduleMode === 'later' ? 'Agendar e Pagar' : 'Ir para Pagamento'}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>

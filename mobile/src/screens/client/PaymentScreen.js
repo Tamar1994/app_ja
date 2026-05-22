@@ -27,6 +27,7 @@ const BRAND_COLORS = {
 
 export default function PaymentScreen({ navigation, route }) {
   const { requestData, estimate, serviceType } = route.params;
+  const isScheduled = !!requestData?.isScheduled;
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
 
   const [loading, setLoading] = useState(true);
@@ -155,7 +156,7 @@ export default function PaymentScreen({ navigation, route }) {
         });
 
         if (data?.walletOnly) {
-          navigation.replace('Searching', { requestId: data.request._id });
+          navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.request._id });
           return;
         }
 
@@ -164,7 +165,7 @@ export default function PaymentScreen({ navigation, route }) {
           Alert.alert('Alguns cupons nao foram aplicados', lines);
         }
 
-        navigation.navigate('PixCheckout', { charge: data.charge });
+        navigation.navigate('PixCheckout', { charge: data.charge, isScheduled });
         setPaying(false);
         return;
       }
@@ -176,7 +177,7 @@ export default function PaymentScreen({ navigation, route }) {
       });
 
       if (intentData?.walletOnly) {
-        navigation.replace('Searching', { requestId: intentData.request._id });
+        navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: intentData.request._id });
         return;
       }
 
@@ -234,7 +235,7 @@ export default function PaymentScreen({ navigation, route }) {
 
       // Pagamento aprovado — criar o pedido no backend
       const { data } = await paymentAPI.confirm(paymentIntentId);
-      navigation.replace('Searching', { requestId: data.request._id });
+      navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.request._id });
     } catch (err) {
       console.error('handlePay error:', err);
       const backendMsg = err?.response?.data?.message;

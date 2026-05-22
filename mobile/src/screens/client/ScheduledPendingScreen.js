@@ -238,7 +238,7 @@ export default function ScheduledPendingScreen({ navigation, route }) {
           <View style={styles.noteCard}>
             <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
             <Text style={styles.noteText}>
-              O pagamento só é realizado após a conclusão do serviço. Você pode cancelar o agendamento enquanto o profissional não tiver sido confirmado.
+              Pagamento realizado com sucesso. Seu agendamento está confirmado e buscando um profissional disponível.
             </Text>
           </View>
 

@@ -223,6 +223,7 @@ async function createRequestFromIntent(intent, io) {
   const address = JSON.parse(m.address);
   const serviceTypeSlug = m.serviceTypeSlug || null;
   const tierLabel = m.tierLabel || null;
+  const isScheduled = m.isScheduled === 'true';
   let parsedUpsells = [];
   try { parsedUpsells = JSON.parse(m.selectedUpsells || '[]'); } catch {}
   const selectedUpsells = parsedUpsells.map((u) => (typeof u === 'string' ? u : u.key)).filter(Boolean);
@@ -253,6 +254,8 @@ async function createRequestFromIntent(intent, io) {
   const request = await ServiceRequest.create({
     client: m.clientId,
     serviceTypeSlug,
+    requestType: isScheduled ? 'scheduled' : 'immediate',
+    status: isScheduled ? 'pending_professional' : 'searching',
     details: {
       tierLabel,
       durationMinutes: Number(m.durationMinutes) || tier.durationMinutes,
@@ -321,7 +324,7 @@ async function createRequestFromIntent(intent, io) {
     }
   }
 
-  if (io) dispatchToNextProfessional(request._id, io);
+  if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
   return request;
 }
 
@@ -347,6 +350,7 @@ async function createRequestFromCoraCharge(charge, io) {
   const address = p.address || {};
   const serviceTypeSlug = p.serviceTypeSlug || null;
   const tierLabel = p.tierLabel || null;
+  const isScheduled = !!p.isScheduled;
   const selectedUpsells = (p.selectedUpsells || []).map((u) => (typeof u === 'string' ? u : u.key)).filter(Boolean);
   const {
     tier,
@@ -376,6 +380,8 @@ async function createRequestFromCoraCharge(charge, io) {
   const request = await ServiceRequest.create({
     client: charge.client,
     serviceTypeSlug,
+    requestType: isScheduled ? 'scheduled' : 'immediate',
+    status: isScheduled ? 'pending_professional' : 'searching',
     details: {
       tierLabel,
       durationMinutes: tier.durationMinutes,
@@ -450,7 +456,7 @@ async function createRequestFromCoraCharge(charge, io) {
   if (!charge.paidAt) charge.paidAt = new Date();
   await charge.save();
 
-  if (io) dispatchToNextProfessional(request._id, io);
+  if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
   return request;
 }
 
@@ -473,6 +479,7 @@ router.post('/create-intent', auth, async (req, res) => {
     couponCodes,
     useWallet,
     walletAmount,
+    isScheduled = false,
   } = req.body;
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
     console.warn('[create-intent] 400 – dados incompletos:', { tierLabel, street: address?.street, city: address?.city, scheduledDate });
@@ -515,6 +522,8 @@ router.post('/create-intent', auth, async (req, res) => {
       const request = await ServiceRequest.create({
         client: req.user._id,
         serviceTypeSlug: serviceTypeSlug || null,
+        requestType: isScheduled ? 'scheduled' : 'immediate',
+        status: isScheduled ? 'pending_professional' : 'searching',
         details: {
           tierLabel,
           durationMinutes: tier.durationMinutes,
@@ -555,7 +564,7 @@ router.post('/create-intent', auth, async (req, res) => {
       });
 
       const io = req.app.get('io');
-      if (io) dispatchToNextProfessional(request._id, io);
+      if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
 
       return res.status(201).json({
         walletOnly: true,
@@ -602,6 +611,7 @@ router.post('/create-intent', auth, async (req, res) => {
           durationMinutes: String(tier.durationMinutes),
           notes: notes || '',
           scheduledDate,
+          isScheduled: String(!!isScheduled),
           couponCodes: checkout.pricing.appliedCoupons.map((c) => c.code).join(','),
           couponDiscounts: checkout.pricing.appliedCoupons.map((c) => String(c.discountAmount)).join(','),
           walletAppliedTotal: String(walletUsage.totalWalletUsed),
@@ -745,6 +755,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
     couponCodes,
     useWallet,
     walletAmount,
+    isScheduled = false,
   } = req.body;
 
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
@@ -795,6 +806,8 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       const request = await ServiceRequest.create({
         client: req.user._id,
         serviceTypeSlug: serviceTypeSlug || null,
+        requestType: isScheduled ? 'scheduled' : 'immediate',
+        status: isScheduled ? 'pending_professional' : 'searching',
         details: {
           tierLabel,
           durationMinutes: tier.durationMinutes,
@@ -835,7 +848,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       });
 
       const io = req.app.get('io');
-      if (io) dispatchToNextProfessional(request._id, io);
+      if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
 
       return res.status(201).json({
         walletOnly: true,
@@ -885,6 +898,7 @@ router.post('/cora/pix/create', auth, async (req, res) => {
         notes: notes || '',
         address,
         scheduledDate,
+        isScheduled: !!isScheduled,
       },
       qrCodeUrl: invoice.qrCodeUrl,
       emv: invoice.emv,
