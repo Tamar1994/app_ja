@@ -77,7 +77,7 @@ function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.chamejabr.app" scheme="ja-app">
+        <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.chamejabr.app" scheme="ja-app" locale="pt-BR">
           <AuthProvider>
             <SocketProvider>
               <NotificationProvider>

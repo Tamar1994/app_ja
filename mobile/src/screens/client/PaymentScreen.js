@@ -196,19 +196,27 @@ export default function PaymentScreen({ navigation, route }) {
         allowsDelayedPaymentMethods: false,
         returnURL: 'ja-app://stripe-redirect',
         defaultBillingDetails: {},
+        billingDetailsCollectionConfiguration: {
+          name: 'always',
+          address: 'automatic',
+          phone: 'never',
+          email: 'never',
+        },
         appearance: {
           colors: {
             primary: colors.primary,
             background: colors.background,
             componentBackground: colors.white,
-            componentBorder: colors.border,
-            componentDivider: colors.border,
+            componentBorder: '#C8CFD8',
+            componentDivider: '#E8ECF2',
             primaryText: colors.textPrimary,
             secondaryText: colors.textSecondary,
             componentText: colors.textPrimary,
+            placeholderText: '#A0AABB',
           },
           shapes: {
             borderRadius: 12,
+            borderWidth: 1.5,
           },
         },
       });
