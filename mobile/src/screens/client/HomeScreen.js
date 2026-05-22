@@ -94,9 +94,9 @@ export default function HomeScreen({ navigation }) {
     return null;
   };
 
-  const loadServiceTypes = async () => {
+  const loadServiceTypes = async (city, state) => {
     try {
-      const { data } = await serviceTypeAPI.list();
+      const { data } = await serviceTypeAPI.list(city, state);
       setServiceTypes(data.serviceTypes || []);
     } catch {
       // mantém lista vazia — cards não aparecem
@@ -104,8 +104,13 @@ export default function HomeScreen({ navigation }) {
   };
 
   useEffect(() => {
-    loadActiveRequest();
-    loadServiceTypes();
+    const init = async () => {
+      const active = await loadActiveRequest();
+      const city = active?.address?.city || null;
+      const state = active?.address?.state || null;
+      loadServiceTypes(city, state);
+    };
+    init();
 
     // Ouvir aceite em tempo real
     const unsubAccepted = on('request_accepted', ({ request }) => {
@@ -131,7 +136,13 @@ export default function HomeScreen({ navigation }) {
     };
   }, []);
 
-  const onRefresh = () => { setRefreshing(true); loadActiveRequest(); loadServiceTypes(); };
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const active = await loadActiveRequest();
+    const city = active?.address?.city || null;
+    const state = active?.address?.state || null;
+    loadServiceTypes(city, state);
+  };
 
   const firstName = user?.name?.split(' ')[0] || 'Olá';
 

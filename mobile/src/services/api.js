@@ -46,8 +46,8 @@ export const userAPI = {
 
 // Solicitações de serviço
 export const requestAPI = {
-  estimate: (serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate = null) =>
-    api.post('/requests/estimate', { serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate }),
+  estimate: (serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate = null, city = null, state = null) =>
+    api.post('/requests/estimate', { serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate, city, state }),
   checkCoverage: (city, state = '') =>
     api.get('/requests/coverage', { params: { city, state } }),
   registerInterest: (data) =>
@@ -166,7 +166,10 @@ export const couponAPI = {
 };
 
 export const serviceTypeAPI = {
-  list: () => api.get('/service-types'),
+  list: (city, state) => {
+    const params = city ? `?city=${encodeURIComponent(city)}${state ? `&state=${encodeURIComponent(state)}` : ''}` : '';
+    return api.get(`/service-types${params}`);
+  },
 };
 
 export const termsAPI = {

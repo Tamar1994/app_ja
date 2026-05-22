@@ -240,6 +240,8 @@ async function createRequestFromIntent(intent, io) {
     tierLabel,
     selectedUpsells,
     scheduledDate: m.scheduledDate,
+    city: address?.city || null,
+    state: address?.state || null,
   });
   const couponsMeta = parseCouponMeta(m.couponCodes, m.couponDiscounts);
   const discountTotal = couponsMeta.reduce((sum, c) => sum + Number(c.discountAmount || 0), 0);
@@ -365,6 +367,8 @@ async function createRequestFromCoraCharge(charge, io) {
     tierLabel,
     selectedUpsells,
     scheduledDate: p.scheduledDate,
+    city: address?.city || null,
+    state: address?.state || null,
   });
 
   const discountTotal = Number(charge.discountTotal || 0);
@@ -784,6 +788,8 @@ router.post('/cora/pix/create', auth, async (req, res) => {
       tierLabel,
       selectedUpsells,
       scheduledDate,
+      city: address?.city || null,
+      state: address?.state || null,
     });
     const checkout = await resolveCouponsForCheckout({
       couponCodes,

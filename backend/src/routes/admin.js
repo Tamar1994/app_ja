@@ -14,6 +14,7 @@ const ServiceRequest = require('../models/ServiceRequest');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ServiceType = require('../models/ServiceType');
 const ServiceCoverageCity = require('../models/ServiceCoverageCity');
+const CityServiceConfig = require('../models/CityServiceConfig');
 const HelpTopic = require('../models/HelpTopic');
 const StripeConfig = require('../models/StripeConfig');
 const TermsOfUse = require('../models/TermsOfUse');
@@ -2493,9 +2494,129 @@ router.delete('/coverage-cities/:id', adminAuth, requirePermission(ADMIN_PERMISS
   try {
     const coverageCity = await ServiceCoverageCity.findByIdAndDelete(req.params.id);
     if (!coverageCity) return res.status(404).json({ message: 'Cidade atendida não encontrada' });
+    // Remove all city service configs for this city
+    await CityServiceConfig.deleteMany({ coverageCityId: req.params.id });
     res.json({ message: 'Cidade atendida excluída' });
   } catch {
     res.status(500).json({ message: 'Erro ao excluir cidade atendida' });
+  }
+});
+
+// ── City Service Configs ───────────────────────────────────────────────────
+
+// GET /api/admin/city-service-configs?coverageCityId=X
+router.get('/city-service-configs', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const { coverageCityId } = req.query;
+    if (!coverageCityId) return res.status(400).json({ message: 'coverageCityId é obrigatório' });
+    const configs = await CityServiceConfig.find({ coverageCityId }).sort({ serviceTypeSlug: 1 });
+    // Also return all global service types so UI can offer "add service"
+    const allServiceTypes = await ServiceType.find().sort({ sortOrder: 1, name: 1 }).select('slug name icon status priceTiers upsells platformFeePercent nightRateStartHour nightRateEndHour');
+    res.json({ configs, serviceTypes: allServiceTypes });
+  } catch {
+    res.status(500).json({ message: 'Erro ao buscar configurações de serviço da cidade' });
+  }
+});
+
+// POST /api/admin/city-service-configs
+router.post('/city-service-configs', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const { coverageCityId, serviceTypeSlug, status, priceTiers, upsells, platformFeePercent, nightRateStartHour, nightRateEndHour } = req.body;
+    if (!coverageCityId || !serviceTypeSlug) return res.status(400).json({ message: 'coverageCityId e serviceTypeSlug são obrigatórios' });
+
+    const coverageCity = await ServiceCoverageCity.findById(coverageCityId);
+    if (!coverageCity) return res.status(404).json({ message: 'Cidade atendida não encontrada' });
+
+    const config = await CityServiceConfig.create({
+      coverageCityId,
+      city: coverageCity.city,
+      state: coverageCity.state || '',
+      normalizedCity: coverageCity.normalizedCity,
+      normalizedState: coverageCity.normalizedState || '',
+      serviceTypeSlug: String(serviceTypeSlug).toLowerCase().trim(),
+      status: status || 'enabled',
+      priceTiers: Array.isArray(priceTiers) ? priceTiers : [],
+      upsells: Array.isArray(upsells) ? upsells : [],
+      platformFeePercent: platformFeePercent != null ? Number(platformFeePercent) : null,
+      nightRateStartHour: nightRateStartHour != null ? Number(nightRateStartHour) : null,
+      nightRateEndHour: nightRateEndHour != null ? Number(nightRateEndHour) : null,
+    });
+    res.status(201).json({ config });
+  } catch (err) {
+    if (err?.code === 11000) return res.status(409).json({ message: 'Esse serviço já está configurado para esta cidade' });
+    res.status(500).json({ message: 'Erro ao criar configuração de serviço' });
+  }
+});
+
+// PATCH /api/admin/city-service-configs/:id
+router.patch('/city-service-configs/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const config = await CityServiceConfig.findById(req.params.id);
+    if (!config) return res.status(404).json({ message: 'Configuração não encontrada' });
+
+    const { status, priceTiers, upsells, platformFeePercent, nightRateStartHour, nightRateEndHour } = req.body;
+    if (status !== undefined) config.status = status;
+    if (Array.isArray(priceTiers)) config.priceTiers = priceTiers;
+    if (Array.isArray(upsells)) config.upsells = upsells;
+    if (platformFeePercent !== undefined) config.platformFeePercent = platformFeePercent != null ? Number(platformFeePercent) : null;
+    if (nightRateStartHour !== undefined) config.nightRateStartHour = nightRateStartHour != null ? Number(nightRateStartHour) : null;
+    if (nightRateEndHour !== undefined) config.nightRateEndHour = nightRateEndHour != null ? Number(nightRateEndHour) : null;
+    await config.save();
+    res.json({ config });
+  } catch {
+    res.status(500).json({ message: 'Erro ao atualizar configuração de serviço' });
+  }
+});
+
+// DELETE /api/admin/city-service-configs/:id
+router.delete('/city-service-configs/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const config = await CityServiceConfig.findByIdAndDelete(req.params.id);
+    if (!config) return res.status(404).json({ message: 'Configuração não encontrada' });
+    res.json({ message: 'Configuração excluída' });
+  } catch {
+    res.status(500).json({ message: 'Erro ao excluir configuração de serviço' });
+  }
+});
+
+// POST /api/admin/city-service-configs/import-from-city
+// Copies all CityServiceConfig records from sourceCityId to targetCityId
+router.post('/city-service-configs/import-from-city', adminAuth, requirePermission(ADMIN_PERMISSIONS.SERVICE_MANAGEMENT), async (req, res) => {
+  try {
+    const { sourceCityId, targetCityId } = req.body;
+    if (!sourceCityId || !targetCityId) return res.status(400).json({ message: 'sourceCityId e targetCityId são obrigatórios' });
+    if (sourceCityId === targetCityId) return res.status(400).json({ message: 'Cidades de origem e destino devem ser diferentes' });
+
+    const targetCity = await ServiceCoverageCity.findById(targetCityId);
+    if (!targetCity) return res.status(404).json({ message: 'Cidade destino não encontrada' });
+
+    const sourceConfigs = await CityServiceConfig.find({ coverageCityId: sourceCityId });
+    if (sourceConfigs.length === 0) return res.status(404).json({ message: 'Nenhum serviço configurado na cidade de origem' });
+
+    let imported = 0;
+    let skipped = 0;
+    for (const src of sourceConfigs) {
+      const exists = await CityServiceConfig.findOne({ coverageCityId: targetCityId, serviceTypeSlug: src.serviceTypeSlug });
+      if (exists) { skipped++; continue; }
+      await CityServiceConfig.create({
+        coverageCityId: targetCityId,
+        city: targetCity.city,
+        state: targetCity.state || '',
+        normalizedCity: targetCity.normalizedCity,
+        normalizedState: targetCity.normalizedState || '',
+        serviceTypeSlug: src.serviceTypeSlug,
+        status: src.status,
+        priceTiers: src.priceTiers,
+        upsells: src.upsells,
+        platformFeePercent: src.platformFeePercent,
+        nightRateStartHour: src.nightRateStartHour,
+        nightRateEndHour: src.nightRateEndHour,
+      });
+      imported++;
+    }
+    res.json({ message: `${imported} serviço(s) importado(s), ${skipped} já existia(m)`, imported, skipped });
+  } catch {
+    res.status(500).json({ message: 'Erro ao importar configurações de serviço' });
   }
 });
 

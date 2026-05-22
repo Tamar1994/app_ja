@@ -2905,6 +2905,7 @@ const renderCoverageCities = async () => {
               <td>${Number(city.order || 0)}</td>
               <td><span class="badge ${city.isActive ? 'badge-approved' : 'badge-rejected'}">${city.isActive ? 'Ativa' : 'Inativa'}</span></td>
               <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-sm" onclick="openCityServices('${city._id}', '${escHtml(city.city)}', '${escHtml(city.state || '')}')">🛎 Serviços</button>
                 <button class="btn btn-ghost btn-sm" onclick='openEditCoverageCityModal(${JSON.stringify(JSON.stringify(city))})'>Editar</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteCoverageCity('${city._id}')">Excluir</button>
               </td>
@@ -3064,12 +3065,349 @@ const saveCoverageCity = async (id) => {
 };
 
 const deleteCoverageCity = async (id) => {
-  if (!confirm('Excluir esta cidade atendida?')) return;
+  if (!confirm('Excluir esta cidade atendida? Os serviços configurados para ela também serão removidos.')) return;
   try {
     await req('DELETE', `/coverage-cities/${id}`);
     document.querySelector('.modal-overlay')?.remove();
     showAlert('Cidade excluída.', 'success');
     renderCoverageCities();
+  } catch (err) { showAlert(err.message); }
+};
+
+// ── Serviços por Cidade ──────────────────────────────────────────────────────
+
+let _cityServicesState = { coverageCityId: null, cityName: '', cityState: '' };
+let _addCityServiceTypes = []; // stores global service types for the "add service" modal
+
+const openCityServices = async (coverageCityId, cityName, cityState) => {
+  _cityServicesState = { coverageCityId, cityName, cityState };
+  const overlay = document.createElement('div');
+  overlay.id = 'city-services-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'align-items:flex-start;overflow-y:auto;padding:40px 20px;';
+  overlay.innerHTML = `<div class="modal" style="max-width:800px;width:100%;">
+    <div class="modal-header">
+      <h3>🛎 Serviços — ${escHtml(cityName)}${cityState ? ` / ${escHtml(cityState)}` : ''}</h3>
+      <button class="modal-close" onclick="this.closest('#city-services-overlay').remove()">✕</button>
+    </div>
+    <div class="modal-body" id="city-services-body">
+      <div class="loading-center"><div class="spinner"></div></div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn btn-ghost" onclick="openImportCityServicesModal('${escHtml(coverageCityId)}')">📥 Importar de outra cidade</button>
+      <button class="btn btn-primary" onclick="openAddCityServiceModal('${escHtml(coverageCityId)}')">+ Adicionar serviço</button>
+      <button class="btn btn-ghost" onclick="this.closest('#city-services-overlay').remove()">Fechar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  await refreshCityServicesBody(coverageCityId);
+};
+
+const refreshCityServicesBody = async (coverageCityId) => {
+  const body = document.getElementById('city-services-body');
+  if (!body) return;
+  body.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', `/city-service-configs?coverageCityId=${coverageCityId}`);
+    const configs = data.configs || [];
+    const serviceTypes = data.serviceTypes || [];
+    const stBySlug = {};
+    serviceTypes.forEach((st) => { stBySlug[st.slug] = st; });
+
+    if (!configs.length) {
+      body.innerHTML = `<p style="color:#7A84A0;text-align:center;padding:20px;">Nenhum serviço configurado para esta cidade. Clique em "+ Adicionar serviço".</p>`;
+      return;
+    }
+
+    body.innerHTML = configs.map((cfg) => {
+      const st = stBySlug[cfg.serviceTypeSlug] || {};
+      const feeDisplay = cfg.platformFeePercent != null ? `${cfg.platformFeePercent}%` : `${st.platformFeePercent ?? 15}% (global)`;
+      const tiersDisplay = cfg.priceTiers.length
+        ? cfg.priceTiers.map((t) => `${escHtml(t.label)} R$${Number(t.price).toFixed(0)}`).join(' · ')
+        : (st.priceTiers || []).map((t) => `${escHtml(t.label)} R$${Number(t.price).toFixed(0)} (global)`).join(' · ') || '<em>Sem faixas</em>';
+
+      return `<div class="section-card" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <div>
+            <strong style="font-size:15px;">${st.icon || '🔧'} ${escHtml(st.name || cfg.serviceTypeSlug)}</strong>
+            <div style="font-size:12px;color:#7A84A0;margin-top:4px;">Taxa: ${feeDisplay} · ${tiersDisplay}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;">
+            <label class="toggle-switch" title="${cfg.status === 'enabled' ? 'Desativar' : 'Ativar'}">
+              <input type="checkbox" ${cfg.status === 'enabled' ? 'checked' : ''} onchange="toggleCityService('${cfg._id}', this.checked, '${coverageCityId}')" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick='openEditCityServiceModal(${JSON.stringify(JSON.stringify(cfg))}, ${JSON.stringify(JSON.stringify(st))})'>✏️ Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCityService('${cfg._id}', '${coverageCityId}')">🗑</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    body.innerHTML = `<div class="alert alert-error">${escHtml(err.message)}</div>`;
+  }
+};
+
+const toggleCityService = async (configId, enabled, coverageCityId) => {
+  try {
+    await req('PATCH', `/city-service-configs/${configId}`, { status: enabled ? 'enabled' : 'disabled' });
+    await refreshCityServicesBody(coverageCityId);
+  } catch (err) { showAlert(err.message); }
+};
+
+const deleteCityService = async (configId, coverageCityId) => {
+  if (!confirm('Remover este serviço da cidade?')) return;
+  try {
+    await req('DELETE', `/city-service-configs/${configId}`);
+    showAlert('Serviço removido.', 'success');
+    await refreshCityServicesBody(coverageCityId);
+  } catch (err) { showAlert(err.message); }
+};
+
+const buildPriceTiersEditor = (tiers = [], idPrefix = '') => {
+  if (!tiers.length) {
+    tiers = [{ label: '', durationMinutes: '', price: '', nightPrice: '' }];
+  }
+  return `<div id="${idPrefix}tiers-wrap">
+    ${tiers.map((t, i) => `<div class="tier-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 32px;gap:6px;margin-bottom:6px;" id="${idPrefix}tier-${i}">
+      <input class="form-input" placeholder="Label (ex: 4h)" value="${escHtml(t.label || '')}" oninput="updateTierField('${idPrefix}', ${i}, 'label', this.value)" />
+      <input class="form-input" type="number" placeholder="Min." value="${t.durationMinutes || ''}" oninput="updateTierField('${idPrefix}', ${i}, 'durationMinutes', this.value)" />
+      <input class="form-input" type="number" placeholder="R$ dia" value="${t.price || ''}" oninput="updateTierField('${idPrefix}', ${i}, 'price', this.value)" />
+      <input class="form-input" type="number" placeholder="R$ noite" value="${t.nightPrice != null ? t.nightPrice : ''}" oninput="updateTierField('${idPrefix}', ${i}, 'nightPrice', this.value)" />
+      <button class="btn btn-danger btn-sm" onclick="removeTierRow('${idPrefix}', ${i})" style="padding:0 8px;">✕</button>
+    </div>`).join('')}
+  </div>
+  <button class="btn btn-ghost btn-sm" onclick="addTierRow('${idPrefix}')" style="margin-top:4px;">+ Faixa</button>`;
+};
+
+let _tiersData = {};
+const updateTierField = (prefix, idx, field, val) => {
+  if (!_tiersData[prefix]) _tiersData[prefix] = [];
+  if (!_tiersData[prefix][idx]) _tiersData[prefix][idx] = {};
+  _tiersData[prefix][idx][field] = val;
+};
+const addTierRow = (prefix) => {
+  if (!_tiersData[prefix]) _tiersData[prefix] = [];
+  _tiersData[prefix].push({ label: '', durationMinutes: '', price: '', nightPrice: '' });
+  const wrap = document.getElementById(`${prefix}tiers-wrap`);
+  if (!wrap) return;
+  const i = _tiersData[prefix].length - 1;
+  const row = document.createElement('div');
+  row.className = 'tier-row';
+  row.id = `${prefix}tier-${i}`;
+  row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr 1fr 32px;gap:6px;margin-bottom:6px;';
+  row.innerHTML = `<input class="form-input" placeholder="Label (ex: 4h)" oninput="updateTierField('${prefix}', ${i}, 'label', this.value)" />
+    <input class="form-input" type="number" placeholder="Min." oninput="updateTierField('${prefix}', ${i}, 'durationMinutes', this.value)" />
+    <input class="form-input" type="number" placeholder="R$ dia" oninput="updateTierField('${prefix}', ${i}, 'price', this.value)" />
+    <input class="form-input" type="number" placeholder="R$ noite" oninput="updateTierField('${prefix}', ${i}, 'nightPrice', this.value)" />
+    <button class="btn btn-danger btn-sm" onclick="removeTierRow('${prefix}', ${i})" style="padding:0 8px;">✕</button>`;
+  wrap.appendChild(row);
+};
+const removeTierRow = (prefix, idx) => {
+  if (_tiersData[prefix]) _tiersData[prefix].splice(idx, 1);
+  const el = document.getElementById(`${prefix}tier-${idx}`);
+  if (el) el.remove();
+  // Renumber
+  const rows = document.querySelectorAll(`#${prefix}tiers-wrap .tier-row`);
+  rows.forEach((row, i) => {
+    row.id = `${prefix}tier-${i}`;
+    row.querySelectorAll('[oninput]').forEach((inp) => {
+      inp.setAttribute('oninput', inp.getAttribute('oninput').replace(/,\s*\d+\s*,/, `, ${i},`));
+    });
+    const btn = row.querySelector('button');
+    if (btn) btn.setAttribute('onclick', `removeTierRow('${prefix}', ${i})`);
+  });
+};
+
+const collectTiers = (prefix) => {
+  const rows = document.querySelectorAll(`#${prefix}tiers-wrap .tier-row`);
+  const result = [];
+  rows.forEach((row, i) => {
+    const inputs = row.querySelectorAll('input');
+    const live = _tiersData[prefix]?.[i] || {};
+    const label = (inputs[0]?.value ?? live.label ?? '').trim();
+    const durationMinutes = Number(inputs[1]?.value ?? live.durationMinutes);
+    const price = Number(inputs[2]?.value ?? live.price);
+    const nightPriceRaw = inputs[3]?.value ?? live.nightPrice;
+    const nightPrice = (nightPriceRaw !== '' && nightPriceRaw != null) ? Number(nightPriceRaw) : null;
+    if (label && durationMinutes > 0 && price >= 0) result.push({ label, durationMinutes, price, nightPrice, sortOrder: i });
+  });
+  return result;
+};
+
+const openAddCityServiceModal = async (coverageCityId) => {
+  let serviceTypes = [];
+  try {
+    const data = await req('GET', `/city-service-configs?coverageCityId=${coverageCityId}`);
+    serviceTypes = data.serviceTypes || [];
+    const existingSlugs = new Set((data.configs || []).map((c) => c.serviceTypeSlug));
+    serviceTypes = serviceTypes.filter((st) => !existingSlugs.has(st.slug));
+  } catch (err) { showAlert(err.message); return; }
+
+  if (!serviceTypes.length) { showAlert('Todos os tipos de serviço já foram configurados para esta cidade.', 'success'); return; }
+
+  // Store globally to avoid embedding large JSON in HTML attribute (parsing issue with double-quotes)
+  _addCityServiceTypes = serviceTypes;
+  _tiersData['add-cs-'] = [];
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:700px;width:100%;max-height:90vh;overflow-y:auto;">
+    <div class="modal-header"><h3>+ Adicionar Serviço à Cidade</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Tipo de Serviço</label>
+        <select id="acs-slug" class="form-select" onchange="acs_loadGlobal(this.value)">
+          <option value="">-- Selecione --</option>
+          ${serviceTypes.map((st) => `<option value="${escHtml(st.slug)}">${escHtml(st.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div id="acs-details" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select id="acs-status" class="form-select"><option value="enabled">Ativo</option><option value="disabled">Inativo</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Faixas de Preço <span style="font-size:11px;color:#7A84A0;">(deixe igual ao global ou personalize)</span></label>
+          <div style="font-size:11px;color:#7A84A0;margin-bottom:4px;">Label · Duração(min) · Preço Dia · Preço Noite</div>
+          <div id="acs-tiers">${buildPriceTiersEditor([], 'add-cs-')}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Taxa da plataforma (%) <span style="font-size:11px;color:#7A84A0;">em branco = usar global</span></label>
+          <input id="acs-fee" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="Ex: 15" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveAddCityService('${escHtml(coverageCityId)}')">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const acs_loadGlobal = (slug) => {
+  const st = _addCityServiceTypes.find((s) => s.slug === slug);
+  const details = document.getElementById('acs-details');
+  if (!st) { if (details) details.style.display = 'none'; return; }
+  details.style.display = 'block';
+  _tiersData['add-cs-'] = (st.priceTiers || []).map((t) => ({ ...t }));
+  const tiersEl = document.getElementById('acs-tiers');
+  if (tiersEl) tiersEl.innerHTML = buildPriceTiersEditor(st.priceTiers || [], 'add-cs-');
+  const feeEl = document.getElementById('acs-fee');
+  if (feeEl) feeEl.value = st.platformFeePercent != null ? st.platformFeePercent : '';
+};
+
+const saveAddCityService = async (coverageCityId) => {
+  const slug = document.getElementById('acs-slug').value;
+  if (!slug) { showAlert('Selecione um tipo de serviço.'); return; }
+  const status = document.getElementById('acs-status').value;
+  const feeRaw = document.getElementById('acs-fee').value.trim();
+  const platformFeePercent = feeRaw !== '' ? Number(feeRaw) : null;
+  const priceTiers = collectTiers('add-cs-');
+  if (!priceTiers.length) { showAlert('Adicione pelo menos uma faixa de preço.'); return; }
+  try {
+    await req('POST', '/city-service-configs', { coverageCityId, serviceTypeSlug: slug, status, priceTiers, platformFeePercent });
+    // Remove apenas o submodal (último overlay), preservando o modal pai de cidades
+    const overlays = document.querySelectorAll('.modal-overlay');
+    overlays[overlays.length - 1]?.remove();
+    showAlert('Serviço adicionado!', 'success');
+    await refreshCityServicesBody(coverageCityId);
+  } catch (err) { showAlert(err.message); }
+};
+
+const openEditCityServiceModal = (cfgJson, stJson) => {
+  const cfg = JSON.parse(cfgJson);
+  const st = JSON.parse(stJson);
+  const prefix = `edit-cs-${cfg._id}-`;
+  _tiersData[prefix] = (cfg.priceTiers.length ? cfg.priceTiers : st.priceTiers || []).map((t) => ({ ...t }));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:700px;width:100%;max-height:90vh;overflow-y:auto;">
+    <div class="modal-header"><h3>✏️ Editar — ${escHtml(st.name || cfg.serviceTypeSlug)}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select id="ecs-status" class="form-select">
+          <option value="enabled" ${cfg.status === 'enabled' ? 'selected' : ''}>Ativo</option>
+          <option value="disabled" ${cfg.status === 'disabled' ? 'selected' : ''}>Inativo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Faixas de Preço</label>
+        <div style="font-size:11px;color:#7A84A0;margin-bottom:4px;">Label · Duração(min) · Preço Dia · Preço Noite</div>
+        ${buildPriceTiersEditor(cfg.priceTiers.length ? cfg.priceTiers : st.priceTiers || [], prefix)}
+      </div>
+      <div class="form-group">
+        <label class="form-label">Taxa da plataforma (%) <span style="font-size:11px;color:#7A84A0;">em branco = usar global (${st.platformFeePercent ?? 15}%)</span></label>
+        <input id="ecs-fee" class="form-input" type="number" min="0" max="100" step="0.1" value="${cfg.platformFeePercent != null ? cfg.platformFeePercent : ''}" placeholder="Ex: 15" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditCityService('${cfg._id}', '${cfg.coverageCityId}', '${prefix}')">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const saveEditCityService = async (configId, coverageCityId, prefix) => {
+  const status = document.getElementById('ecs-status').value;
+  const feeRaw = document.getElementById('ecs-fee').value.trim();
+  const platformFeePercent = feeRaw !== '' ? Number(feeRaw) : null;
+  const priceTiers = collectTiers(prefix);
+  if (!priceTiers.length) { showAlert('Adicione pelo menos uma faixa de preço.'); return; }
+  try {
+    await req('PATCH', `/city-service-configs/${configId}`, { status, priceTiers, platformFeePercent });
+    // Remove apenas o submodal (último overlay), preservando o modal pai de cidades
+    const overlays = document.querySelectorAll('.modal-overlay');
+    overlays[overlays.length - 1]?.remove();
+    showAlert('Configuração salva!', 'success');
+    await refreshCityServicesBody(coverageCityId);
+  } catch (err) { showAlert(err.message); }
+};
+
+const openImportCityServicesModal = async (targetCityId) => {
+  let cities = [];
+  try {
+    const data = await req('GET', '/coverage-cities');
+    cities = (data.coverageCities || []).filter((c) => c._id !== targetCityId);
+  } catch (err) { showAlert(err.message); return; }
+
+  if (!cities.length) { showAlert('Nenhuma outra cidade disponível para importar.'); return; }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">
+    <div class="modal-header"><h3>📥 Importar Serviços de Outra Cidade</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <p style="color:#7A84A0;font-size:13px;margin-bottom:12px;">Selecione a cidade de origem. Os serviços serão copiados com os mesmos preços — você poderá editar depois.</p>
+      <div class="form-group">
+        <label class="form-label">Cidade de origem</label>
+        <select id="ics-source" class="form-select">
+          <option value="">-- Selecione --</option>
+          ${cities.map((c) => `<option value="${c._id}">${escHtml(c.city)}${c.state ? ` / ${escHtml(c.state)}` : ''}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="doImportCityServices('${escHtml(targetCityId)}')">Importar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const doImportCityServices = async (targetCityId) => {
+  const sourceCityId = document.getElementById('ics-source').value;
+  if (!sourceCityId) { showAlert('Selecione a cidade de origem.'); return; }
+  try {
+    const result = await req('POST', '/city-service-configs/import-from-city', { sourceCityId, targetCityId });
+    // Remove apenas o submodal de importação (último overlay), preservando o modal pai de cidades
+    const overlays = document.querySelectorAll('.modal-overlay');
+    overlays[overlays.length - 1]?.remove();
+    showAlert(`${result.imported} serviço(s) importado(s)${result.skipped ? `, ${result.skipped} já existia(m)` : ''}.`, 'success');
+    await refreshCityServicesBody(targetCityId);
   } catch (err) { showAlert(err.message); }
 };
 

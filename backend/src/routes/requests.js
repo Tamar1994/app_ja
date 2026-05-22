@@ -215,13 +215,15 @@ router.get('/coverage', auth, async (req, res) => {
 
 // POST /api/requests/estimate — estimar valor antes de contratar
 router.post('/estimate', auth, async (req, res) => {
-  const { serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate } = req.body;
+  const { serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate, city, state } = req.body;
   try {
     const pricing = await calculateCheckoutPricing({
       serviceTypeSlug: serviceTypeSlug || null,
       tierLabel: tierLabel || null,
       selectedUpsells: selectedUpsells || [],
       scheduledDate: scheduledDate || null,
+      city: city || null,
+      state: state || null,
     });
 
     res.json({
@@ -279,7 +281,7 @@ router.post('/', auth, [
 
   let pricing;
   try {
-    pricing = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate });
+    pricing = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate, city: address?.city || null, state: address?.state || null });
   } catch (err) {
     if (err.status === 400) return res.status(400).json({ message: err.message });
     return res.status(500).json({ message: 'Erro ao calcular preço' });

@@ -4,6 +4,8 @@ const path = require('path');
 const multer = require('multer');
 const crypto = require('crypto');
 const ServiceType = require('../models/ServiceType');
+const ServiceCoverageCity = require('../models/ServiceCoverageCity');
+const CityServiceConfig = require('../models/CityServiceConfig');
 const { adminAuth } = require('../middleware/adminAuth');
 const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadCleanup');
 
@@ -94,14 +96,95 @@ const serviceTypeUpload = multer({
 });
 
 // ---------------------------------------------------------------------------
+// Helpers de normalização (para busca por cidade)
+// ---------------------------------------------------------------------------
+
+const normalizeText = (v = '') =>
+  String(v).toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+async function findCoverageCityByName(city, state) {
+  if (!city) return null;
+  const normCity = normalizeText(city);
+  const normState = normalizeText(state || '');
+
+  const matches = await ServiceCoverageCity.find({
+    normalizedCity: normCity,
+    isActive: true,
+  });
+  if (!matches.length) return null;
+  if (!normState) return matches[0];
+  const exact = matches.find((m) => normalizeText(m.state || '') === normState || normalizeText(m.normalizedState || '') === normState);
+  return exact || matches[0];
+}
+
+// ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 
 // GET /api/service-types
+// Optional query params: ?city=X&state=Y  → returns city-specific config (merged with global)
+// Without city param → returns all globally enabled types (backward compatible)
 router.get('/', async (req, res) => {
   try {
-    const types = await ServiceType.find().sort({ sortOrder: 1, name: 1 });
-    res.json({ serviceTypes: types });
+    const { city, state } = req.query;
+
+    // Without city → return all types (original behavior; admin uses this too)
+    // Mobile already filters by status === 'enabled' client-side
+    if (!city) {
+      const types = await ServiceType.find().sort({ sortOrder: 1, name: 1 });
+      return res.json({ serviceTypes: types });
+    }
+
+    // With city → look for city-specific configs
+    const coverageCity = await findCoverageCityByName(city, state);
+    if (!coverageCity) {
+      // City not found / inactive → fall back to global enabled list
+      const types = await ServiceType.find({ status: 'enabled' }).sort({ sortOrder: 1, name: 1 });
+      return res.json({ serviceTypes: types, cityConfigured: false });
+    }
+
+    const cityConfigs = await CityServiceConfig.find({ coverageCityId: coverageCity._id });
+
+    // If no city configs exist yet → fall back to global enabled list
+    if (!cityConfigs.length) {
+      const types = await ServiceType.find({ status: 'enabled' }).sort({ sortOrder: 1, name: 1 });
+      return res.json({ serviceTypes: types, cityConfigured: false });
+    }
+
+    // Merge city configs with global service type metadata
+    const globalTypes = await ServiceType.find().sort({ sortOrder: 1, name: 1 });
+    const globalBySlug = {};
+    for (const t of globalTypes) globalBySlug[t.slug] = t;
+
+    const serviceTypes = [];
+    for (const cfg of cityConfigs) {
+      if (cfg.status !== 'enabled') continue;
+      const global = globalBySlug[cfg.serviceTypeSlug];
+      if (!global) continue; // global type deleted
+      // City config overrides global pricing; rest of metadata comes from global
+      serviceTypes.push({
+        _id: global._id,
+        slug: global.slug,
+        name: global.name,
+        description: global.description,
+        icon: global.icon,
+        imageUrl: global.imageUrl,
+        status: 'enabled',
+        sortOrder: global.sortOrder,
+        requiresLocationTracking: global.requiresLocationTracking,
+        priceTiers: cfg.priceTiers.length ? cfg.priceTiers : global.priceTiers,
+        upsells: cfg.upsells.length ? cfg.upsells : global.upsells,
+        platformFeePercent: cfg.platformFeePercent != null ? cfg.platformFeePercent : (global.platformFeePercent ?? 15),
+        nightRateStartHour: cfg.nightRateStartHour != null ? cfg.nightRateStartHour : global.nightRateStartHour,
+        nightRateEndHour: cfg.nightRateEndHour != null ? cfg.nightRateEndHour : global.nightRateEndHour,
+      });
+    }
+
+    // Sort by global sortOrder
+    serviceTypes.sort((a, b) => (a.sortOrder ?? 99) - (b.sortOrder ?? 99));
+    return res.json({ serviceTypes, cityConfigured: true });
   } catch (err) {
     res.status(500).json({ message: 'Erro ao buscar tipos de servico' });
   }

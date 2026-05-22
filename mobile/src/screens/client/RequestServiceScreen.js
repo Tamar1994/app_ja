@@ -100,6 +100,8 @@ export default function RequestServiceScreen({ navigation, route }) {
         selectedTier.label,
         selectedUpsellKeys,
         getFinalScheduledDate(),
+        address.city || null,
+        address.state || null,
       );
       setEstimate(data);
     } catch {

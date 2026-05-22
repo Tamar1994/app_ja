@@ -1,4 +1,6 @@
 ﻿const ServiceType = require('../models/ServiceType');
+const ServiceCoverageCity = require('../models/ServiceCoverageCity');
+const CityServiceConfig = require('../models/CityServiceConfig');
 
 const FALLBACK_PLATFORM_FEE_PCT = 15;
 
@@ -77,11 +79,13 @@ function calcDayNightPrice(tier, nightRateStartHour, nightRateEndHour, scheduled
  * @param {string}        params.tierLabel        - label da faixa escolhida (ex: "8h")
  * @param {string[]}      params.selectedUpsells  - keys dos upsells selecionados
  * @param {string|Date|null} params.scheduledDate - data/hora de inicio (para calculo diurno/noturno)
+ * @param {string}        [params.city]           - cidade do cliente (para preços por cidade)
+ * @param {string}        [params.state]          - estado do cliente
  *
  * @returns {{ serviceType, tier, upsells, tierPrice, upsellsTotal, estimated,
  *             platformFeePercent, platformFee, amountCents, dayNightBreakdown }}
  */
-async function calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate = null }) {
+async function calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate = null, city = null, state = null }) {
   if (!serviceTypeSlug) {
     throw Object.assign(new Error('serviceTypeSlug e obrigatorio'), { status: 400 });
   }
@@ -99,32 +103,72 @@ async function calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUp
     throw Object.assign(new Error('Este servico nao esta disponivel no momento'), { status: 400 });
   }
 
-  const tier = (serviceType.priceTiers || []).find((t) => t.label === tierLabel);
+  // Look up city-specific config (if city provided)
+  let cityConfig = null;
+  if (city) {
+    const normCity = String(city).toLowerCase().trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+    const normState = String(state || '').toLowerCase().trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+    // Try exact state match first, fall back to city-only
+    let coverageCity = normState
+      ? await ServiceCoverageCity.findOne({ normalizedCity: normCity, normalizedState: normState, isActive: true })
+      : null;
+    if (!coverageCity) {
+      coverageCity = await ServiceCoverageCity.findOne({ normalizedCity: normCity, isActive: true });
+    }
+
+    if (coverageCity) {
+      // Look up WITHOUT status filter — need to detect explicitly disabled services
+      const cityConfigDoc = await CityServiceConfig.findOne({
+        coverageCityId: coverageCity._id,
+        serviceTypeSlug: serviceTypeSlug.toLowerCase().trim(),
+      });
+      if (cityConfigDoc) {
+        if (cityConfigDoc.status === 'disabled') {
+          throw Object.assign(new Error('Este serviço não está disponível na sua cidade'), { status: 400 });
+        }
+        cityConfig = cityConfigDoc;
+      }
+    }
+  }
+
+  // Use city config overrides if available, otherwise fall back to global ServiceType
+  const effectivePriceTiers    = (cityConfig?.priceTiers?.length)    ? cityConfig.priceTiers    : serviceType.priceTiers;
+  const effectiveUpsells       = (cityConfig?.upsells?.length)       ? cityConfig.upsells       : serviceType.upsells;
+  const effectiveFeePercent    = cityConfig?.platformFeePercent != null ? cityConfig.platformFeePercent : serviceType.platformFeePercent;
+  const effectiveNightStart    = cityConfig?.nightRateStartHour != null ? cityConfig.nightRateStartHour : serviceType.nightRateStartHour;
+  const effectiveNightEnd      = cityConfig?.nightRateEndHour   != null ? cityConfig.nightRateEndHour   : serviceType.nightRateEndHour;
+
+  const tier = (effectivePriceTiers || []).find((t) => t.label === tierLabel);
   if (!tier) {
     throw Object.assign(new Error(`Faixa "${tierLabel}" nao disponivel para este servico`), { status: 400 });
   }
 
-  const validUpsellKeys = new Set((serviceType.upsells || []).map((u) => u.key));
+  const validUpsellKeys = new Set((effectiveUpsells || []).map((u) => u.key));
   const appliedUpsells = (selectedUpsells || [])
     .filter((key) => validUpsellKeys.has(key))
     .map((key) => {
-      const u = serviceType.upsells.find((u) => u.key === key);
+      const u = effectiveUpsells.find((u) => u.key === key);
       return { key: u.key, label: u.label, price: u.price };
     });
 
   const { tierPrice, dayNightBreakdown } = calcDayNightPrice(
     tier,
-    serviceType.nightRateStartHour != null ? Number(serviceType.nightRateStartHour) : null,
-    serviceType.nightRateStartHour != null
-      ? (serviceType.nightRateEndHour != null ? Number(serviceType.nightRateEndHour) : 6)
+    effectiveNightStart != null ? Number(effectiveNightStart) : null,
+    effectiveNightStart != null
+      ? (effectiveNightEnd != null ? Number(effectiveNightEnd) : 6)
       : null,
     scheduledDate,
   );
   const upsellsTotal = appliedUpsells.reduce((sum, u) => sum + Number(u.price), 0);
   const estimated    = tierPrice + upsellsTotal;
 
-  const platformFeePercent = Number.isFinite(Number(serviceType.platformFeePercent))
-    ? Number(serviceType.platformFeePercent)
+  const platformFeePercent = Number.isFinite(Number(effectiveFeePercent))
+    ? Number(effectiveFeePercent)
     : FALLBACK_PLATFORM_FEE_PCT;
   const platformFee = Math.round(estimated * platformFeePercent) / 100;
 
