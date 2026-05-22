@@ -130,6 +130,19 @@ const serviceRequestSchema = new mongoose.Schema({
     },
   },
   professionalLiveLocationUpdatedAt: { type: Date, default: null },
+
+  // Snapshot da taxa de cancelamento aplicada ao pedido cancelado
+  cancellation: {
+    phaseName:              { type: String, default: null },
+    totalFeePercent:        { type: Number, default: null },
+    platformFeePercent:     { type: Number, default: null },
+    professionalFeePercent: { type: Number, default: null },
+    feeAmount:              { type: Number, default: null },
+    refundAmount:           { type: Number, default: null },
+    refundDestination:      { type: String, enum: ['wallet', 'original', null], default: null },
+    stripeRefundId:         { type: String, default: null },
+    pixRefundRequestId:     { type: mongoose.Schema.Types.ObjectId, ref: 'PixRefundRequest', default: null },
+  },
 }, { timestamps: true });
 
 serviceRequestSchema.index({ 'address.coordinates': '2dsphere' });

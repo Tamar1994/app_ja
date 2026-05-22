@@ -5,6 +5,8 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 
+const ClientWalletTransaction = require('../models/ClientWalletTransaction');
+
 const router = express.Router();
 
 const WITHDRAWAL_MIN_AMOUNT = 50;
@@ -257,6 +259,58 @@ router.post('/withdrawals/request', auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(400).json({ message: err.message || 'Erro ao solicitar saque' });
+  }
+});
+
+// POST /api/wallet/transfer-to-client — transfere saldo da carteira profissional para a carteira cliente
+// Apenas usuários com perfil profissional ativo + que também têm perfil cliente habilitado
+router.post('/transfer-to-client', auth, async (req, res) => {
+  if (!isProfessionalProfile(req.user)) {
+    return res.status(403).json({ message: 'Apenas profissionais podem transferir para a carteira cliente' });
+  }
+
+  const amount = Number(req.body?.amount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ message: 'Valor inválido' });
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    let updatedUser;
+    await session.withTransaction(async () => {
+      updatedUser = await User.findOneAndUpdate(
+        { _id: req.user._id, 'wallet.balance': { $gte: amount } },
+        {
+          $inc: {
+            'wallet.balance': -amount,
+            'clientWallet.balance': amount,
+            'clientWallet.totalRefunded': amount,
+          },
+        },
+        { new: true, session }
+      );
+
+      if (!updatedUser) throw new Error('Saldo insuficiente na carteira profissional');
+
+      await ClientWalletTransaction.create([{
+        user: req.user._id,
+        type: 'credit_refund',
+        source: 'professional_wallet',
+        amount,
+        balanceAfterClientWallet: updatedUser.clientWallet?.balance || 0,
+        metadata: { label: 'Transferência da carteira profissional' },
+      }], { session });
+    });
+
+    res.json({
+      message: 'Transferência realizada com sucesso',
+      professionalWalletBalance: updatedUser.wallet?.balance || 0,
+      clientWalletBalance: updatedUser.clientWallet?.balance || 0,
+    });
+  } catch (err) {
+    res.status(400).json({ message: err.message || 'Erro ao transferir' });
+  } finally {
+    await session.endSession();
   }
 });
 

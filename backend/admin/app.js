@@ -460,6 +460,8 @@ const navTo = (page) => {
     cupons: [PERMISSIONS.COUPON_MANAGEMENT],
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
+    'pix-refunds': [PERMISSIONS.FINANCIAL],
+    'cancellation-configs': [PERMISSIONS.FINANCIAL],
     'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
     'coverage-cities': [PERMISSIONS.SERVICE_MANAGEMENT],
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
@@ -491,6 +493,8 @@ const navTo = (page) => {
     cupons: 'Cupons de Desconto',
     pagamentos: 'Pagamentos & Stripe',
     saques: 'Fila de Saques PIX',
+    'pix-refunds': 'Estornos PIX de Cancelamentos',
+    'cancellation-configs': 'Taxas de Cancelamento',
     'service-types': 'Profissões e Serviços',
     'coverage-cities': 'Cidades Atendidas',
     'pause-types': 'Tipos de Pausa',
@@ -515,6 +519,8 @@ const renderPage = () => {
     cupons: [PERMISSIONS.COUPON_MANAGEMENT],
     pagamentos: [PERMISSIONS.PAYMENT_MANAGEMENT],
     saques: [PERMISSIONS.FINANCIAL],
+    'pix-refunds': [PERMISSIONS.FINANCIAL],
+    'cancellation-configs': [PERMISSIONS.FINANCIAL],
     'service-types': [PERMISSIONS.SERVICE_MANAGEMENT],
     'coverage-cities': [PERMISSIONS.SERVICE_MANAGEMENT],
     'pause-types': [PERMISSIONS.SUPPORT_CHAT],
@@ -527,7 +533,7 @@ const renderPage = () => {
   if (!hasPermission(...required)) {
     currentPage = hasPermission(PERMISSIONS.SUPPORT_CHAT) ? 'suporte' : 'dashboard';
   }
-  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns, registro: renderRegistroConfig, 'address-updates': renderAddressUpdates };
+  const pages = { dashboard: renderDashboard, nps: renderNps, approvals: renderApprovals, users: renderUsers, suporte: renderSupporte, ajuda: renderHelpCenter, termos: renderTerms, banners: renderBanners, cupons: renderCoupons, pagamentos: renderPayments, saques: renderWithdrawalsQueue, 'pix-refunds': renderPixRefundQueue, 'cancellation-configs': renderCancellationConfigs, 'service-types': renderServiceTypes, 'coverage-cities': renderCoverageCities, 'pause-types': renderPauseTypes, admins: renderAdmins, push: renderPushCampaigns, registro: renderRegistroConfig, 'address-updates': renderAddressUpdates };
   (pages[currentPage] || renderDashboard)();
 };
 
@@ -5296,6 +5302,443 @@ const toggleRegistroFlag = async (flag, value) => {
   } catch (err) {
     showAlert('Erro: ' + err.message);
     renderRegistroConfig(); // revert UI
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAXAS DE CANCELAMENTO
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _cancelConfigData = { cities: [], serviceTypes: [] };
+
+const renderCancellationConfigs = async () => {
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', '/cancellation-configs');
+    _cancelConfigData = { cities: data.cities || [], serviceTypes: data.serviceTypes || [] };
+    const configs = data.configs || [];
+
+    const cityLabel = (id) => {
+      const city = _cancelConfigData.cities.find((ci) => ci._id === id);
+      return city ? `${escHtml(city.city)}/${escHtml(city.state || '')}` : (id ? escHtml(id) : '<i>Global</i>');
+    };
+    const stLabel = (slug) => {
+      const st = _cancelConfigData.serviceTypes.find((s) => s.slug === slug);
+      return st ? escHtml(st.name) : (slug ? escHtml(slug) : '<i>Todos os serviços</i>');
+    };
+
+    c.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <p style="color:#5C6B7A;font-size:13px;">Configure as taxas de cancelamento por fase, por cidade e/ou tipo de serviço.</p>
+        <button class="btn btn-primary" onclick="openNewCancelConfigModal()">+ Nova Configuração</button>
+      </div>
+      ${configs.length === 0 ? '<div class="alert alert-info">Nenhuma configuração cadastrada. Sem configuração, não há taxa de cancelamento.</div>' : ''}
+      <div style="display:grid;gap:16px;">
+        ${configs.map((cfg) => `
+          <div class="section-card" style="padding:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+              <div>
+                <div style="font-weight:700;font-size:15px;">${escHtml(cfg.label || '(sem nome)')}</div>
+                <div style="font-size:12px;color:#5C6B7A;margin-top:2px;">
+                  🏙 ${cityLabel(cfg.coverageCityId?._id || cfg.coverageCityId)} &nbsp;|&nbsp;
+                  🔧 ${stLabel(cfg.serviceTypeSlug)} &nbsp;|&nbsp;
+                  <span class="badge ${cfg.status === 'active' ? 'badge-success' : 'badge-warning'}">${cfg.status === 'active' ? 'Ativa' : 'Inativa'}</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm btn-ghost" onclick='openEditCancelConfigModal(${JSON.stringify(JSON.stringify(cfg))})'>✏️ Editar</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteCancelConfig('${cfg._id}')">🗑</button>
+              </div>
+            </div>
+            ${cfg.immediatePhases?.length ? `
+              <div style="margin-top:12px;">
+                <div style="font-size:12px;font-weight:600;color:#3D4460;margin-bottom:6px;">⚡ Imediato — fases de cancelamento:</div>
+                <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                  <thead><tr style="background:#F3F5FA;">
+                    <th style="padding:4px 8px;text-align:left;">Fase</th>
+                    <th style="padding:4px 8px;">A partir de (min)</th>
+                    <th style="padding:4px 8px;">Taxa plataforma</th>
+                    <th style="padding:4px 8px;">Taxa profissional</th>
+                    <th style="padding:4px 8px;">Total cliente</th>
+                  </tr></thead>
+                  <tbody>
+                    ${cfg.immediatePhases.map((p) => `
+                      <tr style="border-top:1px solid #E8EAF0;">
+                        <td style="padding:4px 8px;">${escHtml(p.label)}</td>
+                        <td style="padding:4px 8px;text-align:center;">${p.minutesAfterAccepted} min</td>
+                        <td style="padding:4px 8px;text-align:center;">${p.platformFeePercent}%</td>
+                        <td style="padding:4px 8px;text-align:center;">${p.professionalFeePercent}%</td>
+                        <td style="padding:4px 8px;text-align:center;font-weight:700;">${p.platformFeePercent + p.professionalFeePercent}%</td>
+                      </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>` : ''}
+            ${cfg.scheduledPhases?.length ? `
+              <div style="margin-top:12px;">
+                <div style="font-size:12px;font-weight:600;color:#3D4460;margin-bottom:6px;">📅 Agendado — fases de cancelamento:</div>
+                <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                  <thead><tr style="background:#F3F5FA;">
+                    <th style="padding:4px 8px;text-align:left;">Fase</th>
+                    <th style="padding:4px 8px;">Com ≥ (h) antes</th>
+                    <th style="padding:4px 8px;">Taxa plataforma</th>
+                    <th style="padding:4px 8px;">Taxa profissional</th>
+                    <th style="padding:4px 8px;">Total cliente</th>
+                  </tr></thead>
+                  <tbody>
+                    ${cfg.scheduledPhases.map((p) => `
+                      <tr style="border-top:1px solid #E8EAF0;">
+                        <td style="padding:4px 8px;">${escHtml(p.label)}</td>
+                        <td style="padding:4px 8px;text-align:center;">${p.hoursBeforeScheduled}h</td>
+                        <td style="padding:4px 8px;text-align:center;">${p.platformFeePercent}%</td>
+                        <td style="padding:4px 8px;text-align:center;">${p.professionalFeePercent}%</td>
+                        <td style="padding:4px 8px;text-align:center;font-weight:700;">${p.platformFeePercent + p.professionalFeePercent}%</td>
+                      </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>` : ''}
+          </div>`).join('')}
+      </div>`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+// Helpers para o editor de fases
+const _buildPhasesEditor = (phases, idPrefix, type) => {
+  /* type = 'immediate' | 'scheduled' */
+  return `
+    <div id="${idPrefix}wrap" style="display:flex;flex-direction:column;gap:8px;">
+      ${phases.map((p, i) => _buildPhaseRow(p, i, idPrefix, type)).join('')}
+    </div>
+    <button type="button" class="btn btn-sm btn-ghost" style="margin-top:6px;" onclick="_addPhaseRow('${idPrefix}','${type}')">+ Fase</button>`;
+};
+
+const _buildPhaseRow = (p, i, idPrefix, type) => {
+  const trigger = type === 'immediate'
+    ? `<input class="form-input" style="width:90px;" type="number" min="0" placeholder="min" value="${p.minutesAfterAccepted ?? ''}" id="${idPrefix}trigger${i}" />`
+    : `<input class="form-input" style="width:90px;" type="number" min="0" step="0.5" placeholder="h" value="${p.hoursBeforeScheduled ?? ''}" id="${idPrefix}trigger${i}" />`;
+  const triggerLabel = type === 'immediate' ? 'min desde aceite' : 'h antes do início';
+  return `
+    <div id="${idPrefix}row${i}" style="display:grid;grid-template-columns:1fr 120px 100px 100px 36px;gap:6px;align-items:center;padding:6px 8px;background:#F8F9FC;border-radius:6px;">
+      <input class="form-input" placeholder="Nome da fase" value="${escHtml(p.label || '')}" id="${idPrefix}label${i}" />
+      <div style="display:flex;align-items:center;gap:4px;">${trigger}<span style="font-size:11px;white-space:nowrap;color:#7A84A0;">${triggerLabel}</span></div>
+      <div style="display:flex;align-items:center;gap:4px;"><input class="form-input" style="width:56px;" type="number" min="0" max="100" step="0.1" placeholder="%" value="${p.platformFeePercent ?? 0}" id="${idPrefix}plat${i}" /><span style="font-size:11px;color:#7A84A0;">plat.</span></div>
+      <div style="display:flex;align-items:center;gap:4px;"><input class="form-input" style="width:56px;" type="number" min="0" max="100" step="0.1" placeholder="%" value="${p.professionalFeePercent ?? 0}" id="${idPrefix}prof${i}" /><span style="font-size:11px;color:#7A84A0;">prof.</span></div>
+      <button type="button" class="btn btn-sm btn-danger" onclick="_removePhaseRow('${idPrefix}',${i},'${type}')" style="padding:4px 8px;">✕</button>
+    </div>`;
+};
+
+const _addPhaseRow = (idPrefix, type) => {
+  const wrap = document.getElementById(`${idPrefix}wrap`);
+  if (!wrap) return;
+  const i = wrap.querySelectorAll('[id^="' + idPrefix + 'row"]').length;
+  const div = document.createElement('div');
+  div.innerHTML = _buildPhaseRow({ label: '', minutesAfterAccepted: 0, hoursBeforeScheduled: 0, platformFeePercent: 0, professionalFeePercent: 0 }, i, idPrefix, type);
+  wrap.appendChild(div.firstElementChild);
+};
+
+const _removePhaseRow = (idPrefix, idx, type) => {
+  const el = document.getElementById(`${idPrefix}row${idx}`);
+  if (el) el.remove();
+  // Renumerar linhas restantes
+  const wrap = document.getElementById(`${idPrefix}wrap`);
+  if (!wrap) return;
+  wrap.querySelectorAll('.form-input[id^="' + idPrefix + 'label"]').forEach((inp, i) => {
+    const oldIdx = Number(inp.id.replace(idPrefix + 'label', ''));
+    if (oldIdx !== i) {
+      inp.id = `${idPrefix}label${i}`;
+      const row = inp.closest('[id^="' + idPrefix + 'row"]');
+      if (row) row.id = `${idPrefix}row${i}`;
+      ['trigger', 'plat', 'prof'].forEach((f) => {
+        const el2 = document.getElementById(`${idPrefix}${f}${oldIdx}`);
+        if (el2) el2.id = `${idPrefix}${f}${i}`;
+      });
+      const btn = row?.querySelector('button');
+      if (btn) btn.setAttribute('onclick', `_removePhaseRow('${idPrefix}',${i},'${type}')`);
+    }
+  });
+};
+
+const _collectPhases = (idPrefix, type) => {
+  const wrap = document.getElementById(`${idPrefix}wrap`);
+  if (!wrap) return [];
+  const rows = wrap.querySelectorAll('[id^="' + idPrefix + 'row"]');
+  const result = [];
+  rows.forEach((_, i) => {
+    const label    = document.getElementById(`${idPrefix}label${i}`)?.value?.trim() || '';
+    const trigger  = Number(document.getElementById(`${idPrefix}trigger${i}`)?.value || 0);
+    const platFee  = Number(document.getElementById(`${idPrefix}plat${i}`)?.value || 0);
+    const profFee  = Number(document.getElementById(`${idPrefix}prof${i}`)?.value || 0);
+    if (!label) return;
+    const phase = { label, platformFeePercent: platFee, professionalFeePercent: profFee };
+    if (type === 'immediate') phase.minutesAfterAccepted = trigger;
+    else phase.hoursBeforeScheduled = trigger;
+    result.push(phase);
+  });
+  return result;
+};
+
+const _cancelConfigFormHtml = (cfg = {}) => {
+  const cities = _cancelConfigData.cities;
+  const sts    = _cancelConfigData.serviceTypes;
+  const selCity = cfg.coverageCityId?._id || cfg.coverageCityId || '';
+  const selSt   = cfg.serviceTypeSlug || '';
+  return `
+    <div class="form-group">
+      <label class="form-label">Nome / Descrição interna</label>
+      <input id="cc-label" class="form-input" value="${escHtml(cfg.label || '')}" placeholder="Ex: Global — Todos os serviços" />
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label class="form-label">Cidade <span style="color:#7A84A0;font-size:11px;">(em branco = global)</span></label>
+        <select id="cc-city" class="form-select">
+          <option value="">-- Global --</option>
+          ${cities.map((ci) => `<option value="${ci._id}" ${selCity === ci._id ? 'selected' : ''}>${escHtml(ci.city)}/${escHtml(ci.state || '')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de Serviço <span style="color:#7A84A0;font-size:11px;">(em branco = todos)</span></label>
+        <select id="cc-st" class="form-select">
+          <option value="">-- Todos --</option>
+          ${sts.map((s) => `<option value="${escHtml(s.slug)}" ${selSt === s.slug ? 'selected' : ''}>${escHtml(s.name)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="cc-status" class="form-select">
+        <option value="active" ${(cfg.status || 'active') === 'active' ? 'selected' : ''}>Ativa</option>
+        <option value="inactive" ${cfg.status === 'inactive' ? 'selected' : ''}>Inativa</option>
+      </select>
+    </div>
+    <hr style="margin:16px 0;border-color:#E8EAF0;" />
+    <div class="form-group">
+      <label class="form-label">⚡ Fases — Pedido Imediato</label>
+      <div style="font-size:11px;color:#7A84A0;margin-bottom:6px;">
+        Ordenadas pelo tempo decorrido desde o aceite. Use 0 min = fase inicial (sem tempo de carência).
+        Coloque 0% nas duas taxas para reembolso total nessa fase.
+      </div>
+      ${_buildPhasesEditor(cfg.immediatePhases || [], 'cc-imm-', 'immediate')}
+    </div>
+    <hr style="margin:16px 0;border-color:#E8EAF0;" />
+    <div class="form-group">
+      <label class="form-label">📅 Fases — Pedido Agendado</label>
+      <div style="font-size:11px;color:#7A84A0;margin-bottom:6px;">
+        Ordenadas pelas horas restantes até o início. Use 24h = "com 24h ou mais de antecedência".
+        A fase com o maior valor de horas ainda válido é aplicada.
+      </div>
+      ${_buildPhasesEditor(cfg.scheduledPhases || [], 'cc-sch-', 'scheduled')}
+    </div>`;
+};
+
+const openNewCancelConfigModal = () => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:760px;width:100%;max-height:92vh;overflow-y:auto;">
+    <div class="modal-header"><h3>Nova Configuração de Cancelamento</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">${_cancelConfigFormHtml()}</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCancelConfig()">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const openEditCancelConfigModal = (cfgJson) => {
+  const cfg = JSON.parse(cfgJson);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:760px;width:100%;max-height:92vh;overflow-y:auto;">
+    <div class="modal-header"><h3>Editar Configuração de Cancelamento</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">${_cancelConfigFormHtml(cfg)}</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveCancelConfig('${cfg._id}')">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const saveCancelConfig = async (id = null) => {
+  const label      = document.getElementById('cc-label')?.value?.trim() || '';
+  const coverageCityId  = document.getElementById('cc-city')?.value  || null;
+  const serviceTypeSlug = document.getElementById('cc-st')?.value    || null;
+  const status     = document.getElementById('cc-status')?.value     || 'active';
+  const immediatePhases = _collectPhases('cc-imm-', 'immediate');
+  const scheduledPhases = _collectPhases('cc-sch-', 'scheduled');
+
+  if (!immediatePhases.length && !scheduledPhases.length) {
+    showAlert('Adicione ao menos uma fase (imediato ou agendado).');
+    return;
+  }
+
+  const payload = { label, coverageCityId: coverageCityId || null, serviceTypeSlug: serviceTypeSlug || null, status, immediatePhases, scheduledPhases };
+
+  try {
+    if (id) {
+      await req('PATCH', `/cancellation-configs/${id}`, payload);
+    } else {
+      await req('POST', '/cancellation-configs', payload);
+    }
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert(id ? 'Configuração atualizada!' : 'Configuração criada!', 'success');
+    renderCancellationConfigs();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const deleteCancelConfig = async (id) => {
+  if (!confirm('Remover esta configuração de cancelamento?')) return;
+  try {
+    await req('DELETE', `/cancellation-configs/${id}`);
+    showAlert('Removida!', 'success');
+    renderCancellationConfigs();
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FILA DE ESTORNOS PIX
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _pixRefundPage = 1;
+let _pixRefundStatus = 'pending';
+
+const renderPixRefundQueue = async (page = 1, status = _pixRefundStatus) => {
+  _pixRefundPage   = page;
+  _pixRefundStatus = status;
+  const c = document.getElementById('page-content');
+  c.innerHTML = `<div class="loading-center"><div class="spinner"></div></div>`;
+  try {
+    const data = await req('GET', `/pix-refunds?status=${status}&page=${page}&limit=20`);
+    const items = data.items || [];
+    const { total, pages } = data;
+
+    const statusBadge = (s) => {
+      const map = { pending: ['badge-warning', '⏳ Pendente'], processing: ['badge-info', '🔄 Em andamento'], completed: ['badge-success', '✅ Concluído'], failed: ['badge-danger', '❌ Falhou'] };
+      const [cls, label] = map[s] || ['', s];
+      return `<span class="badge ${cls}">${label}</span>`;
+    };
+
+    c.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+        ${['pending','processing','completed','failed','all'].map((s) => `
+          <button class="btn btn-sm ${_pixRefundStatus === s ? 'btn-primary' : 'btn-ghost'}" onclick="renderPixRefundQueue(1,'${s}')">
+            ${s === 'pending' ? '⏳ Pendentes' : s === 'processing' ? '🔄 Em andamento' : s === 'completed' ? '✅ Concluídos' : s === 'failed' ? '❌ Com falha' : '📋 Todos'}
+          </button>`).join('')}
+        <span style="margin-left:auto;font-size:12px;color:#7A84A0;">${total} registro(s)</span>
+      </div>
+      ${items.length === 0 ? '<div class="alert alert-info">Nenhum estorno encontrado para este filtro.</div>' : ''}
+      ${items.map((item) => `
+        <div class="section-card" style="padding:16px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-weight:700;font-size:16px;">R$ ${Number(item.amount).toFixed(2)} ${statusBadge(item.status)}</div>
+              <div style="font-size:12px;color:#5C6B7A;margin-top:2px;">
+                Cliente: <b>${escHtml(item.client?.name || '?')}</b> — ${escHtml(item.client?.email || '')} — CPF: ${escHtml(item.client?.cpf || '—')}
+              </div>
+              <div style="font-size:12px;color:#5C6B7A;">
+                Pedido: #${item.serviceRequest?._id?.toString().slice(-6) || '?'}
+                ${item.serviceRequest?.serviceTypeSlug ? '· ' + escHtml(item.serviceRequest.serviceTypeSlug) : ''}
+                · Método original: ${escHtml(item.serviceRequest?.payment?.method || 'PIX')}
+              </div>
+              <div style="font-size:12px;color:#5C6B7A;">
+                Chave PIX: <b>${escHtml(item.pixKey || '—')}</b> (${escHtml(item.pixKeyType || '—')})
+                ${item.pixChargeId ? '· Charge ID: ' + escHtml(item.pixChargeId) : ''}
+              </div>
+              ${item.cancelFeeSnapshot?.totalFeePercent > 0 ? `
+                <div style="font-size:11px;color:#7A84A0;margin-top:2px;">
+                  Taxa: ${item.cancelFeeSnapshot.totalFeePercent}% (plat ${item.cancelFeeSnapshot.platformFeePercent}% + prof ${item.cancelFeeSnapshot.professionalFeePercent}%)
+                  · Fase: ${escHtml(item.cancelFeeSnapshot.phaseName || '—')}
+                </div>` : ''}
+              <div style="font-size:11px;color:#7A84A0;">Criado em: ${fmtDatetime(new Date(item.createdAt))}</div>
+              ${item.internalNote ? `<div style="font-size:11px;color:#5C6B7A;margin-top:2px;">📝 ${escHtml(item.internalNote)}</div>` : ''}
+            </div>
+            ${item.status !== 'completed' ? `
+              <div style="display:flex;gap:8px;">
+                ${item.status === 'pending' ? `<button class="btn btn-sm btn-ghost" onclick="updatePixRefund('${item._id}','processing')">🔄 Processar</button>` : ''}
+                <button class="btn btn-sm btn-primary" onclick='openPixRefundModal(${JSON.stringify(JSON.stringify(item))})'>✏️ Atualizar</button>
+              </div>` : ''}
+          </div>
+        </div>`).join('')}
+      ${pages > 1 ? `
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
+          ${page > 1 ? `<button class="btn btn-sm btn-ghost" onclick="renderPixRefundQueue(${page - 1},'${status}')">← Anterior</button>` : ''}
+          <span style="font-size:12px;color:#7A84A0;padding:6px 12px;">Pág ${page}/${pages}</span>
+          ${page < pages ? `<button class="btn btn-sm btn-ghost" onclick="renderPixRefundQueue(${page + 1},'${status}')">Próxima →</button>` : ''}
+        </div>` : ''}`;
+  } catch (err) {
+    c.innerHTML = `<div class="alert alert-error">⚠️ ${escHtml(err.message)}</div>`;
+  }
+};
+
+const openPixRefundModal = (itemJson) => {
+  const item = JSON.parse(itemJson);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal" style="max-width:520px;width:100%;">
+    <div class="modal-header"><h3>Atualizar Estorno PIX</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select id="prf-status" class="form-select">
+          <option value="processing" ${item.status === 'processing' ? 'selected' : ''}>🔄 Em andamento</option>
+          <option value="completed" ${item.status === 'completed' ? 'selected' : ''}>✅ Concluído</option>
+          <option value="failed" ${item.status === 'failed' ? 'selected' : ''}>❌ Com falha</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Chave PIX (se diferente do CPF)</label>
+        <input id="prf-pixkey" class="form-input" value="${escHtml(item.pixKey || item.client?.cpf || '')}" placeholder="CPF, e-mail, telefone, aleatória" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo da chave</label>
+        <select id="prf-pixtype" class="form-select">
+          <option value="cpf" ${(item.pixKeyType || 'cpf') === 'cpf' ? 'selected' : ''}>CPF</option>
+          <option value="phone" ${item.pixKeyType === 'phone' ? 'selected' : ''}>Telefone</option>
+          <option value="email" ${item.pixKeyType === 'email' ? 'selected' : ''}>E-mail</option>
+          <option value="random" ${item.pixKeyType === 'random' ? 'selected' : ''}>Aleatória</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nota interna</label>
+        <textarea id="prf-note" class="form-input" rows="2" placeholder="Anotação sobre o estorno...">${escHtml(item.internalNote || '')}</textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePixRefund('${item._id}')">Salvar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+};
+
+const updatePixRefund = async (id, status) => {
+  try {
+    await req('PATCH', `/pix-refunds/${id}`, { status });
+    showAlert('Atualizado!', 'success');
+    renderPixRefundQueue(_pixRefundPage, _pixRefundStatus);
+  } catch (err) {
+    showAlert(err.message);
+  }
+};
+
+const savePixRefund = async (id) => {
+  const status     = document.getElementById('prf-status')?.value;
+  const pixKey     = document.getElementById('prf-pixkey')?.value?.trim();
+  const pixKeyType = document.getElementById('prf-pixtype')?.value;
+  const internalNote = document.getElementById('prf-note')?.value?.trim();
+  try {
+    await req('PATCH', `/pix-refunds/${id}`, { status, pixKey, pixKeyType, internalNote });
+    document.querySelector('.modal-overlay')?.remove();
+    showAlert('Estorno atualizado!', 'success');
+    renderPixRefundQueue(_pixRefundPage, _pixRefundStatus);
+  } catch (err) {
+    showAlert(err.message);
   }
 };
 

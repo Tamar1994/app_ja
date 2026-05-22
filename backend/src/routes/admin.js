@@ -28,6 +28,8 @@ const SpecialistCertificate = require('../models/SpecialistCertificate');
 const Review = require('../models/Review');
 const AdBanner = require('../models/AdBanner');
 const AddressUpdateRequest = require('../models/AddressUpdateRequest');
+const CancellationConfig   = require('../models/CancellationConfig');
+const PixRefundRequest     = require('../models/PixRefundRequest');
 const {
   adminAuth,
   requireRole,
@@ -2903,6 +2905,159 @@ router.patch('/address-updates/:id/reject', adminAuth, requirePermission(ADMIN_P
   } catch (err) {
     console.error('[admin address-updates reject]', err);
     res.status(500).json({ message: 'Erro ao rejeitar solicitação.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANCELLATION CONFIG — CRUD
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/admin/cancellation-configs?coverageCityId=&serviceTypeSlug=
+router.get('/cancellation-configs', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.coverageCityId) {
+      filter.coverageCityId = req.query.coverageCityId === 'null' ? null : req.query.coverageCityId;
+    }
+    if (req.query.serviceTypeSlug) {
+      filter.serviceTypeSlug = req.query.serviceTypeSlug === 'null' ? null : req.query.serviceTypeSlug;
+    }
+    const configs = await CancellationConfig.find(filter)
+      .populate('coverageCityId', 'city state')
+      .sort({ coverageCityId: 1, serviceTypeSlug: 1 })
+      .lean();
+    const [cities, serviceTypes] = await Promise.all([
+      ServiceCoverageCity.find().sort({ order: 1, city: 1 }).select('_id city state').lean(),
+      require('../models/ServiceType').find().sort({ sortOrder: 1, name: 1 }).select('_id slug name').lean(),
+    ]);
+    res.json({ configs, cities, serviceTypes });
+  } catch (err) {
+    console.error('[admin cancellation-configs GET]', err);
+    res.status(500).json({ message: 'Erro ao buscar configurações de cancelamento' });
+  }
+});
+
+// POST /api/admin/cancellation-configs
+router.post('/cancellation-configs', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const { coverageCityId, serviceTypeSlug, label, status, immediatePhases, scheduledPhases } = req.body;
+    if (!immediatePhases?.length && !scheduledPhases?.length) {
+      return res.status(400).json({ message: 'Informe ao menos uma fase (imediato ou agendado)' });
+    }
+    const doc = await CancellationConfig.create({
+      coverageCityId:  coverageCityId  || null,
+      serviceTypeSlug: serviceTypeSlug || null,
+      label:           label           || '',
+      status:          status          || 'active',
+      immediatePhases: immediatePhases || [],
+      scheduledPhases: scheduledPhases || [],
+    });
+    res.status(201).json({ config: doc });
+  } catch (err) {
+    console.error('[admin cancellation-configs POST]', err);
+    res.status(500).json({ message: 'Erro ao criar configuração de cancelamento' });
+  }
+});
+
+// PATCH /api/admin/cancellation-configs/:id
+router.patch('/cancellation-configs/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const allowed = ['label', 'status', 'immediatePhases', 'scheduledPhases', 'coverageCityId', 'serviceTypeSlug'];
+    const update = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) update[key] = req.body[key] === 'null' ? null : req.body[key];
+    }
+    const doc = await CancellationConfig.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!doc) return res.status(404).json({ message: 'Configuração não encontrada' });
+    res.json({ config: doc });
+  } catch (err) {
+    console.error('[admin cancellation-configs PATCH]', err);
+    res.status(500).json({ message: 'Erro ao atualizar configuração de cancelamento' });
+  }
+});
+
+// DELETE /api/admin/cancellation-configs/:id
+router.delete('/cancellation-configs/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    await CancellationConfig.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin cancellation-configs DELETE]', err);
+    res.status(500).json({ message: 'Erro ao remover configuração de cancelamento' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PIX REFUND QUEUE — gerir estornos PIX de cancelamentos
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/admin/pix-refunds?status=pending&page=1&limit=20
+router.get('/pix-refunds', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const { status = 'pending', page = 1, limit = 20 } = req.query;
+    const query = {};
+    if (status && status !== 'all') query.status = status;
+
+    const [items, total] = await Promise.all([
+      PixRefundRequest.find(query)
+        .sort({ createdAt: -1 })
+        .skip((Number(page) - 1) * Number(limit))
+        .limit(Number(limit))
+        .populate('client', 'name email phone cpf')
+        .populate('serviceRequest', 'serviceTypeSlug requestType details.scheduledDate payment.method')
+        .populate('processedBy', 'name email')
+        .lean(),
+      PixRefundRequest.countDocuments(query),
+    ]);
+    res.json({ items, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+  } catch (err) {
+    console.error('[admin pix-refunds GET]', err);
+    res.status(500).json({ message: 'Erro ao buscar fila de estornos PIX' });
+  }
+});
+
+// PATCH /api/admin/pix-refunds/:id — atualizar status (processing, completed, failed)
+router.patch('/pix-refunds/:id', adminAuth, requirePermission(ADMIN_PERMISSIONS.FINANCIAL), async (req, res) => {
+  try {
+    const { status, internalNote, pixKey, pixKeyType, transferProofUrl } = req.body;
+    if (!status) {
+      return res.status(400).json({ message: 'O campo status é obrigatório' });
+    }
+    const allowed = ['processing', 'completed', 'failed'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ message: 'Status inválido. Use: processing, completed ou failed' });
+    }
+
+    const update = {
+      status,
+      internalNote: internalNote || '',
+      processedBy:  req.admin._id,
+      processedAt:  new Date(),
+    };
+    if (pixKey)          update.pixKey     = pixKey;
+    if (pixKeyType)      update.pixKeyType = pixKeyType;
+    if (transferProofUrl)update.transferProofUrl = transferProofUrl;
+
+    const doc = await PixRefundRequest.findByIdAndUpdate(req.params.id, update, { new: true })
+      .populate('client', 'name email phone cpf pushToken')
+      .populate('serviceRequest', 'serviceTypeSlug');
+    if (!doc) return res.status(404).json({ message: 'Estorno não encontrado' });
+
+    // Push ao cliente quando concluído
+    if (status === 'completed' && doc.client?.pushToken) {
+      const { sendExpoPush: push } = require('../utils/requestQueue');
+      push(
+        doc.client.pushToken,
+        '✅ Estorno PIX realizado',
+        `R$ ${doc.amount.toFixed(2)} enviados para sua chave PIX.`,
+        { screen: 'ClientWallet' },
+      );
+    }
+
+    res.json({ item: doc });
+  } catch (err) {
+    console.error('[admin pix-refunds PATCH]', err);
+    res.status(500).json({ message: 'Erro ao atualizar estorno PIX' });
   }
 });
 

@@ -69,7 +69,8 @@ export const requestAPI = {
   updateProfessionalLocation: (id, longitude, latitude) =>
     api.patch(`/requests/${id}/professional-location`, { longitude, latitude }),
   complete: (id, final) => api.patch(`/requests/${id}/complete`, { final }),
-  cancel: (id, reason) => api.patch(`/requests/${id}/cancel`, { reason }),
+  cancelPreview: (id) => api.get(`/requests/${id}/cancel-preview`),
+  cancel: (id, reason, refundDestination = 'wallet') => api.patch(`/requests/${id}/cancel`, { reason, refundDestination }),
   clientReject: (id, professionalId) => api.patch(`/requests/${id}/client-reject`, { professionalId }),
   clientConfirm: (id) => api.patch(`/requests/${id}/client-confirm`),
   review: (id, rating, comment, npsScore = null) =>
@@ -105,6 +106,7 @@ export const walletAPI = {
   earnings: (period) => api.get(`/wallet/earnings?period=${period}`),
   requestWithdrawal: (amount) => api.post('/wallet/withdrawals/request', { amount }),
   myWithdrawals: () => api.get('/wallet/withdrawals/my'),
+  transferToClient: (amount) => api.post('/wallet/transfer-to-client', { amount }),
 };
 
 // Carteira do cliente (histórico de uso)

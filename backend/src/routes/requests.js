@@ -12,10 +12,17 @@ const Transaction = require('../models/Transaction');
 const CouponRedemption = require('../models/CouponRedemption');
 const ServiceCoverageCity = require('../models/ServiceCoverageCity');
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
+const PixRefundRequest = require('../models/PixRefundRequest');
 const { dispatchToNextProfessional, clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
+const {
+  findCoverageCityId,
+  findCancellationConfig,
+  computeCancellationFee,
+  computeRefundAmounts,
+} = require('../services/cancellationService');
 
 const router = express.Router();
 
@@ -1089,7 +1096,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
   }
 });
 
-// Estorna pagamento de agendamento para a carteira do cliente
+// Estorna pagamento de agendamento para a carteira do cliente (legado — mantido para compatibilidade)
+// Usado apenas quando o profissional cancela pedidos agendados pré-pagos (sem taxa de cancelamento)
 async function refundScheduledPaymentToWallet(preCancel) {
   const refundAmount = Number(preCancel.pricing?.final || preCancel.pricing?.estimated || 0);
   if (refundAmount <= 0) return;
@@ -1134,7 +1142,68 @@ async function refundScheduledPaymentToWallet(preCancel) {
   }).catch(() => {});
 }
 
-// PATCH /api/requests/:id/cancel — cliente cancela
+// GET /api/requests/:id/cancel-preview — calcula taxa de cancelamento antes de confirmar
+router.get('/:id/cancel-preview', auth, async (req, res) => {
+  try {
+    const clientProfile = isClientProfile(req.user);
+    const cancellableStatuses = clientProfile
+      ? ['pending_professional', 'pending_client', 'scheduled', 'searching', 'accepted', 'preparing', 'on_the_way']
+      : ['pending_client', 'scheduled', 'accepted', 'preparing', 'on_the_way'];
+    const filter = clientProfile
+      ? { _id: req.params.id, client: req.user._id, status: { $in: cancellableStatuses } }
+      : { _id: req.params.id, professional: req.user._id, status: { $in: cancellableStatuses } };
+
+    const request = await ServiceRequest.findOne(filter).lean();
+    if (!request) return res.status(404).json({ message: 'Pedido não encontrado ou não pode ser cancelado' });
+
+    // Busca configuração de taxa para essa cidade + tipo
+    const coverageCityId = await findCoverageCityId(request.address?.city, request.address?.state);
+    const config = await findCancellationConfig(coverageCityId, request.serviceTypeSlug);
+    const feeResult = computeCancellationFee(config, request);
+    const amounts   = computeRefundAmounts(feeResult, request);
+
+    const paymentMethod = request.payment?.method || null;
+    const externalPaid  = amounts.externalPaid;
+    const isCard = paymentMethod && (paymentMethod.startsWith('stripe') || paymentMethod === 'card');
+    const isPix  = paymentMethod && (paymentMethod.startsWith('pix') || paymentMethod === 'cora_pix');
+
+    res.json({
+      requestId:    request._id,
+      requestType:  request.requestType,
+      currentPhase: feeResult.phase
+        ? {
+            label:                  feeResult.phase.label,
+            platformFeePercent:     feeResult.platformFeePercent,
+            professionalFeePercent: feeResult.professionalFeePercent,
+            totalFeePercent:        feeResult.totalFeePercent,
+          }
+        : null,
+      totalPaid:     amounts.totalPaid,
+      feeAmount:     amounts.feeAmount,
+      refundAmount:  amounts.externalRefundAmount + amounts.walletClientRefundAmount + amounts.walletProfessionalRefundAmount,
+      walletPaid:    amounts.walletClientPaid + amounts.walletProfessionalPaid,
+      externalPaid,
+      refundOptions: {
+        wallet: { available: true, label: 'Carteira Já', note: 'Reembolso imediato na sua carteira.' },
+        original: {
+          available: externalPaid > 0 && !!paymentMethod,
+          method: paymentMethod,
+          label: isCard ? 'Cartão de crédito' : isPix ? 'PIX' : null,
+          note: isCard
+            ? 'O estorno é automático via Stripe. Pode levar até 2 faturas para aparecer.'
+            : isPix
+              ? 'O estorno é feito em até 24 horas via PIX para a chave cadastrada.'
+              : null,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('[cancel-preview]', err);
+    res.status(500).json({ message: 'Erro ao calcular pré-visualização de cancelamento' });
+  }
+});
+
+// PATCH /api/requests/:id/cancel — cliente ou profissional cancela
 router.patch('/:id/cancel', auth, async (req, res) => {
   try {
     const clientProfile = isClientProfile(req.user);
@@ -1142,54 +1211,282 @@ router.patch('/:id/cancel', auth, async (req, res) => {
       ? { _id: req.params.id, client: req.user._id, status: { $in: ['pending_professional', 'pending_client', 'scheduled', 'searching', 'accepted', 'preparing', 'on_the_way'] } }
       : { _id: req.params.id, professional: req.user._id, status: { $in: ['pending_client', 'scheduled', 'accepted', 'preparing', 'on_the_way'] } };
 
-    // Captura estado original antes de cancelar (para lógica de estorno)
+    // Captura estado original antes de cancelar
     const preCancel = await ServiceRequest.findOne(filter).lean();
     if (!preCancel) return res.status(400).json({ message: 'Não foi possível cancelar' });
 
-    const request = await ServiceRequest.findByIdAndUpdate(preCancel._id, {
-      status: 'cancelled',
-      cancelledAt: new Date(),
-      cancelReason: req.body.reason || '',
-    }, { new: true });
+    // ── Calcula taxa de cancelamento (apenas para clientes) ──────────────
+    let feeResult = { phase: null, platformFeePercent: 0, professionalFeePercent: 0, totalFeePercent: 0, refundPercent: 100 };
+    let amounts   = computeRefundAmounts(feeResult, preCancel);
+    const refundDestination = clientProfile ? (req.body.refundDestination || 'wallet') : 'wallet';
 
+    if (clientProfile) {
+      const coverageCityId = await findCoverageCityId(preCancel.address?.city, preCancel.address?.state);
+      const config  = await findCancellationConfig(coverageCityId, preCancel.serviceTypeSlug);
+      feeResult     = computeCancellationFee(config, preCancel);
+      amounts       = computeRefundAmounts(feeResult, preCancel);
+    }
+
+    // ── Marca como cancelado ──────────────────────────────────────────────
+    const cancellationUpdate = {
+      status:      'cancelled',
+      cancelledAt:  new Date(),
+      cancelReason: req.body.reason || '',
+      'cancellation.phaseName':              feeResult.phase?.label || null,
+      'cancellation.totalFeePercent':        feeResult.totalFeePercent,
+      'cancellation.platformFeePercent':     feeResult.platformFeePercent,
+      'cancellation.professionalFeePercent': feeResult.professionalFeePercent,
+      'cancellation.feeAmount':              amounts.feeAmount,
+      'cancellation.refundAmount':           amounts.externalRefundAmount + amounts.walletClientRefundAmount + amounts.walletProfessionalRefundAmount,
+      'cancellation.refundDestination':      refundDestination,
+      'payment.status':                      amounts.totalPaid > 0 ? 'refunded' : preCancel.payment?.status,
+    };
+
+    const request = await ServiceRequest.findByIdAndUpdate(preCancel._id, cancellationUpdate, { new: true });
     if (!request) return res.status(400).json({ message: 'Não foi possível cancelar' });
 
-    // Limpar timer da fila ao cancelar
     clearRequestTimer(req.params.id);
     await closeServiceChatForRequest(req.params.id, req.body.reason || 'Serviço cancelado');
 
-    // Push para o outro lado: notificar sobre cancelamento
+    // ── Push para o outro lado ────────────────────────────────────────────
     if (clientProfile && preCancel.professional) {
       User.findById(preCancel.professional).select('pushToken').then((pro) => {
-        if (pro?.pushToken) {
-          sendExpoPush(pro.pushToken, '❌ Pedido cancelado', 'O cliente cancelou a solicitação de serviço.', { requestId: String(request._id) });
-        }
+        if (pro?.pushToken) sendExpoPush(pro.pushToken, '❌ Pedido cancelado', 'O cliente cancelou a solicitação.', { requestId: String(request._id) });
       }).catch(() => {});
-    } else if (isProfessionalProfile(req.user)) {
-      User.findById(preCancel.client).select('pushToken').then((client) => {
-        if (client?.pushToken) {
-          sendExpoPush(client.pushToken, '❌ Pedido cancelado', 'O profissional cancelou o atendimento. Buscando outro profissional.', { requestId: String(request._id) });
-        }
+    } else if (!clientProfile) {
+      User.findById(preCancel.client).select('pushToken').then((cli) => {
+        if (cli?.pushToken) sendExpoPush(cli.pushToken, '❌ Pedido cancelado', 'O profissional cancelou o atendimento. Buscando outro profissional.', { requestId: String(request._id) });
       }).catch(() => {});
     }
 
-    // Estornar pagamento se agendamento pago foi cancelado antes do início do serviço
-    const preServiceStatuses = ['pending_professional', 'pending_client', 'scheduled'];
-    if (
+    // ── Processa estorno (apenas quando há valor a devolver) ──────────────
+    if (amounts.totalPaid > 0) {
+      processCancellationRefund({
+        preCancel,
+        request,
+        feeResult,
+        amounts,
+        refundDestination: clientProfile ? refundDestination : 'wallet',
+      }).catch((err) => console.error('[cancel refund]', err));
+    } else if (
+      !clientProfile &&
       preCancel.requestType === 'scheduled' &&
       preCancel.payment?.status === 'paid' &&
-      preServiceStatuses.includes(preCancel.status)
+      ['pending_professional', 'pending_client', 'scheduled'].includes(preCancel.status)
     ) {
-      refundScheduledPaymentToWallet(preCancel).catch((err) => {
-        console.error('[cancel refund]', err);
-      });
+      // Profissional cancelando agendamento pago: reembolso integral para wallet
+      refundScheduledPaymentToWallet(preCancel).catch((err) => console.error('[cancel refund]', err));
     }
 
-    res.json({ request });
-  } catch {
+    res.json({ request, feeApplied: amounts.feeAmount > 0, refundAmount: amounts.externalRefundAmount + amounts.walletClientRefundAmount + amounts.walletProfessionalRefundAmount });
+  } catch (err) {
+    console.error('[cancel]', err);
     res.status(500).json({ message: 'Erro ao cancelar' });
   }
 });
+
+/**
+ * Processa o estorno após o cancelamento:
+ *  - Devolve parcela de wallet ao clientWallet (imediato)
+ *  - Devolve parcela de wallet profissional ao wallet (imediato)
+ *  - Crédita taxa do profissional no wallet profissional (se aplicável)
+ *  - Para 'wallet': restante vai para clientWallet
+ *  - Para 'original' + cartão: solicita refund via Stripe
+ *  - Para 'original' + PIX: cria PixRefundRequest na fila do admin
+ */
+async function processCancellationRefund({ preCancel, request, feeResult, amounts, refundDestination }) {
+  const session = await mongoose.startSession();
+  let pixRefundDoc = null;
+
+  try {
+    await session.withTransaction(async () => {
+      const clientUser = await User.findById(preCancel.client).session(session);
+      if (!clientUser) return;
+
+      if (!clientUser.clientWallet) clientUser.clientWallet = { balance: 0, totalRefunded: 0 };
+
+      // 1. Devolve parcela de walletClient → clientWallet
+      if (amounts.walletClientRefundAmount > 0) {
+        clientUser.clientWallet.balance = Number(
+          ((clientUser.clientWallet.balance || 0) + amounts.walletClientRefundAmount).toFixed(2),
+        );
+        clientUser.clientWallet.totalRefunded = Number(
+          ((clientUser.clientWallet.totalRefunded || 0) + amounts.walletClientRefundAmount).toFixed(2),
+        );
+        await ClientWalletTransaction.create([{
+          user: preCancel.client,
+          serviceRequest: preCancel._id,
+          type: 'credit_refund',
+          source: 'client_wallet',
+          amount: amounts.walletClientRefundAmount,
+          balanceAfterClientWallet: clientUser.clientWallet.balance,
+          metadata: { label: 'Estorno de cancelamento (carteira cliente)' },
+        }], { session });
+      }
+
+      // 2. Devolve parcela de walletProfessional → wallet do profissional "cliente"
+      if (amounts.walletProfessionalRefundAmount > 0 && preCancel.client) {
+        clientUser.wallet = clientUser.wallet || { balance: 0, totalEarned: 0 };
+        clientUser.wallet.balance = Number(
+          ((clientUser.wallet.balance || 0) + amounts.walletProfessionalRefundAmount).toFixed(2),
+        );
+        await ClientWalletTransaction.create([{
+          user: preCancel.client,
+          serviceRequest: preCancel._id,
+          type: 'credit_refund',
+          source: 'professional_wallet',
+          amount: amounts.walletProfessionalRefundAmount,
+          balanceAfterProfessionalWallet: clientUser.wallet.balance,
+          metadata: { label: 'Estorno de cancelamento (carteira profissional)' },
+        }], { session });
+      }
+
+      // 3. Crédita taxa de cancelamento ao profissional (se houver profissional aceito)
+      if (amounts.professionalEarning > 0 && preCancel.professional) {
+        const professional = await User.findById(preCancel.professional).session(session);
+        if (professional) {
+          professional.wallet = professional.wallet || { balance: 0, totalEarned: 0 };
+          professional.wallet.balance    = Number(((professional.wallet.balance    || 0) + amounts.professionalEarning).toFixed(2));
+          professional.wallet.totalEarned= Number(((professional.wallet.totalEarned|| 0) + amounts.professionalEarning).toFixed(2));
+          await professional.save({ session });
+          await Transaction.create([{
+            professional:   preCancel.professional,
+            serviceRequest: preCancel._id,
+            type:           'earning',
+            grossAmount:    amounts.professionalEarning,
+            platformFee:    0,
+            amount:         amounts.professionalEarning,
+            description:    `Taxa de cancelamento — ${feeResult.phase?.label || ''}`,
+          }], { session });
+        }
+      }
+
+      // 4. Estorno da parcela external
+      if (amounts.externalRefundAmount > 0) {
+        if (refundDestination === 'wallet') {
+          // Tudo vai para carteira do cliente → imediato
+          clientUser.clientWallet.balance = Number(
+            ((clientUser.clientWallet.balance || 0) + amounts.externalRefundAmount).toFixed(2),
+          );
+          clientUser.clientWallet.totalRefunded = Number(
+            ((clientUser.clientWallet.totalRefunded || 0) + amounts.externalRefundAmount).toFixed(2),
+          );
+          await ClientWalletTransaction.create([{
+            user: preCancel.client,
+            serviceRequest: preCancel._id,
+            type: 'credit_refund',
+            source: 'client_wallet',
+            amount: amounts.externalRefundAmount,
+            balanceAfterClientWallet: clientUser.clientWallet.balance,
+            metadata: { label: 'Estorno de cancelamento (pagamento externo → carteira)' },
+          }], { session });
+        } else {
+          // 'original' → Stripe ou PIX — tratado fora da transação (abaixo)
+          const paymentMethod = preCancel.payment?.method || '';
+          const isPix = paymentMethod.startsWith('pix') || paymentMethod === 'cora_pix';
+
+          if (isPix) {
+            // Cria entrada na fila de estorno PIX
+            const pixKeyUser = await User.findById(preCancel.client).select('cpf').lean();
+            const [prd] = await PixRefundRequest.create([{
+              serviceRequest: preCancel._id,
+              client:         preCancel.client,
+              amount:         amounts.externalRefundAmount,
+              pixKey:         pixKeyUser?.cpf || null,
+              pixKeyType:     pixKeyUser?.cpf ? 'cpf' : null,
+              pixChargeId:    preCancel.payment?.transactionId || null,
+              cancelFeeSnapshot: {
+                phaseName:              feeResult.phase?.label || '',
+                totalFeePercent:        feeResult.totalFeePercent,
+                platformFeePercent:     feeResult.platformFeePercent,
+                professionalFeePercent: feeResult.professionalFeePercent,
+                feeAmount:              amounts.feeAmount,
+                totalPaid:              amounts.totalPaid,
+              },
+            }], { session });
+            pixRefundDoc = prd;
+          }
+          // Stripe: processado fora da transação para evitar rollback em caso de erro de rede
+        }
+      }
+
+      await clientUser.save({ session });
+
+      // Atualiza request com id do PixRefundRequest (se criado)
+      if (pixRefundDoc) {
+        await ServiceRequest.findByIdAndUpdate(preCancel._id, {
+          'cancellation.pixRefundRequestId': pixRefundDoc._id,
+        }).session(session);
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  // Stripe refund (fora da transação Mongo para não misturar erros de rede)
+  if (
+    refundDestination === 'original' &&
+    amounts.externalRefundAmount > 0 &&
+    !pixRefundDoc
+  ) {
+    const paymentMethod   = preCancel.payment?.method || '';
+    const isStripe = paymentMethod.startsWith('stripe') || paymentMethod === 'card';
+    if (isStripe && preCancel.payment?.transactionId) {
+      try {
+        const getStripe = require('../routes/payments').getStripe;
+        const stripe    = await getStripe();
+        const stripeRefund = await stripe.refunds.create({
+          payment_intent: preCancel.payment.transactionId,
+          amount: Math.round(amounts.externalRefundAmount * 100), // centavos
+          reason: 'requested_by_customer',
+        });
+        await ServiceRequest.findByIdAndUpdate(preCancel._id, {
+          'cancellation.stripeRefundId': stripeRefund.id,
+        });
+      } catch (err) {
+        console.error('[stripe refund]', err);
+        // Falha no Stripe → retorna para carteira como fallback
+        const clientUser = await User.findById(preCancel.client);
+        if (clientUser) {
+          if (!clientUser.clientWallet) clientUser.clientWallet = { balance: 0, totalRefunded: 0 };
+          clientUser.clientWallet.balance = Number(
+            ((clientUser.clientWallet.balance || 0) + amounts.externalRefundAmount).toFixed(2),
+          );
+          clientUser.clientWallet.totalRefunded = Number(
+            ((clientUser.clientWallet.totalRefunded || 0) + amounts.externalRefundAmount).toFixed(2),
+          );
+          await clientUser.save();
+          await ClientWalletTransaction.create({
+            user: preCancel.client,
+            serviceRequest: preCancel._id,
+            type: 'credit_refund',
+            source: 'client_wallet',
+            amount: amounts.externalRefundAmount,
+            balanceAfterClientWallet: clientUser.clientWallet.balance,
+            metadata: { label: 'Estorno de cancelamento (fallback carteira — falha Stripe)' },
+          });
+        }
+      }
+    }
+  }
+
+  // Push de notificação para o cliente
+  User.findById(preCancel.client).select('pushToken').then((u) => {
+    if (!u?.pushToken) return;
+    const totalRefund = amounts.externalRefundAmount + amounts.walletClientRefundAmount + amounts.walletProfessionalRefundAmount;
+    if (totalRefund <= 0) return;
+    const dest = refundDestination === 'wallet' ? 'sua carteira Já' : (
+      (preCancel.payment?.method || '').includes('pix') ? 'via PIX (até 24h)' : 'seu cartão (até 2 faturas)'
+    );
+    sendExpoPush(
+      u.pushToken,
+      '💰 Reembolso processado',
+      `R$ ${totalRefund.toFixed(2)} serão devolvidos para ${dest}.`,
+      { screen: 'ClientWallet' },
+    );
+  }).catch(() => {});
+}
+
 
 // POST /api/requests/:id/review — avaliação mútua após conclusão
 // Cliente avalia profissional | Profissional avalia cliente

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
-  ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+  ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,6 +65,11 @@ export default function TrackingScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [geocodedClientCoords, setGeocodedClientCoords] = useState(null);
   const [unreadChat, setUnreadChat] = useState(0);
+  const [cancelModal, setCancelModal] = useState(false);
+  const [cancelPreview, setCancelPreview] = useState(null);
+  const [cancelPreviewLoading, setCancelPreviewLoading] = useState(false);
+  const [refundDestination, setRefundDestination] = useState('wallet');
+  const [cancellingInProgress, setCancellingInProgress] = useState(false);
   const lastSeenPeerMsgCount = useRef(null);
   const chatPollRef = useRef(null);
   const geocodingAttempted = useRef(false);
@@ -153,16 +158,54 @@ export default function TrackingScreen({ navigation, route }) {
     }
   };
 
-  const handleCancel = () => {
-    Alert.alert('Cancelar serviço', 'Deseja cancelar este serviço?', [
-      { text: 'Não' },
-      { text: 'Cancelar serviço', style: 'destructive', onPress: async () => {
-        try {
-          await requestAPI.cancel(requestId, 'Cancelado pelo cliente');
-          navigation.replace('Home');
-        } catch { Alert.alert('Erro', 'Não foi possível cancelar.'); }
-      }},
-    ]);
+  const handleCancel = async () => {
+    setCancelPreviewLoading(true);
+    setCancelModal(true);
+    setRefundDestination('wallet');
+    setCancelPreview(null);
+    try {
+      const { data } = await requestAPI.cancelPreview(requestId);
+      // Normaliza a resposta para o formato esperado pelo render
+      const hasOriginalOption = data.refundOptions?.original?.available === true;
+      const externalRefundAmount = hasOriginalOption
+        ? (data.totalPaid > 0
+          ? Number(((data.externalPaid / data.totalPaid) * (data.refundAmount ?? 0)).toFixed(2))
+          : 0)
+        : 0;
+      setCancelPreview({
+        hasFee: !!data.currentPhase,
+        totalFeePercent: data.currentPhase?.totalFeePercent ?? 0,
+        phaseName: data.currentPhase?.label ?? null,
+        platformFeePercent: data.currentPhase?.platformFeePercent ?? 0,
+        professionalFeePercent: data.currentPhase?.professionalFeePercent ?? 0,
+        paymentMethod: data.refundOptions?.original?.method ?? null,
+        amounts: {
+          totalRefundAmount: data.refundAmount ?? 0,
+          feeAmount: data.feeAmount ?? 0,
+          externalRefundAmount,
+        },
+        refundOptions: data.refundOptions ?? {},
+      });
+    } catch (err) {
+      // Se o endpoint não retornar preview, exibe modal sem taxa
+      setCancelPreview({ hasFee: false, amounts: { totalRefundAmount: 0, feeAmount: 0, externalRefundAmount: 0 }, refundOptions: {} });
+    } finally {
+      setCancelPreviewLoading(false);
+    }
+  };
+
+  const confirmCancel = async () => {
+    if (cancellingInProgress) return;
+    setCancellingInProgress(true);
+    try {
+      await requestAPI.cancel(requestId, 'Cancelado pelo cliente', refundDestination);
+      setCancelModal(false);
+      navigation.replace('Home');
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível cancelar.');
+    } finally {
+      setCancellingInProgress(false);
+    }
   };
 
   const currentStepIndex = Math.max(0, STEPS.findIndex((s) => s.status === request?.status));
@@ -485,6 +528,100 @@ export default function TrackingScreen({ navigation, route }) {
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      {/* ── Modal de cancelamento com preview de taxa ── */}
+      <Modal visible={cancelModal} transparent animationType="slide" onRequestClose={() => !cancellingInProgress && setCancelModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => !cancellingInProgress && setCancelModal(false)}>
+          <Pressable style={styles.cancelModalCard} onPress={() => {}}>
+            <Text style={styles.cancelModalTitle}>Cancelar serviço</Text>
+
+            {cancelPreviewLoading ? (
+              <ActivityIndicator style={{ marginVertical: 20 }} color={colors.primary} />
+            ) : cancelPreview ? (
+              <>
+                {cancelPreview.hasFee ? (
+                  <>
+                    <View style={styles.feeBox}>
+                      <Text style={styles.feeLabel}>Taxa de cancelamento</Text>
+                      <Text style={styles.feePct}>{cancelPreview.totalFeePercent}%</Text>
+                      <Text style={styles.feeSub}>{cancelPreview.phaseName}</Text>
+                      {cancelPreview.platformFeePercent > 0 && (
+                        <Text style={styles.feeDetail}>Plataforma {cancelPreview.platformFeePercent}% · Profissional {cancelPreview.professionalFeePercent}%</Text>
+                      )}
+                    </View>
+                    {cancelPreview.amounts && (
+                      <View style={styles.amountsBox}>
+                        <Text style={styles.amountsTitle}>Você receberá de volta:</Text>
+                        <Text style={styles.refundAmount}>R$ {Number(cancelPreview.amounts.totalRefundAmount || 0).toFixed(2).replace('.', ',')}</Text>
+                        <Text style={styles.feeCharged}>Taxa cobrada: R$ {Number(cancelPreview.amounts.feeAmount || 0).toFixed(2).replace('.', ',')}</Text>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.noFeeBox}>
+                    <Text style={styles.noFeeText}>✅ Sem taxa de cancelamento</Text>
+                    <Text style={styles.noFeeSub}>Você receberá reembolso integral.</Text>
+                  </View>
+                )}
+
+                {/* Destino do reembolso — só mostrar se há valor externo a ser devolvido */}
+                {cancelPreview.amounts?.externalRefundAmount > 0 && (
+                  <View style={styles.refundDestSection}>
+                    <Text style={styles.refundDestTitle}>Como deseja receber o reembolso?</Text>
+                    <TouchableOpacity
+                      style={[styles.refundOption, refundDestination === 'wallet' && styles.refundOptionSelected]}
+                      onPress={() => setRefundDestination('wallet')}
+                    >
+                      <View style={styles.refundOptionDot}>
+                        {refundDestination === 'wallet' && <View style={styles.refundOptionDotInner} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.refundOptionLabel}>💼 Carteira Já</Text>
+                        <Text style={styles.refundOptionSub}>Instantâneo · Use em próximos serviços</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.refundOption, refundDestination === 'original' && styles.refundOptionSelected]}
+                      onPress={() => setRefundDestination('original')}
+                    >
+                      <View style={styles.refundOptionDot}>
+                        {refundDestination === 'original' && <View style={styles.refundOptionDotInner} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.refundOptionLabel}>↩️ Método original</Text>
+                        <Text style={styles.refundOptionSub}>
+                          {cancelPreview.paymentMethod === 'pix'
+                            ? 'PIX em até 24h (processamento manual)'
+                            : 'Estorno no cartão em 2 faturas'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            ) : null}
+
+            <View style={styles.cancelModalActions}>
+              <TouchableOpacity
+                style={styles.cancelModalBackBtn}
+                onPress={() => setCancelModal(false)}
+                disabled={cancellingInProgress}
+              >
+                <Text style={styles.cancelModalBackText}>Voltar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cancelModalConfirmBtn, cancellingInProgress && { opacity: 0.6 }]}
+                onPress={confirmCancel}
+                disabled={cancellingInProgress || cancelPreviewLoading}
+              >
+                {cancellingInProgress
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.cancelModalConfirmText}>Confirmar cancelamento</Text>}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -754,5 +891,80 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error + '08',
   },
   cancelText: { color: colors.error, fontWeight: '600', fontSize: typography.fontSizes.md },
+  // Cancel modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  cancelModalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 36,
+  },
+  cancelModalTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 16, textAlign: 'center' },
+  feeBox: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  feeLabel: { fontSize: 13, color: colors.error, fontWeight: '600' },
+  feePct: { fontSize: 32, fontWeight: '800', color: colors.error, marginTop: 4 },
+  feeSub: { fontSize: 12, color: '#B91C1C', marginTop: 2 },
+  feeDetail: { fontSize: 11, color: '#9B1C1C', marginTop: 6 },
+  amountsBox: { alignItems: 'center', marginBottom: 12 },
+  amountsTitle: { fontSize: 13, color: colors.textSecondary, marginBottom: 4 },
+  refundAmount: { fontSize: 22, fontWeight: '800', color: colors.success },
+  feeCharged: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  noFeeBox: { alignItems: 'center', backgroundColor: '#F0FDF4', borderRadius: 12, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#BBF7D0' },
+  noFeeText: { fontSize: 16, fontWeight: '700', color: colors.success },
+  noFeeSub: { fontSize: 12, color: '#166534', marginTop: 4 },
+  refundDestSection: { marginBottom: 16 },
+  refundDestTitle: { fontSize: 13, fontWeight: '600', color: colors.text, marginBottom: 8 },
+  refundOption: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    backgroundColor: '#FAFAFA',
+  },
+  refundOptionSelected: { borderColor: colors.primary, backgroundColor: colors.primary + '08' },
+  refundOptionDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  refundOptionDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  refundOptionLabel: { fontSize: 14, fontWeight: '600', color: colors.text },
+  refundOptionSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  cancelModalActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  cancelModalBackBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelModalBackText: { fontWeight: '600', color: colors.textSecondary, fontSize: 15 },
+  cancelModalConfirmBtn: {
+    flex: 2,
+    backgroundColor: colors.error,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelModalConfirmText: { fontWeight: '700', color: '#fff', fontSize: 15 },
 });
 
