@@ -62,6 +62,7 @@ export default function RequestServiceScreen({ navigation, route }) {
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [coverageNotice, setCoverageNotice] = useState('');
   const [checkingCoverage, setCheckingCoverage] = useState(false);
+  const [coverageChecked, setCoverageChecked] = useState(false);
 
   function buildScheduledDate(dateISO, timeStr) {
     const d = new Date(dateISO);
@@ -114,6 +115,7 @@ export default function RequestServiceScreen({ navigation, route }) {
 
   useEffect(() => {
     if (coverageNotice) setCoverageNotice('');
+    setCoverageChecked(false);
   }, [address.city, address.state]);
 
   const fetchViaCep = async (rawCep) => {
@@ -169,6 +171,32 @@ export default function RequestServiceScreen({ navigation, route }) {
     if (step === 1 && !selectedTier) {
       Alert.alert('Atenção', 'Selecione uma faixa de serviço.'); return;
     }
+    // Ao avançar para o passo de endereço → confirmar, valida cobertura em background
+    if (step === 2) {
+      if (!address.street || (!address.number && !semNumero) || !address.city) {
+        Alert.alert('Atenção', 'Preencha rua, número (ou marque "Sem número") e cidade.'); return;
+      }
+      setCheckingCoverage(true);
+      setCoverageChecked(false);
+      requestAPI.checkCoverage(address.city, address.state)
+        .then(({ data }) => {
+          if (!data.covered) {
+            const message = data.message || 'No momento a solicitação não está disponível na sua cidade.';
+            setCoverageNotice(message);
+            Alert.alert('Serviço indisponível', message);
+            return;
+          }
+          setCoverageChecked(true);
+          setStep(3);
+        })
+        .catch(() => {
+          // Falha na verificação: avança mesmo assim e valida de novo no submit
+          setCoverageChecked(false);
+          setStep(3);
+        })
+        .finally(() => setCheckingCoverage(false));
+      return;
+    }
     setStep(step + 1);
   };
 
@@ -177,7 +205,50 @@ export default function RequestServiceScreen({ navigation, route }) {
       Alert.alert('Atenção', 'Preencha rua, número (ou marque "Sem número") e cidade.'); return;
     }
 
-    // Pedido imediato ou agendado: ambos seguem para pagamento
+    const proceed = () => {
+      const geocodeAddressText = [address.street, address.number, address.neighborhood, address.city, address.state, address.zipCode, 'Brasil']
+        .map(s => String(s || '').trim()).filter(Boolean).join(', ');
+
+      const finalizeNavigation = (coords = null) => {
+        const { number: _num, ...addrRest } = address;
+        const requestAddress = {
+          ...addrRest,
+          street: [address.street.trim(), semNumero ? 'S/N' : address.number.trim()].filter(Boolean).join(', '),
+          coordinates: coords || address.coordinates,
+        };
+        const requestData = {
+          serviceTypeSlug: serviceType?.slug,
+          tierLabel: selectedTier.label,
+          selectedUpsells: selectedUpsellKeys,
+          notes,
+          address: requestAddress,
+          scheduledDate: getFinalScheduledDate(),
+          isScheduled: scheduleMode === 'later',
+        };
+        navigation.navigate('Payment', { requestData, estimate, serviceType });
+      };
+
+      Location.geocodeAsync(geocodeAddressText)
+        .then(results => {
+          const first = Array.isArray(results) && results.length ? results[0] : null;
+          if (first && Number.isFinite(first.longitude) && Number.isFinite(first.latitude)) {
+            finalizeNavigation([first.longitude, first.latitude]);
+          } else {
+            finalizeNavigation();
+          }
+        })
+        .catch(() => finalizeNavigation())
+        .finally(() => setCheckingCoverage(false));
+    };
+
+    // Se a cobertura já foi validada no passo anterior, vai direto
+    if (coverageChecked) {
+      setCheckingCoverage(true);
+      proceed();
+      return;
+    }
+
+    // Caso contrário (ex.: validação anterior falhou por rede), tenta novamente
     setCheckingCoverage(true);
     requestAPI.checkCoverage(address.city, address.state)
       .then(({ data }) => {
@@ -185,48 +256,18 @@ export default function RequestServiceScreen({ navigation, route }) {
           const message = data.message || 'No momento a solicitação não está disponível na sua cidade.';
           setCoverageNotice(message);
           Alert.alert('Serviço indisponível', message);
+          setCheckingCoverage(false);
           return;
         }
-
-        const geocodeAddressText = [address.street, address.number, address.neighborhood, address.city, address.state, address.zipCode, 'Brasil']
-          .map(s => String(s || '').trim()).filter(Boolean).join(', ');
-
-        const finalizeNavigation = (coords = null) => {
-          const { number: _num, ...addrRest } = address;
-          const requestAddress = {
-            ...addrRest,
-            street: [address.street.trim(), semNumero ? 'S/N' : address.number.trim()].filter(Boolean).join(', '),
-            coordinates: coords || address.coordinates,
-          };
-          const requestData = {
-            serviceTypeSlug: serviceType?.slug,
-            tierLabel: selectedTier.label,
-            selectedUpsells: selectedUpsellKeys,
-            notes,
-            address: requestAddress,
-            scheduledDate: getFinalScheduledDate(),
-            isScheduled: scheduleMode === 'later',
-          };
-          navigation.navigate('Payment', { requestData, estimate, serviceType });
-        };
-
-        Location.geocodeAsync(geocodeAddressText)
-          .then(results => {
-            const first = Array.isArray(results) && results.length ? results[0] : null;
-            if (first && Number.isFinite(first.longitude) && Number.isFinite(first.latitude)) {
-              finalizeNavigation([first.longitude, first.latitude]);
-            } else {
-              finalizeNavigation();
-            }
-          })
-          .catch(() => finalizeNavigation());
+        proceed();
       })
-      .catch(err => {
-        const message = err?.response?.data?.message || 'Não foi possível validar sua cidade no momento.';
-        Alert.alert('Erro', message);
-      })
-      .finally(() => setCheckingCoverage(false));
+      .catch(() => {
+        // Sem resposta do servidor: deixa o backend validar quando criar o pedido
+        proceed();
+      });
+    return;
   };
+
 
   const selectedUpsells = upsellOptions.filter(u => selectedUpsellKeys.includes(u.key));
   const upsellsTotal = selectedUpsells.reduce((sum, u) => sum + Number(u.price), 0);
@@ -582,10 +623,17 @@ export default function RequestServiceScreen({ navigation, route }) {
             </TouchableOpacity>
           )}
           {step < 3 ? (
-            <TouchableOpacity style={[styles.btnNextWrap, step === 1 && { flex: 1 }]} onPress={handleContinue} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={[styles.btnNextWrap, step === 1 && { flex: 1 }]}
+              onPress={handleContinue}
+              disabled={step === 2 && checkingCoverage}
+              activeOpacity={0.85}
+            >
               <LinearGradient colors={colors.gradientPrimary} style={styles.btnNext}>
-                <Text style={styles.btnNextText}>Continuar</Text>
-                <Ionicons name="arrow-forward" size={18} color={colors.white} />
+                {step === 2 && checkingCoverage
+                  ? <ActivityIndicator color={colors.white} />
+                  : <Text style={styles.btnNextText}>Continuar</Text>}
+                {!(step === 2 && checkingCoverage) && <Ionicons name="arrow-forward" size={18} color={colors.white} />}
               </LinearGradient>
             </TouchableOpacity>
           ) : (
