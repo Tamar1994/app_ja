@@ -350,7 +350,7 @@ export default function ActiveJobScreen({ navigation, route }) {
             <View style={styles.earningsRow}>
               <Text style={styles.earningsLabel}>Seu ganho</Text>
               <Text style={styles.earningsValue}>
-                R$ {(request.pricing.estimated * 0.85).toFixed(2)}
+                R$ {((request.pricing.estimated || 0) * (1 - (request.pricing.platformFeePercent ?? 15) / 100)).toFixed(2)}
               </Text>
             </View>
           </View>

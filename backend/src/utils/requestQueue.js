@@ -208,7 +208,8 @@ async function dispatchToNextProfessional(requestId, io) {
       return;
     }
 
-    const earnings = ((request.pricing?.estimated || 0) * 0.85).toFixed(2).replace('.', ',');
+    const feePercent1 = request.pricing?.platformFeePercent ?? 15;
+    const earnings = ((request.pricing?.estimated || 0) * (1 - feePercent1 / 100)).toFixed(2).replace('.', ',');
     const city = request.address?.city || 'sua região';
     const timeoutAt = Date.now() + TIMEOUT_MS;
 
@@ -282,7 +283,8 @@ async function dispatchToNextProfessional(requestId, io) {
 
   if (professional.pushToken) {
     const city = request.address?.city || 'sua região';
-    const earnings = ((request.pricing?.estimated || 0) * 0.85).toFixed(2).replace('.', ',');
+    const feePercent2 = request.pricing?.platformFeePercent ?? 15;
+    const earnings = ((request.pricing?.estimated || 0) * (1 - feePercent2 / 100)).toFixed(2).replace('.', ',');
     sendExpoPush(
       professional.pushToken,
       '🧹 Nova solicitação de serviço!',

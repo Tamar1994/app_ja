@@ -501,7 +501,7 @@ export default function DashboardScreen({ navigation }) {
                 >
                   <Text style={styles.priceCardLabel}>Você receberá</Text>
                   <Text style={styles.priceCardValue}>
-                    R$ {(selectedRequest.pricing.estimated * 0.85).toFixed(2)}
+                    R$ {((selectedRequest.pricing.estimated || 0) * (1 - (selectedRequest.pricing.platformFeePercent ?? 15) / 100)).toFixed(2)}
                   </Text>
                 </LinearGradient>
 

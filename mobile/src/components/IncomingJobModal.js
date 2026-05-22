@@ -200,7 +200,7 @@ export default function IncomingJobModal({ visible, request, onAccept, onReject,
             <View style={styles.priceRow}>
               <Text style={styles.priceLabel}>Você receberá</Text>
               <Text style={styles.priceValue}>
-                {fmt((request?.pricing?.estimated || 0) * 0.85)}
+                {fmt((request?.pricing?.estimated || 0) * (1 - (request?.pricing?.platformFeePercent ?? 15) / 100))}
               </Text>
             </View>
           </View>
