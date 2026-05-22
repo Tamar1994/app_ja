@@ -110,8 +110,7 @@ export default function HomeScreen({ navigation }) {
     // Ouvir aceite em tempo real
     const unsubAccepted = on('request_accepted', ({ request }) => {
       setActiveRequest(request);
-      // Se estiver em Searching, navegar para Tracking
-      navigation.navigate('Tracking', { requestId: request._id });
+      // Navegação tratada exclusivamente pelo SearchingScreen
     });
 
     // Ouvir atualizações de status
@@ -303,6 +302,18 @@ export default function HomeScreen({ navigation }) {
                 onPress={() => {
                   if (activeRequest.status === 'searching') {
                     navigation.navigate('Searching', { requestId: activeRequest._id });
+                  } else if (activeRequest.status === 'accepted') {
+                    const pro = activeRequest.professional;
+                    navigation.navigate('ProfessionalFound', {
+                      requestId: activeRequest._id,
+                      professional: {
+                        _id: pro?._id,
+                        name: pro?.name,
+                        avatar: pro?.avatar,
+                        rating: pro?.professional?.rating || 0,
+                        totalReviews: pro?.professional?.totalReviews || 0,
+                      },
+                    });
                   } else {
                     navigation.navigate('Tracking', { requestId: activeRequest._id });
                   }
