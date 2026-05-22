@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../theme';
+import { useNotificationBadge } from '../context/NotificationContext';
 import DashboardScreen from '../screens/professional/DashboardScreen';
 import ActiveJobScreen from '../screens/professional/ActiveJobScreen';
 import CompletionPhotosScreen from '../screens/professional/CompletionPhotosScreen';
@@ -20,6 +21,7 @@ import HelpCenterScreen from '../screens/client/HelpCenterScreen';
 import SupportChatScreen from '../screens/client/SupportChatScreen';
 import ServiceChatScreen from '../screens/shared/ServiceChatScreen';
 import RequestDetailsScreen from '../screens/shared/RequestDetailsScreen';
+import NotificationsScreen from '../screens/shared/NotificationsScreen';
 import ScheduleScreen from '../screens/professional/ScheduleScreen';
 import ProfileEditScreen from '../screens/professional/ProfileEditScreen';
 
@@ -37,6 +39,7 @@ function DashboardStack() {
       <Stack.Screen name="ServiceChat" component={ServiceChatScreen} />
       <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} />
       <Stack.Screen name="Schedule" component={ScheduleScreen} />
+      <Stack.Screen name="History" component={HistoryScreen} />
     </Stack.Navigator>
   );
 }
@@ -59,6 +62,7 @@ export default function ProfessionalNavigator() {
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 6);
   const tabBarHeight = 58 + bottomPad;
+  const { unreadCount } = useNotificationBadge();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -74,20 +78,27 @@ export default function ProfessionalNavigator() {
         },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          if (route.name === 'DashboardTab') iconName = focused ? 'grid' : 'grid-outline';
-          else if (route.name === 'ScheduleTab') iconName = focused ? 'calendar' : 'calendar-outline';
-          else if (route.name === 'EarningsTab') iconName = focused ? 'wallet' : 'wallet-outline';
-          else if (route.name === 'HistoryTab') iconName = focused ? 'time' : 'time-outline';
-          else if (route.name === 'ProfileTab') iconName = focused ? 'person' : 'person-outline';
+          if (route.name === 'DashboardTab')      iconName = focused ? 'grid'          : 'grid-outline';
+          else if (route.name === 'ScheduleTab')  iconName = focused ? 'calendar'      : 'calendar-outline';
+          else if (route.name === 'EarningsTab')  iconName = focused ? 'wallet'        : 'wallet-outline';
+          else if (route.name === 'NotificationsTab') iconName = focused ? 'notifications' : 'notifications-outline';
+          else if (route.name === 'ProfileTab')   iconName = focused ? 'person'        : 'person-outline';
           return <Ionicons name={iconName} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen name="DashboardTab" component={DashboardStack} options={{ title: 'Serviços' }} />
-      <Tab.Screen name="ScheduleTab" component={ScheduleScreen} options={{ title: 'Agenda' }} />
-      <Tab.Screen name="EarningsTab" component={EarningsScreen} options={{ title: 'Carteira' }} />
-      <Tab.Screen name="HistoryTab" component={HistoryScreen} options={{ title: 'Histórico' }} />
-      <Tab.Screen name="ProfileTab" component={ProfileStack} options={{ title: 'Perfil' }} />
+      <Tab.Screen name="DashboardTab"      component={DashboardStack}    options={{ title: 'Serviços' }} />
+      <Tab.Screen name="ScheduleTab"       component={ScheduleScreen}    options={{ title: 'Agenda' }} />
+      <Tab.Screen name="EarningsTab"       component={EarningsScreen}    options={{ title: 'Carteira' }} />
+      <Tab.Screen
+        name="NotificationsTab"
+        component={NotificationsScreen}
+        options={{
+          title: 'Avisos',
+          tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : undefined,
+        }}
+      />
+      <Tab.Screen name="ProfileTab"        component={ProfileStack}      options={{ title: 'Perfil' }} />
     </Tab.Navigator>
   );
 }

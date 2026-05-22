@@ -41,6 +41,7 @@ const {
 const { sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail } = require('../services/emailService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
 const { clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
+const PushNotification = require('../models/PushNotification');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
 const { cleanupRequestUploads, deleteUploadFile } = require('../utils/uploadCleanup');
 const { logAudit } = require('../utils/auditLog');
@@ -2634,6 +2635,15 @@ router.post('/push-campaign', adminAuth, requirePermission(ADMIN_PERMISSIONS.USE
         else sent++;
       });
     }
+
+    // Persiste a notificação para exibição no histórico do app
+    await PushNotification.create({
+      title,
+      body,
+      audience,
+      data: extraData || {},
+      sentBy: req.admin._id,
+    });
 
     await logAudit({
       module: 'push',

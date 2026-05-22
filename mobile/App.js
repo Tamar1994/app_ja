@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
+import { NotificationProvider } from './src/context/NotificationContext';
 import RootNavigator from './src/navigation';
 import { setPendingNotification } from './src/services/pendingNotification';
 
@@ -79,7 +80,9 @@ function App() {
         <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.chamejabr.app" scheme="ja-app">
           <AuthProvider>
             <SocketProvider>
-              <RootNavigator />
+              <NotificationProvider>
+                <RootNavigator />
+              </NotificationProvider>
               <StatusBar style="auto" />
             </SocketProvider>
           </AuthProvider>

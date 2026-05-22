@@ -12,6 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 
 import { useAuth } from '../context/AuthContext';
+import { useNotificationBadge } from '../context/NotificationContext';
 import { colors } from '../theme';
 import { bannerAPI, requestAPI } from '../services/api';
 
@@ -34,6 +35,7 @@ const _shownBannerIds = new Set();
 
 export default function RootNavigator() {
   const { user, loading, networkError, retryAuth } = useAuth();
+  const { refreshCount } = useNotificationBadge();
   const [activeBanner, setActiveBanner] = useState(null);
   const [bannerVisible, setBannerVisible] = useState(false);
   const bannerFetchedForUser = useRef(null);
@@ -161,6 +163,8 @@ export default function RootNavigator() {
   useEffect(() => {
     if (!user || !user._id || bannerFetchedForUser.current === user._id) return;
     bannerFetchedForUser.current = user._id;
+    // Atualiza badge de notificações no login
+    refreshCount();
     bannerAPI.getActive()
       .then(({ data }) => {
         const banner = data?.banner;
@@ -171,7 +175,7 @@ export default function RootNavigator() {
         }
       })
       .catch(() => {});
-  }, [user?._id]);
+  }, [user?._id, refreshCount]);
 
   if (loading || regionState === 'checking') {
     return (

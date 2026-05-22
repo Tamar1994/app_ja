@@ -178,6 +178,13 @@ export const bannerAPI = {
   getActive: () => api.get('/banners/active'),
 };
 
+export const notificationsAPI = {
+  list:         (page = 1) => api.get(`/notifications?page=${page}&limit=20`),
+  unreadCount:  ()         => api.get('/notifications/unread-count'),
+  markRead:     (id)       => api.post(`/notifications/${id}/read`),
+  readAll:      ()         => api.post('/notifications/read-all'),
+};
+
 export const uploadAPI = {
   avatar: (formData) =>
     api.post('/upload/avatar', formData, {
