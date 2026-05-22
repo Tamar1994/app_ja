@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions, Image,
-  Modal, TextInput,
+  Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -472,7 +472,7 @@ export default function HomeScreen({ navigation }) {
         transparent
         onRequestClose={() => setSmartSearchVisible(false)}
       >
-        <View style={styles.smartBackdrop}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.smartBackdrop}>
           <View style={styles.smartCard}>
             <View style={styles.smartHandle} />
             <Text style={styles.smartTitle}>O que você precisa hoje?</Text>
@@ -521,7 +521,7 @@ export default function HomeScreen({ navigation }) {
               <Text style={styles.smartCloseText}>Fechar</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
     </SafeAreaView>

@@ -11,6 +11,8 @@ import {
   ScrollView,
   Alert,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -115,6 +117,7 @@ export default function CouponWalletScreen({ navigation }) {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -150,6 +153,7 @@ export default function CouponWalletScreen({ navigation }) {
             coupons.map((coupon) => <CouponCard key={coupon.id || coupon.code} coupon={coupon} />)
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </SafeAreaView>
   );

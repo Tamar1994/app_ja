@@ -109,13 +109,15 @@ export default function ServiceChatScreen({ navigation, route }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(_, index) => String(index)}
           contentContainerStyle={styles.msgList}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyText}>Nenhuma mensagem ainda.</Text>

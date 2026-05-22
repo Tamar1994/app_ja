@@ -48,7 +48,7 @@ export default function ProfessionalReviewScreen({ navigation, route }) {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />

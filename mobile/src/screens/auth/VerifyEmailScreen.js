@@ -77,7 +77,7 @@ export default function VerifyEmailScreen({ navigation, route }) {
       />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.inner}
       >
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>

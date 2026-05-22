@@ -381,7 +381,7 @@ export default function SupportChatScreen({ navigation }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
         <FlatList
@@ -389,6 +389,8 @@ export default function SupportChatScreen({ navigation }) {
           data={messages}
           keyExtractor={(_, i) => String(i)}
           contentContainerStyle={styles.msgList}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           ListEmptyComponent={
             <View style={styles.emptyMsgContainer}>
               <Text style={styles.emptyMsgText}>Nenhuma mensagem ainda. Diga olá! 👋</Text>

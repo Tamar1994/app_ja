@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
+  KeyboardAvoidingView, Platform,
   SafeAreaView, StatusBar, ActivityIndicator, Alert, TextInput, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -292,6 +293,7 @@ export default function PaymentScreen({ navigation, route }) {
         <View style={{ width: 38 }} />
       </LinearGradient>
 
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 20 }}>
         {/* Resumo do pedido */}
         <View style={styles.card}>
@@ -517,6 +519,7 @@ export default function PaymentScreen({ navigation, route }) {
           </LinearGradient>
         </TouchableOpacity>
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
