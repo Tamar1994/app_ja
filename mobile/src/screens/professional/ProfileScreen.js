@@ -195,7 +195,7 @@ export default function ProfessionalProfileScreen({ navigation }) {
             <Text style={styles.userEmail}>{user.email}</Text>
             <View style={styles.typeBadge}>
               <Ionicons name="briefcase-outline" size={12} color={colors.white} />
-              <Text style={styles.typeBadgeText}>Profissional · Diarista</Text>
+              <Text style={styles.typeBadgeText}>Profissional</Text>
             </View>
           </View>
 

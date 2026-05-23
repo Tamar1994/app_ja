@@ -113,8 +113,12 @@ export default function RegisterScreen({ navigation }) {
         birthDate: `${year}-${month}-${day}`,
       };
       if (userType === 'professional') {
-        const selectedType = serviceTypes.find((t) => t._id === selectedProfessions[0]);
-        if (selectedType) data.serviceTypeSlug = selectedType.slug;
+        const selected = serviceTypes.filter((t) => selectedProfessions.includes(t._id));
+        const slugs = selected.map((t) => t.slug);
+        if (slugs.length > 0) {
+          data.serviceTypeSlug = slugs[0];
+          data.serviceTypeSlugs = slugs;
+        }
       }
       await register(data);
       navigation.navigate('VerifyEmail', { email: email.trim().toLowerCase() });

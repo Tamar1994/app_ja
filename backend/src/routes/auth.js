@@ -56,7 +56,8 @@ router.post('/register', [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { name, email, phone, password, userType, pricePerHour, bio, cpf, birthDate, serviceTypeSlug } = req.body;
+  const { name, email, phone, password, userType, pricePerHour, bio, cpf, birthDate, serviceTypeSlug, serviceTypeSlugs: rawSlugs } = req.body;
+  const serviceTypeSlugs = Array.isArray(rawSlugs) && rawSlugs.length > 0 ? rawSlugs : (serviceTypeSlug ? [serviceTypeSlug] : []);
 
   try {
     const existing = await User.findOne({ email });
@@ -81,6 +82,7 @@ router.post('/register', [
       if (cpf) existing.cpf = cpf.replace(/[^\d]/g, '');
       if (birthDate) existing.birthDate = new Date(birthDate);
       if (serviceTypeSlug) existing.serviceTypeSlug = serviceTypeSlug;
+      if (serviceTypeSlugs.length > 0) existing.serviceTypeSlugs = serviceTypeSlugs;
       await existing.save();
       user = existing;
     } else {
@@ -101,6 +103,7 @@ router.post('/register', [
       if (cpf) userData.cpf = cpf.replace(/[^\d]/g, '');
       if (birthDate) userData.birthDate = new Date(birthDate);
       if (serviceTypeSlug) userData.serviceTypeSlug = serviceTypeSlug;
+      if (serviceTypeSlugs.length > 0) userData.serviceTypeSlugs = serviceTypeSlugs;
       if (userType === 'professional') {
         userData.professional = {
           pricePerHour: pricePerHour || 35,

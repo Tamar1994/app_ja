@@ -27,8 +27,16 @@ function buildBaseProfessionalFilter(request, excluded) {
   };
 
   // Profissional precisa estar habilitado no tipo de serviço solicitado.
+  // Verifica tanto o campo singular (serviceTypeSlug) quanto o array (serviceTypeSlugs).
   if (request?.serviceTypeSlug) {
-    filter.serviceTypeSlug = request.serviceTypeSlug;
+    filter.$and = [
+      {
+        $or: [
+          { serviceTypeSlug: request.serviceTypeSlug },
+          { serviceTypeSlugs: request.serviceTypeSlug },
+        ],
+      },
+    ];
   }
 
   // Pedido especialista: apenas especialistas certificados recebem.

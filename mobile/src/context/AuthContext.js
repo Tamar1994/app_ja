@@ -92,8 +92,15 @@ export const AuthProvider = ({ children }) => {
     setUser((prev) => ({ ...prev, ...updates }));
   };
 
+  const refreshUser = async () => {
+    try {
+      const { data } = await userAPI.getMe();
+      setUser(data.user);
+    } catch {}
+  };
+
   return (
-    <AuthContext.Provider value={{ user, setUser, token, loading, networkError, retryAuth: loadStoredAuth, login, register, logout, updateUser, verifyEmail, resendVerification }}>
+    <AuthContext.Provider value={{ user, setUser, token, loading, networkError, retryAuth: loadStoredAuth, login, register, logout, updateUser, refreshUser, verifyEmail, resendVerification }}>
       {children}
     </AuthContext.Provider>
   );
