@@ -1,143 +1,76 @@
-import React, { useState, useCallback } from 'react';
+﻿import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  SafeAreaView, StatusBar, ActivityIndicator, Alert, ScrollView,
+  SafeAreaView, StatusBar, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { paymentAPI, userAPI } from '../../services/api';
+import { clientWalletAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
-const BRAND_COLORS = {
-  visa: ['#1A1F71', '#2B3A9F'],
-  mastercard: ['#EB001B', '#F79E1B'],
-  amex: ['#007BC1', '#005A8E'],
-  discover: ['#FF6600', '#FF8C00'],
-  elo: ['#00A650', '#007A3D'],
-  hipercard: ['#CC1B28', '#A0121E'],
+const TYPE_CONFIG = {
+  credit_refund: {
+    icon: 'arrow-down-circle',
+    color: '#43A047',
+    label: 'Crédito recebido',
+    sign: '+',
+  },
+  debit_payment: {
+    icon: 'arrow-up-circle',
+    color: '#E53935',
+    label: 'Usado no pagamento',
+    sign: '-',
+  },
 };
 
-const BRAND_NAMES = {
-  visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express',
-  discover: 'Discover', elo: 'Elo', hipercard: 'Hipercard',
-};
-
-function CardItem({ method, onDelete, onSetDefault, deleting, settingDefault }) {
-  const brandColors = BRAND_COLORS[method.brand] || ['#555', '#333'];
-  const brandName = BRAND_NAMES[method.brand] || method.brand;
+function TransactionItem({ item }) {
+  const cfg = TYPE_CONFIG[item.type] || TYPE_CONFIG.credit_refund;
+  const label = item.metadata?.label || cfg.label;
+  const date = new Date(item.createdAt).toLocaleDateString('pt-BR', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
 
   return (
-    <LinearGradient colors={brandColors} style={styles.cardItem} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-      <View style={styles.cardTop}>
-        <View>
-          {method.isDefault && (
-            <View style={styles.defaultBadge}>
-              <Ionicons name="star" size={10} color="#fff" />
-              <Text style={styles.defaultBadgeText}>Padrão</Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.cardActions}>
-          {!method.isDefault && (
-            <TouchableOpacity
-              style={styles.cardActionBtn}
-              onPress={() => onSetDefault(method.id)}
-              disabled={settingDefault}
-            >
-              {settingDefault
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Ionicons name="star-outline" size={18} color="rgba(255,255,255,0.8)" />}
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.cardActionBtn}
-            onPress={() => onDelete(method.id)}
-            disabled={deleting}
-          >
-            {deleting
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Ionicons name="trash-outline" size={18} color="rgba(255,255,255,0.8)" />}
-          </TouchableOpacity>
-        </View>
+    <View style={styles.txItem}>
+      <View style={[styles.txIcon, { backgroundColor: cfg.color + '18' }]}>
+        <Ionicons name={cfg.icon} size={20} color={cfg.color} />
       </View>
-      <Text style={styles.cardNumber}>•••• •••• •••• {method.last4}</Text>
-      <View style={styles.cardBottom}>
-        <View>
-          <Text style={styles.cardLabel}>Validade</Text>
-          <Text style={styles.cardValue}>{String(method.expMonth).padStart(2, '0')}/{method.expYear}</Text>
-        </View>
-        <Text style={styles.cardBrand}>{brandName}</Text>
+      <View style={styles.txInfo}>
+        <Text style={styles.txLabel} numberOfLines={1}>{label}</Text>
+        <Text style={styles.txDate}>{date}</Text>
       </View>
-    </LinearGradient>
+      <Text style={[styles.txAmount, { color: cfg.color }]}>
+        {cfg.sign} R$ {Number(item.amount).toFixed(2).replace('.', ',')}
+      </Text>
+    </View>
   );
 }
 
 export default function WalletScreen({ navigation }) {
   const { user, updateUser } = useAuth();
-  const [methods, setMethods] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState(null);
-  const [settingDefaultId, setSettingDefaultId] = useState(null);
 
   const walletBalance = Number(user?.clientWallet?.balance || 0);
 
-  const loadMethods = async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      const [methodsRes, meRes] = await Promise.all([
-        paymentAPI.getMethods(),
-        userAPI.getMe(),
-      ]);
-      setMethods(methodsRes.data.methods || []);
-      if (meRes.data?.user?.clientWallet !== undefined) {
-        updateUser({ clientWallet: meRes.data.user.clientWallet });
+      const { data } = await clientWalletAPI.summary();
+      setTransactions(data.transactions || []);
+      if (data.balance !== undefined) {
+        updateUser({ clientWallet: { balance: data.balance, totalRefunded: data.totalRefunded } });
       }
     } catch {
-      Alert.alert('Erro', 'Não foi possível carregar a carteira.');
+      // saldo do contexto ainda é exibido mesmo se falhar
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useFocusEffect(useCallback(() => { loadMethods(); }, []));
-
-  const handleDelete = (id) => {
-    Alert.alert(
-      'Remover cartão',
-      'Tem certeza que deseja remover este cartão?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Remover', style: 'destructive',
-          onPress: async () => {
-            setDeletingId(id);
-            try {
-              await paymentAPI.deleteMethod(id);
-              setMethods((prev) => prev.filter((m) => m.id !== id));
-            } catch {
-              Alert.alert('Erro', 'Não foi possível remover o cartão.');
-            } finally {
-              setDeletingId(null);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleSetDefault = async (id) => {
-    setSettingDefaultId(id);
-    try {
-      await paymentAPI.setDefaultMethod(id);
-      setMethods((prev) => prev.map((m) => ({ ...m, isDefault: m.id === id })));
-    } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o cartão padrão.');
-    } finally {
-      setSettingDefaultId(null);
-    }
-  };
+  useFocusEffect(load);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -152,7 +85,7 @@ export default function WalletScreen({ navigation }) {
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color={colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Carteira</Text>
+        <Text style={styles.headerTitle}>Carteira de Créditos</Text>
         <View style={{ width: 38 }} />
       </LinearGradient>
 
@@ -160,52 +93,13 @@ export default function WalletScreen({ navigation }) {
         <View style={styles.loadingCenter}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      ) : methods.length === 0 ? (
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {/* Card de saldo */}
-          <LinearGradient
-            colors={colors.gradientSuccess}
-            style={styles.balanceCard}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.balanceRow}>
-              <View style={styles.balanceIconWrap}>
-                <Ionicons name="wallet" size={20} color="rgba(255,255,255,0.9)" />
-              </View>
-              <Text style={styles.balanceLabel}>SALDO NA CARTEIRA</Text>
-            </View>
-            <Text style={styles.balanceAmount}>
-              R$ {walletBalance.toFixed(2).replace('.', ',')}
-            </Text>
-            <Text style={styles.balanceSub}>Créditos e estornos acumulados</Text>
-          </LinearGradient>
-
-          <View style={styles.emptyState}>
-            <Ionicons name="card-outline" size={56} color={colors.textLight} />
-            <Text style={styles.emptyTitle}>Nenhum cartão salvo</Text>
-            <Text style={styles.emptyText}>
-              Seus cartões são salvos automaticamente ao fazer o primeiro pagamento.
-            </Text>
-          </View>
-        </ScrollView>
       ) : (
         <FlatList
-          data={methods}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <CardItem
-              method={item}
-              onDelete={handleDelete}
-              onSetDefault={handleSetDefault}
-              deleting={deletingId === item.id}
-              settingDefault={settingDefaultId === item.id}
-            />
-          )}
+          data={transactions}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <>
-              {/* Card de saldo */}
               <LinearGradient
                 colors={colors.gradientSuccess}
                 style={styles.balanceCard}
@@ -216,29 +110,33 @@ export default function WalletScreen({ navigation }) {
                   <View style={styles.balanceIconWrap}>
                     <Ionicons name="wallet" size={20} color="rgba(255,255,255,0.9)" />
                   </View>
-                  <Text style={styles.balanceLabel}>SALDO NA CARTEIRA</Text>
+                  <Text style={styles.balanceLabel}>SALDO DISPONÍVEL</Text>
                 </View>
                 <Text style={styles.balanceAmount}>
                   R$ {walletBalance.toFixed(2).replace('.', ',')}
                 </Text>
-                <Text style={styles.balanceSub}>Créditos e estornos acumulados</Text>
+                <Text style={styles.balanceSub}>
+                  Créditos gerados por estornos e reembolsos
+                </Text>
               </LinearGradient>
 
-              <Text style={styles.sectionTitle}>
-                {methods.length} {methods.length === 1 ? 'cartão salvo' : 'cartões salvos'}
-              </Text>
+              {transactions.length > 0 && (
+                <Text style={styles.sectionTitle}>Histórico de movimentações</Text>
+              )}
             </>
           }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="receipt-outline" size={52} color={colors.textLight} />
+              <Text style={styles.emptyTitle}>Sem movimentações</Text>
+              <Text style={styles.emptyText}>
+                Seus créditos de estorno e reembolso aparecerão aqui.
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => <TransactionItem item={item} />}
         />
       )}
-
-      {/* Info sobre segurança */}
-      <View style={styles.secureFooter}>
-        <Ionicons name="lock-closed" size={14} color={colors.textLight} />
-        <Text style={styles.secureText}>
-          Dados armazenados com segurança pela Stripe. Nunca guardamos seu número de cartão.
-        </Text>
-      </View>
     </SafeAreaView>
   );
 }
@@ -260,14 +158,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: typography.fontSizes.lg, fontWeight: '700', color: colors.white },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyState: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: spacing.xl, gap: 12, paddingTop: 40,
-  },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
-  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  list: { padding: spacing.lg, gap: 16 },
-  scrollContent: { padding: spacing.lg, gap: 16 },
+  listContent: { padding: spacing.lg, gap: 16, paddingBottom: 40 },
   balanceCard: {
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
@@ -282,65 +173,47 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   balanceIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
+    width: 32, height: 32, borderRadius: 9,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   balanceLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.85)',
-    letterSpacing: 0.8,
+    fontSize: 11, fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)', letterSpacing: 0.8,
   },
   balanceAmount: {
-    fontSize: 34,
-    fontWeight: '800',
-    color: colors.white,
-    letterSpacing: -0.5,
+    fontSize: 34, fontWeight: '800',
+    color: colors.white, letterSpacing: -0.5,
   },
   balanceSub: {
     fontSize: typography.fontSizes.sm,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)', fontWeight: '500',
   },
   sectionTitle: {
-    fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 4,
+    fontSize: 13, fontWeight: '600',
+    color: colors.textSecondary, marginTop: 8,
   },
-  cardItem: {
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    gap: 16,
-    minHeight: 170,
-    justifyContent: 'space-between',
+  txItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: spacing.md,
+    ...shadows.sm,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  defaultBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4,
-  },
-  defaultBadgeText: { fontSize: 11, fontWeight: '700', color: '#fff' },
-  cardActions: { flexDirection: 'row', gap: 8 },
-  cardActionBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+  txIcon: {
+    width: 40, height: 40, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
-  cardNumber: {
-    fontSize: 20, fontWeight: '700', color: '#fff',
-    letterSpacing: 3, fontVariant: ['tabular-nums'],
+  txInfo: { flex: 1 },
+  txLabel: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  txDate: { fontSize: 12, color: colors.textLight, marginTop: 2 },
+  txAmount: { fontSize: 15, fontWeight: '700' },
+  emptyState: {
+    alignItems: 'center', paddingHorizontal: spacing.xl,
+    gap: 12, paddingTop: 40,
   },
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  cardLabel: { fontSize: 10, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase' },
-  cardValue: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  cardBrand: { fontSize: 18, fontWeight: '800', color: 'rgba(255,255,255,0.9)' },
-  secureFooter: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: spacing.lg, paddingBottom: 28,
-    borderTopWidth: 1, borderTopColor: colors.border,
-  },
-  secureText: { fontSize: 12, color: colors.textLight, flex: 1, lineHeight: 17 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
 });

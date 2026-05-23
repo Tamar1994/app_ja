@@ -111,6 +111,7 @@ export const walletAPI = {
 
 // Carteira do cliente (histórico de uso)
 export const clientWalletAPI = {
+  summary: () => api.get('/wallet/client-summary'),
   preview: (requestData, couponCodes = [], useWallet = false, walletAmount = null) =>
     api.post('/payments/preview', {
       ...requestData,

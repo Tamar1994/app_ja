@@ -63,6 +63,27 @@ router.get('/summary', auth, async (req, res) => {
   }
 });
 
+// GET /api/wallet/client-summary — saldo e histórico da carteira de créditos do cliente
+router.get('/client-summary', auth, async (req, res) => {
+  try {
+    const [user, transactions] = await Promise.all([
+      User.findById(req.user._id).select('clientWallet'),
+      ClientWalletTransaction.find({ user: req.user._id })
+        .sort({ createdAt: -1 })
+        .limit(30),
+    ]);
+
+    res.json({
+      balance: user?.clientWallet?.balance || 0,
+      totalRefunded: user?.clientWallet?.totalRefunded || 0,
+      transactions,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao buscar carteira' });
+  }
+});
+
 // GET /api/wallet/earnings?period=day|week|month|year
 // Retorna ganhos agrupados por período
 router.get('/earnings', auth, async (req, res) => {
