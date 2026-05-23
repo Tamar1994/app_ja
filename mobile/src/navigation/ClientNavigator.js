@@ -64,27 +64,29 @@ function SupportStack() {
   );
 }
 
+// Definido FORA de ClientNavigator para evitar que o React Navigation
+// desmonte/remonte as telas a cada re-render do componente pai.
+function ProfileStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Profile" component={ProfileScreen} />
+      <Stack.Screen name="Wallet" component={WalletScreen} />
+      <Stack.Screen name="Security" component={SecurityScreen} />
+      <Stack.Screen name="Terms" component={TermsScreen} />
+      <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
+      <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
+      <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
+      <Stack.Screen name="ProfessionalUpgrade" component={ProfessionalUpgradeScreen} />
+      <Stack.Screen name="ProfessionalAddress" component={ProfessionalAddressScreen} />
+    </Stack.Navigator>
+  );
+}
+
 export default function ClientNavigator() {
   const insets = useSafeAreaInsets();
   const bottomPad = Platform.OS === 'android' ? Math.max(insets.bottom, 8) : 6;
   const tabBarHeight = 58 + bottomPad;
   const { unreadCount } = useNotificationBadge();
-
-  function ProfileStack() {
-    return (
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="Wallet" component={WalletScreen} />
-        <Stack.Screen name="Security" component={SecurityScreen} />
-        <Stack.Screen name="Terms" component={TermsScreen} />
-        <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
-        <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
-        <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
-        <Stack.Screen name="ProfessionalUpgrade" component={ProfessionalUpgradeScreen} />
-        <Stack.Screen name="ProfessionalAddress" component={ProfessionalAddressScreen} />
-      </Stack.Navigator>
-    );
-  }
 
   return (
     <Tab.Navigator

@@ -111,7 +111,8 @@ export const walletAPI = {
 
 // Carteira do cliente (histórico de uso)
 export const clientWalletAPI = {
-  summary: () => api.get('/wallet/client-summary'),
+  // Cache-Control: no-cache força o Express a sempre retornar 200 em vez de 304
+  summary: () => api.get('/wallet/client-summary', { headers: { 'Cache-Control': 'no-cache' } }),
   preview: (requestData, couponCodes = [], useWallet = false, walletAmount = null) =>
     api.post('/payments/preview', {
       ...requestData,

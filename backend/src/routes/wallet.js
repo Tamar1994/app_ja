@@ -83,6 +83,8 @@ router.get('/client-summary', auth, async (req, res) => {
       firstTxUser: transactions[0]?.user?.toString(),
     });
 
+    // Desativa cache HTTP (ETag/304) — dados financeiros sempre devem ser frescos
+    res.set('Cache-Control', 'no-store');
     res.json({
       balance: user?.clientWallet?.balance || 0,
       totalRefunded: user?.clientWallet?.totalRefunded || 0,
