@@ -55,22 +55,23 @@ export default function WalletScreen({ navigation }) {
 
   const walletBalance = Number(user?.clientWallet?.balance || 0);
 
-  const load = useCallback(async () => {
-    try {
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
       setLoading(true);
-      const { data } = await clientWalletAPI.summary();
-      setTransactions(data.transactions || []);
-      if (data.balance !== undefined) {
-        updateUser({ clientWallet: { balance: data.balance, totalRefunded: data.totalRefunded } });
-      }
-    } catch {
-      // saldo do contexto ainda é exibido mesmo se falhar
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(load);
+      clientWalletAPI.summary()
+        .then(({ data }) => {
+          if (!active) return;
+          setTransactions(data.transactions || []);
+          if (data.balance !== undefined) {
+            updateUser({ clientWallet: { balance: data.balance, totalRefunded: data.totalRefunded } });
+          }
+        })
+        .catch(() => {})
+        .finally(() => { if (active) setLoading(false); });
+      return () => { active = false; };
+    }, []),
+  );
 
   return (
     <SafeAreaView style={styles.container}>
