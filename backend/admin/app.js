@@ -387,6 +387,14 @@ const renderLayout = async () => {
           <div class="nav-item ${currentPage==='saques'?'active':''}" onclick="navTo('saques')">
             <span class="icon">🏦</span> Saques PIX
           </div>` : ''}
+          ${hasPermission(PERMISSIONS.FINANCIAL) ? `
+          <div class="nav-item ${currentPage==='pix-refunds'?'active':''}" onclick="navTo('pix-refunds')">
+            <span class="icon">↩️</span> Estornos PIX
+          </div>` : ''}
+          ${hasPermission(PERMISSIONS.FINANCIAL) ? `
+          <div class="nav-item ${currentPage==='cancellation-configs'?'active':''}" onclick="navTo('cancellation-configs')">
+            <span class="icon">🚫</span> Taxas de Cancelamento
+          </div>` : ''}
           ${hasPermission(PERMISSIONS.SERVICE_MANAGEMENT) || hasPermission(PERMISSIONS.ACCESS_MANAGEMENT) ? `
           <div class="nav-group-label">Configurações</div>
           ${hasPermission(PERMISSIONS.SERVICE_MANAGEMENT) ? `
