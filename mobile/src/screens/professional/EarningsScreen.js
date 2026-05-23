@@ -34,6 +34,9 @@ export default function EarningsScreen() {
   const [withdrawModalVisible, setWithdrawModalVisible] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('50');
   const [requestingWithdrawal, setRequestingWithdrawal] = useState(false);
+  const [transferModalVisible, setTransferModalVisible] = useState(false);
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -150,6 +153,30 @@ export default function EarningsScreen() {
     }
   };
 
+  const handleTransferToClient = async () => {
+    const amount = Number(transferAmount.replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Valor inválido', 'Informe um valor maior que zero.');
+      return;
+    }
+    const balance = Number(summary?.balance || 0);
+    if (amount > balance) {
+      Alert.alert('Saldo insuficiente', `Seu saldo disponível é ${fmt(balance)}.`);
+      return;
+    }
+    setTransferring(true);
+    try {
+      await walletAPI.transferToClient(amount);
+      Alert.alert('Transferência realizada', 'Saldo transferido para sua carteira de créditos com sucesso.');
+      setTransferModalVisible(false);
+      load();
+    } catch (err) {
+      Alert.alert('Erro', err?.response?.data?.message || 'Não foi possível realizar a transferência.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
   const withdrawalStatusLabel = (status) => ({
     pending: 'Na fila',
     processing: 'Em processamento',
@@ -198,6 +225,15 @@ export default function EarningsScreen() {
                   Próxima solicitação disponível em {new Date(summary.nextWithdrawalAt).toLocaleString('pt-BR')}
                 </Text>
               )}
+
+              <TouchableOpacity
+                style={[styles.transferBtn, Number(summary?.balance || 0) <= 0 && styles.withdrawBtnDisabled]}
+                onPress={() => { setTransferAmount(''); setTransferModalVisible(true); }}
+                disabled={Number(summary?.balance || 0) <= 0}
+              >
+                <Ionicons name="wallet-outline" size={18} color="#43A047" />
+                <Text style={[styles.withdrawBtnText, { color: '#43A047' }]}>Transferir para Carteira Cliente</Text>
+              </TouchableOpacity>
             </>
           ) : loading ? (
             <ActivityIndicator color="#fff" style={{ marginVertical: 24 }} />
@@ -365,6 +401,40 @@ export default function EarningsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <Modal visible={transferModalVisible} transparent animationType="slide" onRequestClose={() => setTransferModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Transferir para Carteira Cliente</Text>
+            <Text style={styles.modalText}>O valor será movido do seu saldo de profissional para a carteira de créditos do seu perfil cliente.</Text>
+            <Text style={styles.modalText}>Saldo disponível: {fmt(summary?.balance || 0)}</Text>
+
+            <Text style={styles.modalLabel}>Valor a transferir</Text>
+            <TextInput
+              value={transferAmount}
+              onChangeText={setTransferAmount}
+              keyboardType="decimal-pad"
+              placeholder="0,00"
+              style={styles.modalInput}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalBtnGhost} onPress={() => setTransferModalVisible(false)}>
+                <Text style={styles.modalBtnGhostText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtnPrimary, { backgroundColor: '#43A047' }, transferring && { opacity: 0.7 }]}
+                onPress={handleTransferToClient}
+                disabled={transferring}
+              >
+                {transferring
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.modalBtnPrimaryText}>Confirmar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -413,6 +483,16 @@ const styles = StyleSheet.create({
   },
   withdrawBtnDisabled: { opacity: 0.5 },
   withdrawBtnText: { color: '#FF6B00', fontWeight: '700', fontSize: 13 },
+  transferBtn: {
+    marginTop: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   withdrawHint: { marginTop: 8, color: 'rgba(255,255,255,0.8)', fontSize: 12, textAlign: 'center' },
   periodBar: {
     flexDirection: 'row',
