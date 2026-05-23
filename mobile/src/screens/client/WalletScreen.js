@@ -1,11 +1,10 @@
-﻿import React, { useState, useCallback } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   SafeAreaView, StatusBar, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 import { clientWalletAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -55,23 +54,31 @@ export default function WalletScreen({ navigation }) {
 
   const walletBalance = Number(user?.clientWallet?.balance || 0);
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      setLoading(true);
-      clientWalletAPI.summary()
-        .then(({ data }) => {
-          if (!active) return;
-          setTransactions(data.transactions || []);
-          if (data.balance !== undefined) {
-            updateUser({ clientWallet: { balance: data.balance, totalRefunded: data.totalRefunded } });
-          }
-        })
-        .catch(() => {})
-        .finally(() => { if (active) setLoading(false); });
-      return () => { active = false; };
-    }, []),
-  );
+  useEffect(() => {
+    let cancelled = false;
+
+    // Safety net: garante que o spinner nunca fica eterno se o axios travar
+    const safetyTimer = setTimeout(() => setLoading(false), 12000);
+
+    clientWalletAPI.summary()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setTransactions(data.transactions || []);
+        if (data.balance !== undefined) {
+          updateUser({ clientWallet: { balance: data.balance, totalRefunded: data.totalRefunded } });
+        }
+      })
+      .catch((err) => console.warn('[Carteira] Erro ao carregar:', err?.message))
+      .finally(() => {
+        clearTimeout(safetyTimer);
+        setLoading(false); // sempre limpa, independente de cancelled
+      });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(safetyTimer);
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>

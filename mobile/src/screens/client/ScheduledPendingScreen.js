@@ -118,15 +118,40 @@ export default function ScheduledPendingScreen({ navigation, route }) {
         {
           text: 'Sim, cancelar',
           style: 'destructive',
-          onPress: async () => {
-            setCancelling(true);
-            try {
-              await requestAPI.cancel(requestId, 'Cancelado pelo cliente');
-              navigation.replace('Home');
-            } catch {
-              Alert.alert('Erro', 'Não foi possível cancelar.');
-              setCancelling(false);
-            }
+          onPress: () => {
+            Alert.alert(
+              'Destino do reembolso',
+              'Como deseja receber o valor de volta?',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: '💼 Carteira Já',
+                  onPress: async () => {
+                    setCancelling(true);
+                    try {
+                      await requestAPI.cancel(requestId, 'Cancelado pelo cliente', 'wallet');
+                      navigation.replace('Home');
+                    } catch {
+                      Alert.alert('Erro', 'Não foi possível cancelar.');
+                      setCancelling(false);
+                    }
+                  },
+                },
+                {
+                  text: '↩️ Método original',
+                  onPress: async () => {
+                    setCancelling(true);
+                    try {
+                      await requestAPI.cancel(requestId, 'Cancelado pelo cliente', 'original');
+                      navigation.replace('Home');
+                    } catch {
+                      Alert.alert('Erro', 'Não foi possível cancelar.');
+                      setCancelling(false);
+                    }
+                  },
+                },
+              ],
+            );
           },
         },
       ],

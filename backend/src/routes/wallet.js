@@ -66,17 +66,11 @@ router.get('/summary', auth, async (req, res) => {
 // GET /api/wallet/client-summary — saldo e histórico da carteira de créditos do cliente
 router.get('/client-summary', auth, async (req, res) => {
   try {
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-
     const [user, transactions] = await Promise.all([
       User.findById(req.user._id).select('clientWallet'),
-      ClientWalletTransaction.find({
-        user: req.user._id,
-        createdAt: { $gte: sixtyDaysAgo },
-      })
+      ClientWalletTransaction.find({ user: req.user._id })
         .sort({ createdAt: -1 })
-        .limit(100),
+        .limit(50),
     ]);
 
     res.json({

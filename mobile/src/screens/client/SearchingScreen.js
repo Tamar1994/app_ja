@@ -102,16 +102,39 @@ export default function SearchingScreen({ navigation, route }) {
         {
           text: 'Sim, cancelar',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              await requestAPI.cancel(requestId, 'Cancelado pelo cliente');
-              navigation.replace('Home');
-            } catch {
-              Alert.alert('Erro', 'Não foi possível cancelar.');
-            }
+          onPress: () => {
+            Alert.alert(
+              'Destino do reembolso',
+              'Como deseja receber o valor de volta?',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: '💼 Carteira Já',
+                  onPress: async () => {
+                    try {
+                      await requestAPI.cancel(requestId, 'Cancelado pelo cliente', 'wallet');
+                      navigation.replace('Home');
+                    } catch {
+                      Alert.alert('Erro', 'Não foi possível cancelar.');
+                    }
+                  },
+                },
+                {
+                  text: '↩️ Método original',
+                  onPress: async () => {
+                    try {
+                      await requestAPI.cancel(requestId, 'Cancelado pelo cliente', 'original');
+                      navigation.replace('Home');
+                    } catch {
+                      Alert.alert('Erro', 'Não foi possível cancelar.');
+                    }
+                  },
+                },
+              ],
+            );
           },
         },
-      ]
+      ],
     );
   };
 
