@@ -41,6 +41,8 @@ const buildAuthUserPayload = (user) => ({
   // Campos obrigatórios para ProfileSwitcher e ban check no frontend
   banStatus: user.banStatus || null,
   professionalVerification: user.professionalVerification || null,
+  serviceTypeSlug: user.serviceTypeSlug || null,
+  serviceTypeSlugs: user.serviceTypeSlugs || [],
 });
 
 // POST /api/auth/register
