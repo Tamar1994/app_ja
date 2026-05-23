@@ -5540,12 +5540,28 @@ const _cancelConfigFormHtml = (cfg = {}) => {
     </div>`;
 };
 
+// Fases pré-definidas com os nomes reais da jornada de contratação
+const _DEFAULT_IMMEDIATE_PHASES = [
+  { label: 'Buscando profissional',          minutesAfterAccepted: 0,  platformFeePercent: 0, professionalFeePercent: 0 },
+  { label: 'Profissional aceito — a caminho', minutesAfterAccepted: 5,  platformFeePercent: 0, professionalFeePercent: 0 },
+  { label: 'Serviço iniciado',                minutesAfterAccepted: 30, platformFeePercent: 0, professionalFeePercent: 0 },
+];
+const _DEFAULT_SCHEDULED_PHASES = [
+  { label: 'Com antecedência (+24h)',   hoursBeforeScheduled: 24, platformFeePercent: 0, professionalFeePercent: 0 },
+  { label: 'Véspera (2h – 24h)',        hoursBeforeScheduled: 2,  platformFeePercent: 0, professionalFeePercent: 0 },
+  { label: 'Em cima da hora (< 2h)',    hoursBeforeScheduled: 0,  platformFeePercent: 0, professionalFeePercent: 0 },
+];
+
 const openNewCancelConfigModal = () => {
+  const defaultCfg = {
+    immediatePhases: _DEFAULT_IMMEDIATE_PHASES,
+    scheduledPhases: _DEFAULT_SCHEDULED_PHASES,
+  };
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal" style="max-width:760px;width:100%;max-height:92vh;overflow-y:auto;">
     <div class="modal-header"><h3>Nova Configuração de Cancelamento</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button></div>
-    <div class="modal-body">${_cancelConfigFormHtml()}</div>
+    <div class="modal-body">${_cancelConfigFormHtml(defaultCfg)}</div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveCancelConfig()">Salvar</button>
