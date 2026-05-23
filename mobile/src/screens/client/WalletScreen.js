@@ -1,12 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  SafeAreaView, StatusBar, ActivityIndicator, Alert,
+  SafeAreaView, StatusBar, ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { paymentAPI } from '../../services/api';
+import { paymentAPI, userAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const BRAND_COLORS = {
@@ -74,18 +75,27 @@ function CardItem({ method, onDelete, onSetDefault, deleting, settingDefault }) 
 }
 
 export default function WalletScreen({ navigation }) {
+  const { user, updateUser } = useAuth();
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [settingDefaultId, setSettingDefaultId] = useState(null);
 
+  const walletBalance = Number(user?.clientWallet?.balance || 0);
+
   const loadMethods = async () => {
     try {
       setLoading(true);
-      const { data } = await paymentAPI.getMethods();
-      setMethods(data.methods || []);
+      const [methodsRes, meRes] = await Promise.all([
+        paymentAPI.getMethods(),
+        userAPI.getMe(),
+      ]);
+      setMethods(methodsRes.data.methods || []);
+      if (meRes.data?.user?.clientWallet !== undefined) {
+        updateUser({ clientWallet: meRes.data.user.clientWallet });
+      }
     } catch {
-      Alert.alert('Erro', 'Não foi possível carregar seus cartões.');
+      Alert.alert('Erro', 'Não foi possível carregar a carteira.');
     } finally {
       setLoading(false);
     }
@@ -151,13 +161,34 @@ export default function WalletScreen({ navigation }) {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : methods.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="wallet-outline" size={64} color={colors.textLight} />
-          <Text style={styles.emptyTitle}>Nenhum cartão salvo</Text>
-          <Text style={styles.emptyText}>
-            Seus cartões são salvos automaticamente ao fazer o primeiro pagamento.
-          </Text>
-        </View>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {/* Card de saldo */}
+          <LinearGradient
+            colors={colors.gradientSuccess}
+            style={styles.balanceCard}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <View style={styles.balanceRow}>
+              <View style={styles.balanceIconWrap}>
+                <Ionicons name="wallet" size={20} color="rgba(255,255,255,0.9)" />
+              </View>
+              <Text style={styles.balanceLabel}>SALDO NA CARTEIRA</Text>
+            </View>
+            <Text style={styles.balanceAmount}>
+              R$ {walletBalance.toFixed(2).replace('.', ',')}
+            </Text>
+            <Text style={styles.balanceSub}>Créditos e estornos acumulados</Text>
+          </LinearGradient>
+
+          <View style={styles.emptyState}>
+            <Ionicons name="card-outline" size={56} color={colors.textLight} />
+            <Text style={styles.emptyTitle}>Nenhum cartão salvo</Text>
+            <Text style={styles.emptyText}>
+              Seus cartões são salvos automaticamente ao fazer o primeiro pagamento.
+            </Text>
+          </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={methods}
@@ -173,9 +204,30 @@ export default function WalletScreen({ navigation }) {
             />
           )}
           ListHeaderComponent={
-            <Text style={styles.sectionTitle}>
-              {methods.length} {methods.length === 1 ? 'cartão salvo' : 'cartões salvos'}
-            </Text>
+            <>
+              {/* Card de saldo */}
+              <LinearGradient
+                colors={colors.gradientSuccess}
+                style={styles.balanceCard}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.balanceRow}>
+                  <View style={styles.balanceIconWrap}>
+                    <Ionicons name="wallet" size={20} color="rgba(255,255,255,0.9)" />
+                  </View>
+                  <Text style={styles.balanceLabel}>SALDO NA CARTEIRA</Text>
+                </View>
+                <Text style={styles.balanceAmount}>
+                  R$ {walletBalance.toFixed(2).replace('.', ',')}
+                </Text>
+                <Text style={styles.balanceSub}>Créditos e estornos acumulados</Text>
+              </LinearGradient>
+
+              <Text style={styles.sectionTitle}>
+                {methods.length} {methods.length === 1 ? 'cartão salvo' : 'cartões salvos'}
+              </Text>
+            </>
           }
         />
       )}
@@ -209,12 +261,51 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: typography.fontSizes.lg, fontWeight: '700', color: colors.white },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyState: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: spacing.xl, gap: 12,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: spacing.xl, gap: 12, paddingTop: 40,
   },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
   list: { padding: spacing.lg, gap: 16 },
+  scrollContent: { padding: spacing.lg, gap: 16 },
+  balanceCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    gap: 6,
+    marginBottom: 4,
+    ...shadows.md,
+  },
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 4,
+  },
+  balanceIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  balanceLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: 0.8,
+  },
+  balanceAmount: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.5,
+  },
+  balanceSub: {
+    fontSize: typography.fontSizes.sm,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
   sectionTitle: {
     fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 4,
   },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator,
@@ -7,6 +7,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { uploadAPI, userAPI } from '../../services/api';
 import ProfileSwitcher from '../../components/ProfileSwitcher';
@@ -23,6 +24,19 @@ function buildImageUrl(path) {
 export default function ProfileScreen({ navigation }) {
   const { user, logout, updateUser } = useAuth();
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Atualiza saldo da carteira sempre que a tela ganhar foco
+  useFocusEffect(
+    useCallback(() => {
+      userAPI.getMe().then(({ data }) => {
+        if (data?.user?.clientWallet !== undefined) {
+          updateUser({ clientWallet: data.user.clientWallet });
+        }
+      }).catch(() => {});
+    }, []),
+  );
+
+  const walletBalance = Number(user?.clientWallet?.balance || 0);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -183,6 +197,34 @@ export default function ProfileScreen({ navigation }) {
         </LinearGradient>
 
         <View style={styles.content}>
+          {/* Carteira de créditos */}
+          <TouchableOpacity
+            style={styles.walletCard}
+            onPress={() => navigation.navigate('Wallet')}
+            activeOpacity={0.88}
+          >
+            <LinearGradient
+              colors={colors.gradientSuccess}
+              style={styles.walletGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.walletTop}>
+                <View style={styles.walletIconWrap}>
+                  <Ionicons name="wallet" size={22} color="rgba(255,255,255,0.9)" />
+                </View>
+                <Text style={styles.walletLabel}>Saldo na carteira</Text>
+              </View>
+              <Text style={styles.walletBalance}>
+                R$ {walletBalance.toFixed(2).replace('.', ',')}
+              </Text>
+              <View style={styles.walletFooter}>
+                <Text style={styles.walletFooterText}>Créditos e estornos do app</Text>
+                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.7)" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+
           {/* Info card */}
           <View style={styles.infoCard}>
             {[
@@ -399,5 +441,55 @@ const styles = StyleSheet.create({
   modalBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   modalBtnCancel: { paddingVertical: 10, width: '100%', alignItems: 'center' },
   modalBtnCancelText: { color: colors.textSecondary, fontSize: 15, fontWeight: '600' },
+  walletCard: {
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  walletGradient: {
+    padding: spacing.lg,
+    gap: 6,
+  },
+  walletTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 2,
+  },
+  walletIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walletLabel: {
+    fontSize: typography.fontSizes.sm,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  walletBalance: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.5,
+  },
+  walletFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+  },
+  walletFooterText: {
+    fontSize: typography.fontSizes.sm,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: '500',
+  },
 });
 

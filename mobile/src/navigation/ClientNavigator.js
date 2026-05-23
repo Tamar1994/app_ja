@@ -74,6 +74,7 @@ export default function ClientNavigator() {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="Wallet" component={WalletScreen} />
         <Stack.Screen name="Security" component={SecurityScreen} />
         <Stack.Screen name="Terms" component={TermsScreen} />
         <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
