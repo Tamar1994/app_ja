@@ -23,6 +23,7 @@ const {
   computeCancellationFee,
   computeRefundAmounts,
 } = require('../services/cancellationService');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -1265,13 +1266,21 @@ router.patch('/:id/cancel', auth, async (req, res) => {
 
     // ── Processa estorno (apenas quando há valor a devolver) ──────────────
     if (amounts.totalPaid > 0) {
+      logger.info('[cancel] disparando processCancellationRefund', {
+        requestId: preCancel._id,
+        totalPaid: amounts.totalPaid,
+        feeAmount: amounts.feeAmount,
+        externalRefund: amounts.externalRefundAmount,
+        walletRefund: amounts.walletClientRefundAmount,
+        destination: clientProfile ? refundDestination : 'wallet',
+      });
       processCancellationRefund({
         preCancel,
         request,
         feeResult,
         amounts,
         refundDestination: clientProfile ? refundDestination : 'wallet',
-      }).catch((err) => console.error('[cancel refund]', err));
+      }).catch((err) => logger.error('[cancel] erro em processCancellationRefund', { requestId: preCancel._id, err: err.message, stack: err.stack }));
     } else if (
       !clientProfile &&
       preCancel.requestType === 'scheduled' &&
@@ -1279,7 +1288,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
       ['pending_professional', 'pending_client', 'scheduled'].includes(preCancel.status)
     ) {
       // Profissional cancelando agendamento pago: reembolso integral para wallet
-      refundScheduledPaymentToWallet(preCancel).catch((err) => console.error('[cancel refund]', err));
+      refundScheduledPaymentToWallet(preCancel).catch((err) => logger.error('[cancel] erro em refundScheduledPaymentToWallet', { requestId: preCancel._id, err: err.message }));
     }
 
     res.json({ request, feeApplied: amounts.feeAmount > 0, refundAmount: amounts.externalRefundAmount + amounts.walletClientRefundAmount + amounts.walletProfessionalRefundAmount });
@@ -1308,7 +1317,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
       }).catch(() => {});
     }
   } catch (err) {
-    console.error('[cancel]', err);
+    logger.error('[cancel] erro na rota', { requestId: req.params.id, uid: req.user?._id, err: err.message, stack: err.stack });
     res.status(500).json({ message: 'Erro ao cancelar' });
   }
 });
@@ -1323,13 +1332,27 @@ router.patch('/:id/cancel', auth, async (req, res) => {
  *  - Para 'original' + PIX: cria PixRefundRequest na fila do admin
  */
 async function processCancellationRefund({ preCancel, request, feeResult, amounts, refundDestination }) {
+  logger.info('[refund] iniciando processCancellationRefund', {
+    requestId: preCancel._id,
+    client: preCancel.client,
+    destination: refundDestination,
+    totalPaid: amounts.totalPaid,
+    feeAmount: amounts.feeAmount,
+    walletClientRefund: amounts.walletClientRefundAmount,
+    walletProfessionalRefund: amounts.walletProfessionalRefundAmount,
+    externalRefund: amounts.externalRefundAmount,
+  });
+
   const session = await mongoose.startSession();
   let pixRefundDoc = null;
 
   try {
     await session.withTransaction(async () => {
       const clientUser = await User.findById(preCancel.client).session(session);
-      if (!clientUser) return;
+      if (!clientUser) {
+        logger.warn('[refund] clientUser não encontrado', { requestId: preCancel._id, client: preCancel.client });
+        return;
+      }
 
       if (!clientUser.clientWallet) clientUser.clientWallet = { balance: 0, totalRefunded: 0 };
 
@@ -1439,6 +1462,11 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
       }
 
       await clientUser.save({ session });
+      logger.info('[refund] usuário salvo, transação MongoDB concluída', {
+        requestId: preCancel._id,
+        newClientWalletBalance: clientUser.clientWallet?.balance,
+        pixRefundCreated: !!pixRefundDoc,
+      });
 
       // Atualiza request com id do PixRefundRequest (se criado)
       if (pixRefundDoc) {
@@ -1449,6 +1477,7 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
     });
   } finally {
     await session.endSession();
+    logger.debug('[refund] sessão MongoDB encerrada', { requestId: preCancel._id });
   }
 
   // Stripe refund (fora da transação Mongo para não misturar erros de rede)
@@ -1472,7 +1501,7 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
           'cancellation.stripeRefundId': stripeRefund.id,
         });
       } catch (err) {
-        console.error('[stripe refund]', err);
+        logger.error('[refund] erro no estorno Stripe', { requestId: preCancel._id, err: err.message, stack: err.stack });
         // Falha no Stripe → retorna para carteira como fallback
         const clientUser = await User.findById(preCancel.client);
         if (clientUser) {
@@ -1513,6 +1542,7 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
       { screen: 'ClientWallet' },
     );
   }).catch(() => {});
+  logger.info('[refund] processCancellationRefund concluído', { requestId: preCancel._id });
 }
 
 

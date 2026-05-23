@@ -4,8 +4,8 @@ const auth = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
-
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -65,6 +65,8 @@ router.get('/summary', auth, async (req, res) => {
 
 // GET /api/wallet/client-summary — saldo e histórico da carteira de créditos do cliente
 router.get('/client-summary', auth, async (req, res) => {
+  const uid = req.user._id.toString();
+  logger.info('[wallet] client-summary: iniciando', { uid });
   try {
     const [user, transactions] = await Promise.all([
       User.findById(req.user._id).select('clientWallet'),
@@ -73,13 +75,21 @@ router.get('/client-summary', auth, async (req, res) => {
         .limit(50),
     ]);
 
+    logger.info('[wallet] client-summary: resultado', {
+      uid,
+      balance: user?.clientWallet?.balance ?? 0,
+      txCount: transactions.length,
+      firstTxId: transactions[0]?._id?.toString(),
+      firstTxUser: transactions[0]?.user?.toString(),
+    });
+
     res.json({
       balance: user?.clientWallet?.balance || 0,
       totalRefunded: user?.clientWallet?.totalRefunded || 0,
       transactions,
     });
   } catch (err) {
-    console.error(err);
+    logger.error('[wallet] client-summary: erro', { uid, err: err.message, stack: err.stack });
     res.status(500).json({ message: 'Erro ao buscar carteira' });
   }
 });

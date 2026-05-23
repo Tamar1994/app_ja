@@ -5,6 +5,8 @@ const cors = require('cors');
 const { apiLimiter, loginLimiter } = require('./middleware/rateLimit');
 const { adminHeaders } = require('./middleware/securityHeaders');
 const path = require('path');
+const logger = require('./utils/logger');
+const httpLogger = require('./middleware/httpLogger');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -47,7 +49,8 @@ app.use(express.json());
 
 // Proteção contra NoSQL injection (deve rodar DEPOIS do express.json para ter o body parseado)
 app.use(mongoSanitize());
-
+// Log de requisições HTTP
+app.use(httpLogger);
 // Servir arquivos de upload
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -193,7 +196,14 @@ app.get('/health', (req, res) => {
 
 // Handler de erros global
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error('[app] Erro não tratado', {
+    reqId: req.reqId,
+    method: req.method,
+    path: req.path,
+    uid: req.user?._id?.toString(),
+    err: err.message,
+    stack: err.stack,
+  });
   res.status(500).json({ message: err.message || 'Erro interno do servidor' });
 });
 
