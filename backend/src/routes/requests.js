@@ -625,7 +625,8 @@ router.patch('/:id/accept', auth, async (req, res) => {
     // Limpar timer da fila
     clearRequestTimer(req.params.id);
 
-    // Buscar dados completos do profissional para mostrar ao cliente
+    // Limpar prioridade de cancelamento (se tinha)
+    User.findByIdAndUpdate(req.user._id, { $unset: { cancelPriority: '' } }).catch(() => {});
     const professional = await User.findById(req.user._id).select('name avatar professional phone');
 
     const io = req.app.get('io');
@@ -701,6 +702,9 @@ router.patch('/:id/schedule-accept', auth, async (req, res) => {
     ).populate('client', 'name avatar phone pushToken');
 
     if (!request) return res.status(400).json({ message: 'Agendamento não disponível' });
+
+    // Limpar prioridade de cancelamento (se tinha)
+    User.findByIdAndUpdate(req.user._id, { $unset: { cancelPriority: '' } }).catch(() => {});
 
     const professional = await User.findById(req.user._id).select('name avatar professional phone');
     const io = req.app.get('io');
@@ -1279,6 +1283,30 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     }
 
     res.json({ request, feeApplied: amounts.feeAmount > 0, refundAmount: amounts.externalRefundAmount + amounts.walletClientRefundAmount + amounts.walletProfessionalRefundAmount });
+
+    // ── Prioridade de despacho para o profissional cancelado enquanto a caminho ──
+    // Quando o CLIENTE cancela e o profissional estava a caminho (ou já aceito/preparando),
+    // o profissional recebe prioridade de 30 min para novos pedidos na sua região.
+    // (fire-and-forget — nenhum throw síncrono possível, seguro após res.json)
+    if (clientProfile && preCancel.professional &&
+        ['on_the_way', 'accepted', 'preparing'].includes(preCancel.status)) {
+      const PRIORITY_MS = 30 * 60 * 1000; // 30 minutos
+      // Atualiza e busca pushToken na mesma operação (sem round-trip extra)
+      User.findByIdAndUpdate(
+        preCancel.professional,
+        { cancelPriority: { active: true, expiresAt: new Date(Date.now() + PRIORITY_MS) } },
+        { new: true, select: 'pushToken' },
+      ).then((pro) => {
+        if (pro?.pushToken) {
+          sendExpoPush(
+            pro.pushToken,
+            '📍 Prioridade ativada!',
+            'Você tem prioridade por 30 min para novos pedidos na sua região.',
+            { type: 'cancel_priority' },
+          );
+        }
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error('[cancel]', err);
     res.status(500).json({ message: 'Erro ao cancelar' });

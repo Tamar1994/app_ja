@@ -58,26 +58,57 @@ async function findNearbyPool(request, targetCount) {
     && Number.isFinite(latitude)
     && !(longitude === 0 && latitude === 0);
 
-  if (!hasValidCoordinates) {
-    const fallback = await User.find(baseFilter)
-      .sort({ 'professional.rating': -1, 'professional.totalReviews': -1 })
-      .limit(targetCount);
-    return fallback;
+  // ── 1. Profissionais com prioridade de cancelamento ──────────────────────
+  // Foram cancelados pelo cliente enquanto estavam a caminho: têm prioridade
+  // por 30 min na região onde estão atualmente.
+  const PRIORITY_RADIUS_METERS = 15000; // 15 km ao redor do endereço do pedido
+  const now = new Date();
+  let priorityPros = [];
+
+  if (hasValidCoordinates) {
+    try {
+      priorityPros = await User.find({
+        ...baseFilter,
+        'cancelPriority.active': true,
+        'cancelPriority.expiresAt': { $gt: now },
+        location: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+            $maxDistance: PRIORITY_RADIUS_METERS,
+          },
+        },
+      }).limit(targetCount);
+    } catch (_) { /* ignorar erro geoespacial se coordenadas inválidas */ }
   }
 
-  const selected = [];
-  const selectedIds = new Set();
+  if (priorityPros.length >= targetCount) return priorityPros.slice(0, targetCount);
+
+  // ── 2. Pool regular (excluindo os já selecionados como prioritários) ──────
+  const priorityIds = priorityPros.map(p => p._id.toString());
+  const regularExcluded = [...excluded, ...priorityIds];
+  const regularFilter = buildBaseProfessionalFilter(request, regularExcluded);
+  const remaining = targetCount - priorityPros.length;
+
+  if (!hasValidCoordinates) {
+    const fallback = await User.find(regularFilter)
+      .sort({ 'professional.rating': -1, 'professional.totalReviews': -1 })
+      .limit(remaining);
+    return [...priorityPros, ...fallback];
+  }
+
+  const selected = [...priorityPros];
+  const selectedIds = new Set(priorityIds);
 
   for (const radius of RADIUS_STEPS_METERS) {
     const chunk = await User.find({
-      ...baseFilter,
+      ...regularFilter,
       location: {
         $near: {
           $geometry: { type: 'Point', coordinates: [longitude, latitude] },
           $maxDistance: radius,
         },
       },
-    }).limit(targetCount);
+    }).limit(remaining);
 
     for (const professional of chunk) {
       const key = professional._id.toString();

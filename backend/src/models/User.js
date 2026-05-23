@@ -161,6 +161,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Prioridade de despacho para profissional cancelado enquanto estava a caminho
+  cancelPriority: {
+    active: { type: Boolean, default: false },
+    expiresAt: { type: Date, default: null },
+  },
   // Stripe Customer ID (para carteira de pagamentos)
   stripeCustomerId: {
     type: String,
