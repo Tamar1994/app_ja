@@ -3183,7 +3183,7 @@ const buildPriceTiersEditor = (tiers = [], idPrefix = '') => {
       <button class="btn btn-danger btn-sm" onclick="removeTierRow('${idPrefix}', ${i})" style="padding:0 8px;">✕</button>
     </div>`).join('')}
   </div>
-  <button class="btn btn-ghost btn-sm" onclick="addTierRow('${idPrefix}')" style="margin-top:4px;">+ Faixa</button>`;
+  <button class="btn btn-ghost btn-sm" onclick="addTierRowLegacy('${idPrefix}')" style="margin-top:4px;">+ Faixa</button>`;
 };
 
 let _tiersData = {};
@@ -3192,7 +3192,7 @@ const updateTierField = (prefix, idx, field, val) => {
   if (!_tiersData[prefix][idx]) _tiersData[prefix][idx] = {};
   _tiersData[prefix][idx][field] = val;
 };
-const addTierRow = (prefix) => {
+const addTierRowLegacy = (prefix) => {
   if (!_tiersData[prefix]) _tiersData[prefix] = [];
   _tiersData[prefix].push({ label: '', durationMinutes: '', price: '', nightPrice: '' });
   const wrap = document.getElementById(`${prefix}tiers-wrap`);
@@ -3225,7 +3225,7 @@ const removeTierRow = (prefix, idx) => {
   });
 };
 
-const collectTiers = (prefix) => {
+const collectTiersLegacy = (prefix) => {
   const rows = document.querySelectorAll(`#${prefix}tiers-wrap .tier-row`);
   const result = [];
   rows.forEach((row, i) => {
@@ -3309,7 +3309,7 @@ const saveAddCityService = async (coverageCityId) => {
   const status = document.getElementById('acs-status').value;
   const feeRaw = document.getElementById('acs-fee').value.trim();
   const platformFeePercent = feeRaw !== '' ? Number(feeRaw) : null;
-  const priceTiers = collectTiers('add-cs-');
+  const priceTiers = collectTiersLegacy('add-cs-');
   if (!priceTiers.length) { showAlert('Adicione pelo menos uma faixa de preço.'); return; }
   try {
     await req('POST', '/city-service-configs', { coverageCityId, serviceTypeSlug: slug, status, priceTiers, platformFeePercent });
@@ -3361,7 +3361,7 @@ const saveEditCityService = async (configId, coverageCityId, prefix) => {
   const status = document.getElementById('ecs-status').value;
   const feeRaw = document.getElementById('ecs-fee').value.trim();
   const platformFeePercent = feeRaw !== '' ? Number(feeRaw) : null;
-  const priceTiers = collectTiers(prefix);
+  const priceTiers = collectTiersLegacy(prefix);
   if (!priceTiers.length) { showAlert('Adicione pelo menos uma faixa de preço.'); return; }
   try {
     await req('PATCH', `/city-service-configs/${configId}`, { status, priceTiers, platformFeePercent });

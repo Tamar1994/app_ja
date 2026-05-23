@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supportChatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
+import { markSupportChatOpen, markSupportChatClosed } from '../../services/activeChatTracker';
 import { colors } from '../../theme';
 
 const POLL_INTERVAL_MS = 8000;
@@ -38,6 +39,12 @@ export default function SupportChatScreen({ navigation }) {
   const [sendingMsg, setSendingMsg] = useState(false);
   const pollingTimer = useRef(null);
   const flatListRef = useRef(null);
+
+  // Marcar chat como aberto para suprimir push notifications enquanto o usuário está aqui
+  useEffect(() => {
+    markSupportChatOpen();
+    return () => markSupportChatClosed();
+  }, []);
 
   // Poll for chat status updates
   const pollChatStatus = useCallback(async (id) => {

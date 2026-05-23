@@ -10,7 +10,7 @@ import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
 import { NotificationProvider } from './src/context/NotificationContext';
-import RootNavigator from './src/navigation';
+import RootNavigator, { navigationRef } from './src/navigation';
 import { setPendingNotification } from './src/services/pendingNotification';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
@@ -18,15 +18,6 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onre
 // Chave publicável fallback (teste) — substituída dinamicamente ao conectar ao backend
 const STRIPE_KEY_FALLBACK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
   || 'pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx';
-
-// Configurar comportamento de foreground (mostrar alerta + tocar som mesmo com app aberto)
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
 
 // Registra a tarefa headless exigida pelo SDK do Stripe para evitar o warning
 // "No task registered for key StripeKeepJsAwakeTask"
@@ -65,6 +56,16 @@ function App() {
         // Notificação de mensagem de chat — será tratada pelo navigator quando montar
         if (data?.type === 'chat_message' && data?.requestId) {
           setPendingNotification({ type: 'chat_message', requestId: data.requestId });
+        }
+        // Notificação de mensagem de suporte — navegar para SupportChatScreen
+        if (data?.type === 'support_message') {
+          if (navigationRef.isReady()) {
+            // App estava em background — navegar diretamente
+            navigationRef.navigate('SupportTab', { screen: 'SupportChat' });
+          } else {
+            // App estava fechado — HomeScreen vai consumir ao focar
+            setPendingNotification({ type: 'support_message' });
+          }
         }
       }
     );

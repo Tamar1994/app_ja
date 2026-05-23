@@ -1455,7 +1455,7 @@ router.post('/support/chats/:id/message', adminAuth, requirePermission(ADMIN_PER
         $set: { status: 'assigned', assignedTo: req.admin._id },
       },
       { new: true }
-    ).populate('userId', 'name');
+    ).populate('userId', 'name pushToken');
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
 
     const io = req.app.get('io');
@@ -1467,6 +1467,20 @@ router.post('/support/chats/:id/message', adminAuth, requirePermission(ADMIN_PER
         adminName: req.admin.name,
       });
     }
+
+    // Enviar push notification se o usuário tiver token registrado
+    const userPushToken = chat.userId?.pushToken;
+    if (userPushToken) {
+      const trimmedText = text.trim();
+      const pushBody = trimmedText.length > 100 ? trimmedText.slice(0, 100) + '…' : trimmedText;
+      sendExpoPush(
+        userPushToken,
+        '💬 Suporte ao Vivo',
+        pushBody,
+        { type: 'support_message', chatId: String(chat._id), screen: 'SupportChat' }
+      );
+    }
+
     res.json({ message: 'Mensagem enviada' });
   } catch {
     res.status(500).json({ message: 'Erro ao enviar mensagem' });

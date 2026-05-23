@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions, Image,
@@ -7,9 +7,11 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { requestAPI, serviceTypeAPI } from '../../services/api';
+import { getPendingNotification, clearPendingNotification } from '../../services/pendingNotification';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { suggestServiceType } from '../../services/serviceSuggestion';
 
@@ -135,6 +137,17 @@ export default function HomeScreen({ navigation }) {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  // Ao focar na tela, verificar se há notificação de suporte pendente (tap do usuário)
+  useFocusEffect(
+    useCallback(() => {
+      const pending = getPendingNotification();
+      if (pending?.type === 'support_message') {
+        clearPendingNotification();
+        navigation.navigate('SupportTab', { screen: 'SupportChat' });
+      }
+    }, [navigation])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

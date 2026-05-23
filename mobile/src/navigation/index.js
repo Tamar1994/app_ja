@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   NavigationContainer,
+  createNavigationContainerRef,
 } from '@react-navigation/native';
+
+export const navigationRef = createNavigationContainerRef();
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   ActivityIndicator, View, Text, TouchableOpacity, StyleSheet,
@@ -248,7 +251,7 @@ export default function RootNavigator() {
   };
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {renderMain()}
       {/* Banner de publicidade — aparece 1x por sessão por banner ativo */}
       <Modal

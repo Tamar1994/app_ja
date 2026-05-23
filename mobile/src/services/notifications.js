@@ -9,15 +9,23 @@
 
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { isSupportChatOpen } from './activeChatTracker';
 
 // ─── Handler de foreground ─────────────────────────────────────────────────
 // Quando a notificação chega com o app aberto, mostramos o alerta + som
+// Exceção: suprimir notificações de suporte se o chat já está aberto na tela
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,   // mostrar banner mesmo com app aberto
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const type = notification.request.content.data?.type;
+    if (type === 'support_message' && isSupportChatOpen()) {
+      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+    }
+    return {
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 /**
