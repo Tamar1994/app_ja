@@ -131,6 +131,9 @@ const serviceRequestSchema = new mongoose.Schema({
   },
   professionalLiveLocationUpdatedAt: { type: Date, default: null },
 
+  // WhatsApp: controle de lembrete 1h antes (evita reenvio)
+  whatsappReminderSentAt: { type: Date, default: null },
+
   // Snapshot da taxa de cancelamento aplicada ao pedido cancelado
   cancellation: {
     phaseName:              { type: String, default: null },

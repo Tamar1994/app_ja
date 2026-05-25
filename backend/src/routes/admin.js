@@ -42,6 +42,7 @@ const {
   DEFAULT_ROLE_PERMISSIONS,
 } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail } = require('../services/emailService');
+const whatsapp = require('../services/whatsappService');
 const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
 const { clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const PushNotification = require('../models/PushNotification');
@@ -808,6 +809,11 @@ router.patch('/approvals/:id/approve', adminAuth, async (req, res) => {
 
     await user.save();
     await sendApprovalEmail(user.email, user.name);
+
+    // Notificação WhatsApp (falha silenciosa)
+    // isProfessionalUpgrade = cliente ativando perfil profissional → usa template de profissional
+    const isProf = isProfessionalUpgrade || user.userType === 'professional';
+    if (user.phone) whatsapp.sendRegistrationApproved(user.phone, user.name, isProf).catch(() => {});
 
     const io = req.app.get('io');
     if (io) io.to(`user_${user._id}`).emit('account_approved', { userId: user._id, isProfessionalUpgrade });

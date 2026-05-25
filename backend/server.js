@@ -4,6 +4,7 @@ const app = require('./src/app');
 const connectDB = require('./src/config/database');
 const initSocket = require('./src/socket');
 const logger = require('./src/utils/logger');
+const { startReminderScheduler } = require('./src/utils/scheduledReminders');
 
 // Sobrescreve console.error/warn/log para que todo o código legado
 // também emita JSON estruturado com timestamp no Render
@@ -28,6 +29,9 @@ connectDB().then(() => {
   server.listen(PORT, () => {
     logger.info(`[server] Servidor Já! rodando na porta ${PORT}`, { env: process.env.NODE_ENV || 'development' });
   });
+
+  // Inicia o job de lembretes WhatsApp para serviços agendados
+  startReminderScheduler();
 }).catch((err) => {
   logger.error('[server] Falha crítica ao iniciar servidor', { err: err.message });
   process.exit(1);

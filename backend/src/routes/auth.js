@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const { sendVerificationEmail } = require('../services/emailService');
+const whatsapp = require('../services/whatsappService');
 
 const router = express.Router();
 
@@ -117,6 +118,9 @@ router.post('/register', [
     }
 
     await sendVerificationEmail(email, name, code);
+
+    // Envia OTP também via WhatsApp (falha silenciosa — e-mail já é o canal primário)
+    if (phone) whatsapp.sendOTP(phone, code).catch(() => {});
 
     res.status(201).json({
       message: 'Código de verificação enviado para seu e-mail.',
