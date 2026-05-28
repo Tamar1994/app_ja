@@ -13,9 +13,10 @@ function getMode() {
 
 function getSecretKey() {
   const mode = getMode();
-  return mode === 'production'
+  const raw = mode === 'production'
     ? process.env.PAGARME_API_KEY_PROD
     : process.env.PAGARME_API_KEY_TEST;
+  return raw ? raw.trim() : raw; // trim evita erro por whitespace acidental no env var
 }
 
 function getPublicKey() {
@@ -39,6 +40,12 @@ function isConfigured() {
 function makeAuthHeader() {
   const key = getSecretKey();
   if (!key) throw new Error('PAGARME_API_KEY não configurada para o modo ' + getMode());
+  // Pagar.me v5: chave secreta começa com sk_test_ ou sk_live_
+  if (!key.startsWith('sk_')) {
+    console.warn(
+      `[pagarme] AVISO: A chave configurada não começa com "sk_" — verifique se está usando a chave SECRETA (não a pública pk_). Modo: ${getMode()}`,
+    );
+  }
   // Basic auth: base64(api_key:)  — o dois-pontos após a chave é obrigatório
   return 'Basic ' + Buffer.from(key + ':').toString('base64');
 }
@@ -68,6 +75,14 @@ function apiRequest(method, path, body) {
         let parsed;
         try { parsed = JSON.parse(raw); } catch { parsed = { raw }; }
         if (res.statusCode >= 400) {
+          // Diagnóstico especial para 401 — indica chave errada ou inválida
+          if (res.statusCode === 401) {
+            const key = getSecretKey() || '';
+            console.error(
+              `[pagarme] 401 Auth — verifique o env var PAGARME_API_KEY_${getMode().toUpperCase()} no Render. ` +
+              `Modo atual: ${getMode()}. Chave inicia com: "${key.slice(0, 10)}..." (deve começar com sk_)`,
+            );
+          }
           const err = new Error(
             parsed?.message
               || `Pagar.me ${res.statusCode}: ${JSON.stringify(parsed).slice(0, 200)}`,

@@ -28,6 +28,21 @@ connectDB().then(() => {
 
   server.listen(PORT, () => {
     logger.info(`[server] Servidor Já! rodando na porta ${PORT}`, { env: process.env.NODE_ENV || 'development' });
+
+    // ── Diagnóstico Pagar.me ──────────────────────────────────────────────────
+    const pagarme = require('./src/services/pagarmeService');
+    const mode = pagarme.getMode();
+    const key  = (mode === 'production'
+      ? process.env.PAGARME_API_KEY_PROD
+      : process.env.PAGARME_API_KEY_TEST
+    )?.trim() || '';
+    if (!key) {
+      logger.warn(`[pagarme] AVISO: PAGARME_API_KEY_${mode.toUpperCase()} não está configurada no Render → pagamentos vão falhar`);
+    } else if (!key.startsWith('sk_')) {
+      logger.warn(`[pagarme] AVISO: A chave começa com "${key.slice(0, 7)}..." mas deveria começar com "sk_". Verifique se usou a chave SECRETA e não a pública.`);
+    } else {
+      logger.info(`[pagarme] Modo: ${mode} | Chave: ${key.slice(0, 14)}... (OK)`);
+    }
   });
 
   // Inicia o job de lembretes WhatsApp para serviços agendados
