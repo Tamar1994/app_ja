@@ -55,6 +55,9 @@ function makeAuthHeader() {
 function apiRequest(method, path, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = body ? JSON.stringify(body) : null;
+
+    // Log resumido da requisição (sem dados sensíveis completos)
+    console.info(`[pagarme] → ${method} ${API_PATH + path}`, bodyStr ? bodyStr.slice(0, 300) : '(sem body)');
     const options = {
       hostname: PAGARME_HOST,
       port: 443,
@@ -75,14 +78,10 @@ function apiRequest(method, path, body) {
         let parsed;
         try { parsed = JSON.parse(raw); } catch { parsed = { raw }; }
         if (res.statusCode >= 400) {
-          // Diagnóstico especial para 401 — indica chave errada ou inválida
-          if (res.statusCode === 401) {
-            const key = getSecretKey() || '';
-            console.error(
-              `[pagarme] 401 Auth — verifique o env var PAGARME_API_KEY_${getMode().toUpperCase()} no Render. ` +
-              `Modo atual: ${getMode()}. Chave inicia com: "${key.slice(0, 10)}..." (deve começar com sk_)`,
-            );
-          }
+          // Loga o corpo completo para facilitar diagnóstico
+          console.error(
+            `[pagarme] HTTP ${res.statusCode} ${method} ${API_PATH + path} → corpo: ${raw.slice(0, 500)}`,
+          );
           const err = new Error(
             parsed?.message
               || `Pagar.me ${res.statusCode}: ${JSON.stringify(parsed).slice(0, 200)}`,
@@ -154,10 +153,18 @@ function verifyWebhookSignature() { return true; }
  */
 function buildSplitRules({ amountCents, platformFeePercent, professionalRecipientId }) {
   const platformId = getPlatformRecipientId();
-  if (!platformId) return []; // sem split configurado
+  if (!platformId) {
+    console.info('[pagarme] PAGARME_PLATFORM_RECIPIENT_ID não configurado — pedido criado SEM split (100% fica na plataforma)');
+    return [];
+  }
 
   const platformAmount = Math.round(amountCents * platformFeePercent / 100);
   const professionalAmount = amountCents - platformAmount;
+
+  console.info(
+    `[pagarme] split: plataforma=${platformId} R$${(platformAmount / 100).toFixed(2)}` +
+    (professionalRecipientId ? ` | prof=${professionalRecipientId} R$${(professionalAmount / 100).toFixed(2)}` : ' | sem recipient profissional'),
+  );
 
   const rules = [
     {
