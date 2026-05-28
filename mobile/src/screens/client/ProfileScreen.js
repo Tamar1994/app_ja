@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, StatusBar,
   TouchableOpacity, ScrollView, Alert, Image, ActivityIndicator,
-  Modal, TextInput, KeyboardAvoidingView, Platform,
+  Modal, TextInput, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -152,7 +152,15 @@ export default function ProfileScreen({ navigation }) {
     { icon: 'ticket-outline', label: 'Carteira de cupons', color: '#E8F5E9', onPress: () => navigation.navigate('CouponWallet') },
     { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: () => navigation.navigate('HelpCenter') },
     { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: () => navigation.navigate('Terms') },
-    { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: null },
+    { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: () => {
+      const url = Platform.OS === 'ios'
+        ? 'https://apps.apple.com/br/app/j%C3%A1/id6771898396'
+        : 'market://details?id=com.ja.app';
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) Linking.openURL(url);
+        else Alert.alert('Erro', 'N\u00e3o foi poss\u00edvel abrir a loja.');
+      });
+    }},
     { icon: 'trash-outline', label: 'Excluir conta', color: '#FFEBEE', onPress: handleDeleteAccount, danger: true },
   ];
 
