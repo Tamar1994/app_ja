@@ -45,4 +45,12 @@ const sendAddressUpdateApprovedEmail = async (email, name) => {
   });
 };
 
-module.exports = { sendVerificationEmail, sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail };
+const sendPasswordResetEmail = async (email, name, code) => {
+  await sendMail({
+    to: email,
+    subject: 'Redefinir senha - Já!',
+    html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#f5f6fa;padding:32px;border-radius:16px;">${logoHtml}<h2 style="color:#1A1A2E;margin-bottom:8px;">Olá, ${name}!</h2><p style="color:#5C6B7A;margin-bottom:24px;">Use o código abaixo para redefinir sua senha. Expira em <strong>15 minutos</strong>.</p><div style="background:#fff;border-radius:12px;padding:24px;text-align:center;border:2px solid #FF6B00;margin-bottom:24px;"><span style="font-size:40px;font-weight:900;letter-spacing:12px;color:#FF6B00;">${code}</span></div><p style="color:#A8B5C0;font-size:13px;">Se você não solicitou a redefinição de senha, ignore este e-mail.</p></div>`,
+  });
+};
+
+module.exports = { sendVerificationEmail, sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail, sendPasswordResetEmail };

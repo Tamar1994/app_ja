@@ -156,6 +156,15 @@ const userSchema = new mongoose.Schema({
     type: Date,
     select: false,
   },
+  // Redefinição de senha
+  passwordResetCode: {
+    type: String,
+    select: false,
+  },
+  passwordResetExpires: {
+    type: Date,
+    select: false,
+  },
   // Token de push notification (Expo)
   pushToken: {
     type: String,

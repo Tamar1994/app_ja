@@ -20,6 +20,8 @@ export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   verifyEmail: (email, code) => api.post('/auth/verify-email', { email, code }),
   resendVerification: (email) => api.post('/auth/resend-verification', { email }),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (email, code, newPassword) => api.post('/auth/reset-password', { email, code, newPassword }),
   saveProfessionalAddress: (address) => api.post('/auth/professional-address', address),
 };
 

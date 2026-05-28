@@ -9,6 +9,8 @@ import DocumentUploadScreen from '../screens/auth/DocumentUploadScreen';
 import PendingApprovalScreen from '../screens/auth/PendingApprovalScreen';
 import AcceptTermsScreen from '../screens/auth/AcceptTermsScreen';
 import ProfessionalAddressScreen from '../screens/auth/ProfessionalAddressScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -23,6 +25,8 @@ export default function AuthNavigator() {
       <Stack.Screen name="ProfessionalAddress" component={ProfessionalAddressScreen} />
       <Stack.Screen name="DocumentUpload" component={DocumentUploadScreen} />
       <Stack.Screen name="PendingApproval" component={PendingApprovalScreen} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 }

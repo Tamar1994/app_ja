@@ -28,6 +28,10 @@
  *   Corpo: Olá, {{1}}! ✅ Seu serviço de *{{2}}* foi aceito. O profissional
  *          está a caminho. Acompanhe em tempo real pelo app Já!
  *
+ * [redefinir_senha] — UTILITY
+ *   Corpo: Olá, {{1}}! Seu código para redefinir a senha no Já! é *{{2}}*.
+ *          Válido por 15 minutos. Não compartilhe este código.
+ *
  * [cadastro_aprovado] — UTILITY  (profissionais e upgrade de cliente para profissional)
  *   Corpo: Olá, {{1}}! 🎉 Seu cadastro no Já! foi aprovado. Agora você já
  *          pode começar a atender clientes. Bons atendimentos!
@@ -276,4 +280,41 @@ async function sendRegistrationApproved(phone, name, isProfessional = true) {
   }
 }
 
-module.exports = { sendOTP, sendScheduledReminder, sendServiceAccepted, sendRegistrationApproved, normalizeBrPhone };
+/**
+ * Envia código de redefinição de senha.
+ * Template: redefinir_senha (UTILITY)
+ *
+ * @param {string} phone  Telefone do usuário
+ * @param {string} name   Nome do usuário
+ * @param {string} code   Código de 6 dígitos
+ */
+async function sendPasswordReset(phone, name, code) {
+  if (!isConfigured()) return;
+
+  const to = normalizeBrPhone(phone);
+  try {
+    await callGraphAPI(`${PHONE_NUMBER_ID}/messages`, {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'template',
+      template: {
+        name: 'redefinir_senha',
+        language: { code: 'pt_BR' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: name.split(' ')[0] },
+              { type: 'text', text: code },
+            ],
+          },
+        ],
+      },
+    });
+    logger.info('[whatsapp] Código de reset de senha enviado', { to });
+  } catch (err) {
+    logger.warn('[whatsapp] Falha ao enviar código de reset', { to, err: err.message });
+  }
+}
+
+module.exports = { sendOTP, sendScheduledReminder, sendServiceAccepted, sendRegistrationApproved, sendPasswordReset, normalizeBrPhone };

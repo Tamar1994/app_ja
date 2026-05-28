@@ -159,6 +159,14 @@ export default function LoginScreen({ navigation }) {
                 <Text style={styles.footerLink}>Criar agora</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Esqueci a senha */}
+            <TouchableOpacity
+              style={styles.forgotWrap}
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
+              <Text style={styles.forgotLink}>Esqueci minha senha</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -267,6 +275,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: typography.fontSizes.md,
     fontWeight: '700',
+  },
+  forgotWrap: { alignItems: 'center', marginTop: spacing.sm },
+  forgotLink: {
+    color: colors.textSecondary,
+    fontSize: typography.fontSizes.sm,
+    textDecorationLine: 'underline',
   },
 });
 

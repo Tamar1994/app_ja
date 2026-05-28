@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
-const { sendVerificationEmail } = require('../services/emailService');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/emailService');
 const whatsapp = require('../services/whatsappService');
 
 const router = express.Router();
@@ -289,6 +289,70 @@ router.post('/professional-address', auth, async (req, res) => {
     res.json({ user: buildAuthUserPayload(user) });
   } catch {
     res.status(500).json({ message: 'Erro ao salvar endereço' });
+  }
+});
+
+// POST /api/auth/forgot-password
+// Envia código de 6 dígitos por e-mail e WhatsApp para redefinir a senha.
+// Responde 200 mesmo se o e-mail não existir (evita enumeração de usuários).
+router.post('/forgot-password', [
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email }).select('+passwordResetCode +passwordResetExpires');
+
+    if (user) {
+      const code = generateCode();
+      user.passwordResetCode = code;
+      user.passwordResetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+      await user.save();
+
+      await sendPasswordResetEmail(email, user.name, code);
+      if (user.phone) whatsapp.sendPasswordReset(user.phone, user.name, code).catch(() => {});
+    }
+
+    // Sempre responde 200 para não revelar se o e-mail existe
+    res.json({ message: 'Se esse e-mail estiver cadastrado, você receberá um código em breve.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao processar solicitação' });
+  }
+});
+
+// POST /api/auth/reset-password
+// Valida o código e atualiza a senha.
+router.post('/reset-password', [
+  body('email').isEmail().normalizeEmail({ gmail_remove_dots: false, gmail_remove_subaddress: false }),
+  body('code').isLength({ min: 6, max: 6 }).withMessage('Código inválido'),
+  body('newPassword').isLength({ min: 6 }).withMessage('A senha deve ter pelo menos 6 caracteres'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const { email, code, newPassword } = req.body;
+  try {
+    const user = await User.findOne({ email }).select('+passwordResetCode +passwordResetExpires +password');
+
+    if (!user || !user.passwordResetCode || user.passwordResetCode !== code) {
+      return res.status(400).json({ message: 'Código incorreto ou expirado.' });
+    }
+    if (user.passwordResetExpires < new Date()) {
+      return res.status(400).json({ message: 'Código expirado. Solicite um novo.' });
+    }
+
+    user.password = newPassword;
+    user.passwordResetCode = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Senha redefinida com sucesso.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Erro ao redefinir senha' });
   }
 });
 
