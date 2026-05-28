@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, Alert, TextInput,
@@ -19,6 +19,47 @@ function getDateLabel(date) {
   if (diff === 0) return 'Hoje';
   if (diff === 1) return 'Amanhã';
   return target.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+/**
+ * Calcula quantos minutos de um tier caem em horário noturno, dado o horário de início.
+ * Retorna null se não há acréscimo noturno.
+ */
+function calcTierNightBreakdown(tier, nightRateStartHour, nightRateEndHour, scheduledDate) {
+  const tierNightPrice = tier.nightPrice != null && Number.isFinite(Number(tier.nightPrice))
+    ? Number(tier.nightPrice)
+    : null;
+  if (
+    nightRateStartHour == null || !Number.isFinite(nightRateStartHour) ||
+    nightRateEndHour   == null || !Number.isFinite(nightRateEndHour) ||
+    tierNightPrice == null || !scheduledDate
+  ) return null;
+
+  const totalMin = Number(tier.durationMinutes);
+  if (!totalMin) return null;
+
+  const start = new Date(scheduledDate);
+  const startMinuteOfDay = (start.getHours() * 60 + start.getMinutes()) % 1440;
+  const nightStartMin = Math.round(nightRateStartHour * 60) % 1440;
+  const nightEndMin   = Math.round(nightRateEndHour   * 60) % 1440;
+
+  function inNight(minuteOfDay) {
+    if (nightStartMin === nightEndMin) return true;
+    if (nightStartMin < nightEndMin) return minuteOfDay >= nightStartMin && minuteOfDay < nightEndMin;
+    return minuteOfDay >= nightStartMin || minuteOfDay < nightEndMin;
+  }
+
+  let nightMinutes = 0;
+  for (let i = 0; i < totalMin; i++) {
+    if (inNight((startMinuteOfDay + i) % 1440)) nightMinutes++;
+  }
+  if (nightMinutes === 0) return null;
+
+  const dayMinutes  = totalMin - nightMinutes;
+  const dayAmount   = Math.round((Number(tier.price) / totalMin) * dayMinutes  * 100) / 100;
+  const nightAmount = Math.round((tierNightPrice   / totalMin) * nightMinutes * 100) / 100;
+  const mixedPrice  = Math.round((dayAmount + nightAmount) * 100) / 100;
+  return { dayMinutes, nightMinutes, dayAmount, nightAmount, mixedPrice };
 }
 
 function formatDurationMin(minutes) {
@@ -63,6 +104,28 @@ export default function RequestServiceScreen({ navigation, route }) {
   const [coverageNotice, setCoverageNotice] = useState('');
   const [checkingCoverage, setCheckingCoverage] = useState(false);
   const [coverageChecked, setCoverageChecked] = useState(false);
+
+  // Calcula o breakdown diurno/noturno para CADA faixa, baseado no horário de início atual.
+  // Usado para mostrar a justificativa de preço diretamente nas faixas.
+  const tierBreakdowns = useMemo(() => {
+    let scheduledISO;
+    if (scheduleMode === 'now') {
+      const d = new Date(); d.setMinutes(d.getMinutes() + 5);
+      scheduledISO = d.toISOString();
+    } else {
+      const d = new Date(scheduledDate);
+      const [h, m] = selectedTime.split(':').map(Number);
+      d.setHours(h, m, 0, 0);
+      scheduledISO = d.toISOString();
+    }
+    const nightStart = serviceType?.nightRateStartHour != null ? Number(serviceType.nightRateStartHour) : null;
+    const nightEnd   = serviceType?.nightRateEndHour   != null ? Number(serviceType.nightRateEndHour)   : null;
+    const map = {};
+    priceTiers.forEach(tier => {
+      map[tier.label] = calcTierNightBreakdown(tier, nightStart, nightEnd, scheduledISO);
+    });
+    return map;
+  }, [priceTiers, serviceType?.nightRateStartHour, serviceType?.nightRateEndHour, scheduleMode, scheduledDate, selectedTime]);
 
   function buildScheduledDate(dateISO, timeStr) {
     const d = new Date(dateISO);
@@ -322,6 +385,8 @@ export default function RequestServiceScreen({ navigation, route }) {
                 <View style={{ gap: spacing.sm }}>
                   {priceTiers.map(tier => {
                     const active = selectedTier?.label === tier.label;
+                    const bd = tierBreakdowns[tier.label];
+                    const displayPrice = bd ? bd.mixedPrice : Number(tier.price);
                     return (
                       <TouchableOpacity
                         key={tier.label}
@@ -338,10 +403,27 @@ export default function RequestServiceScreen({ navigation, route }) {
                             <Text style={[styles.tierDuration, active && styles.tierDurationActive]}>
                               {formatDurationMin(tier.durationMinutes)}
                             </Text>
+                            {bd && (
+                              <View style={styles.nightBadgeRow}>
+                                <Ionicons name="moon-outline" size={10} color={active ? 'rgba(255,255,255,0.8)' : colors.secondary} />
+                                <Text style={[styles.nightBadgeText, active && styles.nightBadgeTextActive]}>
+                                  {formatDurationMin(bd.dayMinutes)} diurno
+                                  {' · '}
+                                  {formatDurationMin(bd.nightMinutes)} noturno
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                          <Text style={[styles.tierPrice, active && styles.tierPriceActive]}>
-                            R$ {Number(tier.price).toFixed(0)}
-                          </Text>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={[styles.tierPrice, active && styles.tierPriceActive]}>
+                              R$ {displayPrice.toFixed(0)}
+                            </Text>
+                            {bd && (
+                              <Text style={[styles.nightSurchargeNote, active && styles.nightSurchargeNoteActive]}>
+                                + acréscimo noturno
+                              </Text>
+                            )}
+                          </View>
                           {active && (
                             <View style={styles.tierCheck}>
                               <Ionicons name="checkmark-circle" size={22} color={colors.white} />
@@ -703,6 +785,11 @@ const styles = StyleSheet.create({
   tierPrice: { fontSize: typography.fontSizes.xl, fontWeight: '800', color: colors.primary },
   tierPriceActive: { color: colors.white },
   tierCheck: { marginLeft: 4 },
+  nightBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  nightBadgeText: { fontSize: 10, color: colors.secondary, fontWeight: '600' },
+  nightBadgeTextActive: { color: 'rgba(255,255,255,0.85)' },
+  nightSurchargeNote: { fontSize: 9, color: colors.secondary, fontWeight: '500', marginTop: 1 },
+  nightSurchargeNoteActive: { color: 'rgba(255,255,255,0.7)' },
   checkRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     backgroundColor: colors.white, borderRadius: borderRadius.xl,
