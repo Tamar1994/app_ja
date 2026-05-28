@@ -493,6 +493,44 @@ router.get('/pix/:paymentId/qr', async (req, res) => {
   }
 });
 
+// GET /api/payments/cards — lista cartões salvos do usuário (sem tokens)
+router.get('/cards', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('savedCards');
+    const cards = (user?.savedCards || []).map((c) => ({
+      _id: c._id,
+      brand: c.brand,
+      lastFour: c.lastFour,
+      holderName: c.holderName,
+      expiryMonth: c.expiryMonth,
+      expiryYear: c.expiryYear,
+      isDefault: c.isDefault,
+      addedAt: c.addedAt,
+    }));
+    return res.json({ cards });
+  } catch (err) {
+    console.error('[cards/list] error:', err);
+    return res.status(500).json({ message: 'Erro ao listar cartões' });
+  }
+});
+
+// DELETE /api/payments/cards/:id — remove cartão salvo
+router.delete('/cards/:id', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
+    const card = user.savedCards.id(req.params.id);
+    if (!card) return res.status(404).json({ message: 'Cartão não encontrado' });
+    if (String(card._id) !== req.params.id) return res.status(403).json({ message: 'Acesso negado' });
+    user.savedCards.pull(req.params.id);
+    await user.save();
+    return res.json({ message: 'Cartão removido' });
+  } catch (err) {
+    console.error('[cards/delete] error:', err);
+    return res.status(500).json({ message: 'Erro ao remover cartão' });
+  }
+});
+
 // POST /api/payments/card/pay
 router.post('/card/pay', auth, async (req, res) => {
   if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
@@ -501,12 +539,15 @@ router.post('/card/pay', auth, async (req, res) => {
   if (!asaas.isConfigured()) return res.status(503).json({ message: 'Asaas não configurado' });
 
   const {
+    savedCardId,
+    saveCard,
     holderName, cardNumber, expiryMonth, expiryYear, ccv,
     serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address,
     scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false, installments = 1,
   } = req.body;
 
-  if (!holderName || !cardNumber || !expiryMonth || !expiryYear || !ccv) {
+  // Validar dados de cartão — obrigatório quando não usa cartão salvo
+  if (!savedCardId && (!holderName || !cardNumber || !expiryMonth || !expiryYear || !ccv)) {
     return res.status(400).json({ message: 'Dados do cartão são obrigatórios' });
   }
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
@@ -544,24 +585,58 @@ router.post('/card/pay', auth, async (req, res) => {
 
     let asaasResult;
     try {
-      asaasResult = await asaas.createCreditCardPayment({
-        customerId,
-        value: payableAfterWallet,
-        description: `Serviço ${tierLabel}`,
-        externalReference: `ja-card-${req.user._id}-${Date.now()}`,
-        holderName,
-        cardNumber,
-        expiryMonth,
-        expiryYear,
-        ccv,
-        cpf,
-        email: user.email,
-        phone: user.phone,
-        postalCode: address?.zipCode || '00000000',
-        addressNumber: address?.number || 'S/N',
-        installments: Number(installments) || 1,
-        remoteIp,
-      });
+      if (savedCardId) {
+        // ── Pagamento com cartão salvo ────────────────────────────────────
+        const savedCard = user.savedCards.id(savedCardId);
+        if (!savedCard) return res.status(404).json({ message: 'Cartão salvo não encontrado' });
+        asaasResult = await asaas.createCreditCardPaymentWithToken({
+          customerId,
+          value: payableAfterWallet,
+          description: `Serviço ${tierLabel}`,
+          externalReference: `ja-card-${req.user._id}-${Date.now()}`,
+          creditCardToken: savedCard.token,
+          installments: Number(installments) || 1,
+        });
+      } else {
+        // ── Pagamento com dados de cartão brutos ──────────────────────────
+        asaasResult = await asaas.createCreditCardPayment({
+          customerId,
+          value: payableAfterWallet,
+          description: `Serviço ${tierLabel}`,
+          externalReference: `ja-card-${req.user._id}-${Date.now()}`,
+          holderName,
+          cardNumber,
+          expiryMonth,
+          expiryYear,
+          ccv,
+          cpf,
+          email: user.email,
+          phone: user.phone,
+          postalCode: address?.zipCode || '00000000',
+          addressNumber: address?.number || 'S/N',
+          installments: Number(installments) || 1,
+          remoteIp,
+        });
+
+        // Salvar cartão se solicitado e Asaas retornou token
+        if (saveCard && asaasResult?.creditCard?.creditCardToken) {
+          const token = asaasResult.creditCard.creditCardToken;
+          const alreadySaved = user.savedCards.some((c) => c.token === token);
+          if (!alreadySaved) {
+            const isFirst = user.savedCards.length === 0;
+            user.savedCards.push({
+              token,
+              brand: (asaasResult.creditCard.creditCardBrand || 'unknown').toLowerCase(),
+              lastFour: asaasResult.creditCard.creditCardNumber || '????',
+              holderName: holderName || '',
+              expiryMonth: String(expiryMonth).padStart(2, '0'),
+              expiryYear: String(expiryYear).length === 2 ? '20' + expiryYear : String(expiryYear),
+              isDefault: isFirst,
+            });
+            await user.save();
+          }
+        }
+      }
     } catch (cardErr) {
       const cardMsg = (cardErr.asaasResponse?.errors?.[0]?.description) || cardErr.message || 'Cartão recusado';
       return res.status(402).json({ message: cardMsg });

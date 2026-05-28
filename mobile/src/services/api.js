@@ -156,6 +156,9 @@ export const paymentAPI = {
   getPixStatus: (orderId) => api.get(`/payments/pix/${orderId}/status`),
   // Cartão via Asaas (dados enviados ao backend — processamento servidor-a-servidor)
   cardPay: (requestData) => api.post('/payments/card/pay', requestData),
+  // Cartões salvos
+  getSavedCards: () => api.get('/payments/cards'),
+  deleteSavedCard: (id) => api.delete(`/payments/cards/${id}`),
   // Config (modo + provedor)
   getConfig: () => api.get('/payments/config'),
 };

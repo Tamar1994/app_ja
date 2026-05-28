@@ -185,6 +185,17 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  // Cartões salvos (tokens Asaas — nenhum dado sensível armazenado)
+  savedCards: [{
+    token:       { type: String, required: true },
+    brand:       { type: String, default: 'unknown' },
+    lastFour:    { type: String, required: true },
+    holderName:  { type: String, default: '' },
+    expiryMonth: { type: String, default: '' },
+    expiryYear:  { type: String, default: '' },
+    isDefault:   { type: Boolean, default: false },
+    addedAt:     { type: Date, default: Date.now },
+  }],
   // Dados bancários do profissional (usados para saque via Asaas)
   bankAccount: {
     holderName:        { type: String, default: null },

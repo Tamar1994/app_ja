@@ -215,6 +215,29 @@ async function createCreditCardPayment({
 }
 
 /**
+ * Cobra com token de cartão salvo (sem re-enviar dados sensíveis).
+ */
+async function createCreditCardPaymentWithToken({
+  customerId,
+  value,
+  description,
+  externalReference,
+  creditCardToken,
+  installments = 1,
+}) {
+  return apiRequest('POST', '/payments', {
+    customer: customerId,
+    billingType: 'CREDIT_CARD',
+    value: Number(value.toFixed(2)),
+    dueDate: new Date().toISOString().split('T')[0],
+    description: description || 'Serviço Já!',
+    externalReference: externalReference || undefined,
+    installmentCount: installments > 1 ? installments : undefined,
+    creditCardToken,
+  });
+}
+
+/**
  * Recupera uma cobrança pelo ID do Asaas.
  */
 async function getPayment(paymentId) {
@@ -300,6 +323,7 @@ module.exports = {
   findOrCreateCustomer,
   createPixPayment,
   createCreditCardPayment,
+  createCreditCardPaymentWithToken,
   getPayment,
   getPixQrCode,
   refundPayment,
