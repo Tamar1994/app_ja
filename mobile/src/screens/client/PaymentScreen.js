@@ -6,35 +6,17 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useStripe } from '@stripe/stripe-react-native';
-import { couponAPI, paymentAPI, requestAPI } from '../../services/api';
+import { couponAPI, paymentAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 
-const BRAND_ICONS = {
-  visa: 'card',
-  mastercard: 'card',
-  amex: 'card',
-  pix: 'qr-code',
-};
-
-const BRAND_COLORS = {
-  visa: '#1A1F71',
-  mastercard: '#EB001B',
-  amex: '#007BC1',
-  discover: '#FF6600',
-};
-
 export default function PaymentScreen({ navigation, route }) {
   const { requestData, estimate, serviceType } = route.params;
   const isScheduled = !!requestData?.isScheduled;
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
-
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState('card');
-  const [savedMethods, setSavedMethods] = useState([]);
   const [walletCoupons, setWalletCoupons] = useState([]);
   const [selectedCouponCodes, setSelectedCouponCodes] = useState([]);
   const [couponInput, setCouponInput] = useState('');
@@ -43,6 +25,13 @@ export default function PaymentScreen({ navigation, route }) {
   const totalWalletAvailable = Number((user?.clientWallet?.balance || 0) + (user?.wallet?.balance || 0));
   const [useWallet, setUseWallet] = useState(false);
   const [walletPreview, setWalletPreview] = useState({ walletApplied: 0, walletAppliedClient: 0, walletAppliedProfessional: 0 });
+
+  // Formulário de cartão Pagar.me
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardHolder, setCardHolder] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [cardLoading, setCardLoading] = useState(false);
   const [pricingPreview, setPricingPreview] = useState({
     subtotal: estimate?.estimated || 0,
     discountTotal: 0,
@@ -53,12 +42,8 @@ export default function PaymentScreen({ navigation, route }) {
 
   const initializePayment = useCallback(async () => {
     try {
-      const [walletRes, methodsRes] = await Promise.all([
-        couponAPI.myWallet().catch(() => ({ data: { coupons: [] } })),
-        paymentAPI.getMethods().catch(() => ({ data: { methods: [] } })),
-      ]);
+      const walletRes = await couponAPI.myWallet().catch(() => ({ data: { coupons: [] } }));
       setWalletCoupons((walletRes.data.coupons || []).filter((c) => c.canUseNow));
-      setSavedMethods(methodsRes.data.methods || []);
     } catch (err) {
       console.error('initializePayment error:', err);
       Alert.alert('Erro', 'Não foi possível carregar o pagamento. Tente novamente.');
@@ -150,10 +135,11 @@ export default function PaymentScreen({ navigation, route }) {
     setPaying(true);
     try {
       if (selectedMethod === 'pix') {
-        const { data } = await paymentAPI.createCoraPixCharge({
+        const { data } = await paymentAPI.createPixCharge({
           ...requestData,
           couponCodes: selectedCouponCodes,
           useWallet,
+          walletAmount: walletPreview.walletApplied > 0 ? walletPreview.walletApplied : undefined,
         });
 
         if (data?.walletOnly) {
@@ -163,7 +149,7 @@ export default function PaymentScreen({ navigation, route }) {
 
         if (data?.charge?.rejectedCoupons?.length) {
           const lines = data.charge.rejectedCoupons.map((r) => `${r.code}: ${r.reason}`).join('\n');
-          Alert.alert('Alguns cupons nao foram aplicados', lines);
+          Alert.alert('Alguns cupons não foram aplicados', lines);
         }
 
         navigation.navigate('PixCheckout', { charge: data.charge, isScheduled });
@@ -171,92 +157,71 @@ export default function PaymentScreen({ navigation, route }) {
         return;
       }
 
-      const { data: intentData } = await paymentAPI.createIntent({
+      // ── Fluxo cartão via Pagar.me ──────────────────────────────────────────
+      const rawNumber = cardNumber.replace(/\s/g, '');
+      if (!rawNumber || rawNumber.length < 13) { Alert.alert('Atenção', 'Número de cartão inválido.'); setPaying(false); return; }
+      if (!cardHolder.trim()) { Alert.alert('Atenção', 'Nome do titular é obrigatório.'); setPaying(false); return; }
+      const [expMonth, expYear] = cardExpiry.split('/');
+      if (!expMonth || !expYear || expMonth.length !== 2 || expYear.length !== 2) { Alert.alert('Atenção', 'Validade inválida. Use MM/AA.'); setPaying(false); return; }
+      // Verificar se o cartão está vencido
+      const now = new Date();
+      const cardFullYear = 2000 + Number(expYear);
+      const cardMonth = Number(expMonth);
+      if (cardFullYear < now.getFullYear() || (cardFullYear === now.getFullYear() && cardMonth < now.getMonth() + 1)) {
+        Alert.alert('Cartão vencido', 'A validade do cartão está expirada.');
+        setPaying(false);
+        return;
+      }
+      if (!cardCvv || cardCvv.length < 3) { Alert.alert('Atenção', 'CVV inválido.'); setPaying(false); return; }
+
+      // 1. Buscar chave pública
+      const { data: configData } = await paymentAPI.getConfig();
+      const publicKey = configData?.publicKey;
+      if (!publicKey) { Alert.alert('Erro', 'Não foi possível obter a chave de pagamento. Tente novamente.'); setPaying(false); return; }
+
+      // 2. Tokenizar cartão diretamente no Pagar.me (dados nunca passam pelo nosso backend)
+      const tokenRes = await fetch(`https://api.pagar.me/core/v5/tokens?appId=${publicKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'card',
+          card: {
+            number: rawNumber,
+            holder_name: cardHolder.trim(),
+            exp_month: expMonth,
+            exp_year: '20' + expYear,
+            cvv: cardCvv,
+          },
+        }),
+      });
+      const tokenData = await tokenRes.json();
+      if (!tokenData?.id) {
+        const errMsg = tokenData?.errors?.[0]?.message || tokenData?.message || 'Dados do cartão inválidos.';
+        Alert.alert('Cartão recusado', errMsg);
+        setPaying(false);
+        return;
+      }
+
+      // 3. Enviar token ao backend para cobrança
+      const { data } = await paymentAPI.cardPay({
+        cardToken: tokenData.id,
         ...requestData,
         couponCodes: selectedCouponCodes,
         useWallet,
       });
 
-      if (intentData?.walletOnly) {
-        navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: intentData.request._id });
+      if (data?.walletOnly) {
+        navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.request._id });
         return;
       }
 
-      if (intentData?.rejectedCoupons?.length) {
-        const lines = intentData.rejectedCoupons.map((r) => `${r.code}: ${r.reason}`).join('\n');
-        Alert.alert('Alguns cupons não foram aplicados', lines);
-      }
-
-      const { clientSecret, paymentIntentId, ephemeralKey, customerId } = intentData;
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: 'Já!',
-        customerId,
-        customerEphemeralKeySecret: ephemeralKey,
-        paymentIntentClientSecret: clientSecret,
-        allowsDelayedPaymentMethods: false,
-        returnURL: 'ja-app://stripe-redirect',
-        defaultBillingDetails: {},
-        billingDetailsCollectionConfiguration: {
-          name: 'always',
-          address: 'automatic',
-          phone: 'never',
-          email: 'never',
-        },
-        appearance: {
-          colors: {
-            primary: colors.primary,
-            background: colors.background,
-            componentBackground: colors.white,
-            componentBorder: '#C8CFD8',
-            componentDivider: '#E8ECF2',
-            primaryText: colors.textPrimary,
-            secondaryText: colors.textSecondary,
-            componentText: colors.textPrimary,
-            placeholderText: '#A0AABB',
-          },
-          shapes: {
-            borderRadius: 12,
-            borderWidth: 1.5,
-          },
-        },
-      });
-
-      if (initError) {
-        Alert.alert('Erro', 'Não foi possível inicializar o pagamento: ' + initError.message);
-        setPaying(false);
-        return;
-      }
-
-      const { error } = await presentPaymentSheet();
-
-      if (error) {
-        if (error.code === 'Canceled') {
-          setPaying(false);
-          return;
-        }
-        Alert.alert(
-          'Pagamento recusado',
-          error.message || 'Tente outro método de pagamento.',
-          [{ text: 'Tentar novamente', onPress: () => setPaying(false) }]
-        );
-        return;
-      }
-
-      // Pagamento aprovado — criar o pedido no backend
-      const { data } = await paymentAPI.confirm(paymentIntentId);
       navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.request._id });
     } catch (err) {
       console.error('handlePay error:', err);
       const backendMsg = err?.response?.data?.message;
-      console.error('handlePay backend message:', backendMsg, '| requestData:', JSON.stringify(requestData));
       Alert.alert('Erro', backendMsg || 'Ocorreu um erro ao processar o pagamento. Tente novamente.');
       setPaying(false);
     }
-  };
-
-  const formatBrand = (brand) => {
-    const names = { visa: 'Visa', mastercard: 'Mastercard', amex: 'Amex', discover: 'Discover', elo: 'Elo', hipercard: 'Hipercard' };
-    return names[brand] || brand;
   };
 
   const { tierLabel, selectedUpsells = [], address } = requestData;
@@ -365,32 +330,60 @@ export default function PaymentScreen({ navigation, route }) {
           <Ionicons name="lock-closed" size={14} color={colors.success} />
           <Text style={styles.secureText}>
             {selectedMethod === 'pix'
-              ? 'PIX com QR unico e expiracao em 15 minutos'
-              : 'Pagamento seguro via Stripe · Dados criptografados'}
+              ? 'PIX com QR único e expiração em 15 minutos'
+              : 'Pagamento seguro via Pagar.me · Dados tokenizados'}
           </Text>
         </View>
 
-        {/* Cartões salvos (preview) */}
-        {savedMethods.length > 0 && (
+        {/* Formulário de cartão Pagar.me */}
+        {selectedMethod === 'card' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Seus cartões salvos</Text>
-            {savedMethods.slice(0, 2).map((m) => (
-              <View key={m.id} style={styles.savedCard}>
-                <View style={[styles.savedCardBrand, { backgroundColor: BRAND_COLORS[m.brand] || '#666' }]}>
-                  <Ionicons name="card" size={16} color="#fff" />
-                </View>
-                <View style={styles.savedCardInfo}>
-                  <Text style={styles.savedCardName}>{formatBrand(m.brand)} •••• {m.last4}</Text>
-                  <Text style={styles.savedCardExp}>Expira {m.expMonth}/{m.expYear}</Text>
-                </View>
-                {m.isDefault && (
-                  <View style={styles.defaultBadge}>
-                    <Text style={styles.defaultBadgeText}>Padrão</Text>
-                  </View>
-                )}
-              </View>
-            ))}
-            <Text style={styles.savedCardsHint}>Selecione na próxima tela ou adicione um novo</Text>
+            <Text style={styles.cardTitle}>Dados do cartão</Text>
+            <TextInput
+              value={cardNumber}
+              onChangeText={(t) => {
+                const digits = t.replace(/\D/g, '').slice(0, 16);
+                const formatted = digits.replace(/(\d{4})(?=\d)/g, '$1 ');
+                setCardNumber(formatted);
+              }}
+              keyboardType="numeric"
+              placeholder="Número do cartão"
+              placeholderTextColor={colors.textLight}
+              style={styles.couponInput}
+              maxLength={19}
+            />
+            <TextInput
+              value={cardHolder}
+              onChangeText={setCardHolder}
+              autoCapitalize="characters"
+              placeholder="Nome impresso no cartão"
+              placeholderTextColor={colors.textLight}
+              style={styles.couponInput}
+            />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                value={cardExpiry}
+                onChangeText={(t) => {
+                  const digits = t.replace(/\D/g, '').slice(0, 4);
+                  setCardExpiry(digits.length > 2 ? digits.slice(0, 2) + '/' + digits.slice(2) : digits);
+                }}
+                keyboardType="numeric"
+                placeholder="MM/AA"
+                placeholderTextColor={colors.textLight}
+                style={[styles.couponInput, { flex: 1 }]}
+                maxLength={5}
+              />
+              <TextInput
+                value={cardCvv}
+                onChangeText={(t) => setCardCvv(t.replace(/\D/g, '').slice(0, 4))}
+                keyboardType="numeric"
+                placeholder="CVV"
+                placeholderTextColor={colors.textLight}
+                style={[styles.couponInput, { flex: 1 }]}
+                secureTextEntry
+                maxLength={4}
+              />
+            </View>
           </View>
         )}
 

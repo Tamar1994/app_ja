@@ -150,20 +150,18 @@ export const serviceChatAPI = {
 // Pagamentos
 export const paymentAPI = {
   preview: (requestData, couponCodes = [], useWallet = false, walletAmount = null) =>
-    api.post('/payments/preview', {
-      ...requestData,
-      couponCodes,
-      useWallet,
-      walletAmount,
-    }),
-  createIntent: (requestData) => api.post('/payments/create-intent', requestData),
-  confirm: (paymentIntentId) => api.post('/payments/confirm', { paymentIntentId }),
-  createCoraPixCharge: (requestData) => api.post('/payments/cora/pix/create', requestData),
-  getCoraPixStatus: (chargeId) => api.get(`/payments/cora/pix/${chargeId}/status`),
-  getCoraWebhookEndpoints: () => api.get('/payments/cora/webhook/endpoints'),
-  getMethods: () => api.get('/payments/methods'),
-  deleteMethod: (id) => api.delete(`/payments/methods/${id}`),
-  setDefaultMethod: (id) => api.patch(`/payments/methods/${id}/default`),
+    api.post('/payments/preview', { ...requestData, couponCodes, useWallet, walletAmount }),
+  // PIX via Pagar.me
+  createPixCharge: (requestData) => api.post('/payments/pix/create', requestData),
+  getPixStatus: (orderId) => api.get(`/payments/pix/${orderId}/status`),
+  // Cartão via Pagar.me (cardToken gerado no mobile direto na API do Pagar.me)
+  cardPay: (requestData) => api.post('/payments/card/pay', requestData),
+  // Dados bancários do profissional / recebedor
+  createRecipient: (bankData) => api.post('/payments/recipients', bankData),
+  updateRecipient: (bankData) => api.patch('/payments/recipients', bankData),
+  getMyRecipient: () => api.get('/payments/recipients/me'),
+  // Config (modo + chave pública)
+  getConfig: () => api.get('/payments/config'),
 };
 
 export const couponAPI = {

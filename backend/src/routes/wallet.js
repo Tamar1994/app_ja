@@ -5,6 +5,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
+const pagarme = require('../services/pagarmeService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -26,8 +27,10 @@ const computeNextWithdrawalAt = (lastRequestedAt) => {
 // GET /api/wallet/summary — saldo e total ganho
 router.get('/summary', auth, async (req, res) => {
   try {
-    const [user, recentTransactions, latestWithdrawal] = await Promise.all([
-      User.findById(req.user._id).select('wallet professional cpf userType activeProfile'),
+    const now = new Date();
+
+    const [user, recentTransactions, latestWithdrawal, balanceAgg] = await Promise.all([
+      User.findById(req.user._id).select('wallet professional cpf userType activeProfile pagarmeRecipientId'),
       Transaction.find({ professional: req.user._id })
         .sort({ createdAt: -1 })
         .limit(10)
@@ -35,17 +38,63 @@ router.get('/summary', auth, async (req, res) => {
       WithdrawalRequest.findOne({ professional: req.user._id })
         .sort({ requestedAt: -1 })
         .select('requestedAt status amount'),
+      // Agrega ganhos liberados vs bloqueados de uma só vez
+      Transaction.aggregate([
+        { $match: { professional: req.user._id, type: 'earning' } },
+        {
+          $group: {
+            _id: null,
+            totalEarned: { $sum: '$amount' },
+            availableEarned: {
+                $sum: {
+                  $cond: [
+                    {
+                      // null = transação legada (antes da migração) → considera disponível
+                      $or: [
+                        { $eq: ['$availableAt', null] },
+                        { $lte: ['$availableAt', now] },
+                      ],
+                    },
+                    '$amount',
+                    0,
+                  ],
+                },
+              },
+          },
+        },
+      ]),
     ]);
 
+    const totalEarned = user.wallet?.totalEarned || 0;
+    const currentBalance = user.wallet?.balance || 0;
+    const totalWithdrawn = Math.max(0, totalEarned - currentBalance);
+
+    // Saldo disponível = ganhos liberados − já sacados (mínimo 0)
+    const availableEarned = balanceAgg[0]?.availableEarned || 0;
+    const availableBalance = Math.max(0, Number((availableEarned - totalWithdrawn).toFixed(2)));
+    // Saldo bloqueado = ganhos ainda em clearing (cartão de crédito, aguardando 31 dias)
+    const pendingBalance = Number(Math.max(0, currentBalance - availableBalance).toFixed(2));
+
     const nextWithdrawalAt = computeNextWithdrawalAt(latestWithdrawal?.requestedAt);
-    const now = new Date();
     const canRequestWithdrawal = isProfessionalProfile(user)
-      && Number(user.wallet?.balance || 0) >= WITHDRAWAL_MIN_AMOUNT
+      && availableBalance >= WITHDRAWAL_MIN_AMOUNT
       && (!nextWithdrawalAt || now >= nextWithdrawalAt);
 
+    // Buscar saldo Pagar.me do profissional no recebedor (referência externa)
+    let pagarmeBalance = null;
+    if (user.pagarmeRecipientId && pagarme.isConfigured()) {
+      try {
+        pagarmeBalance = await pagarme.getRecipientBalance(user.pagarmeRecipientId);
+      } catch {
+        // Falha silenciosa — não impede o carregamento da carteira
+      }
+    }
+
     res.json({
-      balance: user.wallet?.balance || 0,
-      totalEarned: user.wallet?.totalEarned || 0,
+      balance: currentBalance,
+      availableBalance, // saldo disponível para saque (PIX liberado + cartões já compensados)
+      pendingBalance,   // saldo bloqueado (cartão em clearing — libera em até 31 dias)
+      totalEarned,
       totalServices: user.professional?.totalServicesCompleted || 0,
       transactions: recentTransactions,
       pixCpf: user.cpf || null,
@@ -56,6 +105,7 @@ router.get('/summary', auth, async (req, res) => {
       canRequestWithdrawal,
       nextWithdrawalAt,
       latestWithdrawal: latestWithdrawal || null,
+      pagarmeBalance, // { available, waitingFunds, transferred } em R$ — null se não configurado
     });
   } catch (err) {
     console.error(err);
@@ -205,7 +255,7 @@ router.get('/withdrawals/my', auth, async (req, res) => {
   }
 });
 
-// POST /api/wallet/withdrawals/request — solicitar saque PIX manual
+// POST /api/wallet/withdrawals/request — solicitar saque PIX via Pagar.me
 router.post('/withdrawals/request', auth, async (req, res) => {
   if (!isProfessionalProfile(req.user)) {
     return res.status(403).json({ message: 'Apenas profissionais podem solicitar saque' });
@@ -218,14 +268,8 @@ router.post('/withdrawals/request', auth, async (req, res) => {
     });
   }
 
-  const normalizedCpf = normalizeCpf(req.user.cpf);
-  if (normalizedCpf.length !== 11) {
-    return res.status(400).json({
-      message: 'Seu CPF precisa estar válido no cadastro para saque via PIX.',
-    });
-  }
-
   try {
+    // Verificar cooldown de 7 dias
     const lastWithdrawal = await WithdrawalRequest.findOne({ professional: req.user._id })
       .sort({ requestedAt: -1 })
       .select('requestedAt');
@@ -237,28 +281,150 @@ router.post('/withdrawals/request', auth, async (req, res) => {
       });
     }
 
+    // Calcular saldo disponível (ganhos liberados − já sacados)
+    const now = new Date();
+    const user = await User.findById(req.user._id).select('wallet cpf pagarmeRecipientId');
+    const [balanceAgg] = await Transaction.aggregate([
+      { $match: { professional: req.user._id, type: 'earning' } },
+      {
+        $group: {
+          _id: null,
+          availableEarned: {
+            $sum: { $cond: [{ $lte: ['$availableAt', now] }, '$amount', 0] },
+          },
+        },
+      },
+    ]);
+
+    const totalWithdrawn = Math.max(0, (user.wallet?.totalEarned || 0) - (user.wallet?.balance || 0));
+    const availableBalance = Math.max(0, Number(((balanceAgg?.availableEarned || 0) - totalWithdrawn).toFixed(2)));
+
+    if (amount > availableBalance) {
+      return res.status(400).json({
+        message: `Saldo disponível insuficiente. Disponível: R$ ${availableBalance.toFixed(2).replace('.', ',')}. Parte do saldo ainda está em processamento (cartão de crédito libera em até 31 dias).`,
+        availableBalance,
+      });
+    }
+
+    if ((user.wallet?.balance || 0) < amount) {
+      return res.status(400).json({ message: 'Saldo insuficiente para este saque' });
+    }
+
+    // ── Fluxo Pagar.me: transferência imediata ────────────────────────────────
+    if (user.pagarmeRecipientId && pagarme.isConfigured()) {
+      // Verificar se a plataforma tem saldo disponível suficiente no Pagar.me
+      try {
+        const platformId = pagarme.getPlatformRecipientId();
+        if (platformId) {
+          const platformBalance = await pagarme.getRecipientBalance(platformId);
+          if (platformBalance.available < amount) {
+            return res.status(400).json({
+              message: `Pagamento ainda não liquidado no Pagar.me. Tente novamente em algumas horas. Disponível na plataforma: R$ ${platformBalance.available.toFixed(2).replace('.', ',')}`,
+              platformAvailable: platformBalance.available,
+            });
+          }
+        }
+      } catch {
+        console.warn('[withdrawal] Não foi possível verificar saldo Pagar.me — prosseguindo sem verificação');
+      }
+
+      // ORDEM CORRETA: debitar MongoDB PRIMEIRO, depois chamar Pagar.me.
+      // Se Pagar.me falhar, revertemos o débito. Se MongoDB falhar, nada saiu.
+      const session = await mongoose.startSession();
+      let createdWithdrawal, updatedUser;
+      try {
+        await session.withTransaction(async () => {
+          updatedUser = await User.findOneAndUpdate(
+            { _id: req.user._id, 'wallet.balance': { $gte: amount } },
+            { $inc: { 'wallet.balance': -amount } },
+            { new: true, session }
+          );
+          if (!updatedUser) throw new Error('Saldo insuficiente — tente novamente');
+
+          [createdWithdrawal] = await WithdrawalRequest.create([{
+            professional: req.user._id,
+            amount: Number(amount.toFixed(2)),
+            pixKeyCpfSnapshot: user.cpf || '',
+            status: 'processing', // marcado como processando — confirmado após Pagar.me
+            requestedAt: new Date(),
+            internalNote: 'Aguardando confirmação Pagar.me',
+          }], { session });
+
+          await Transaction.create([{
+            professional: req.user._id,
+            withdrawalRequest: createdWithdrawal._id,
+            type: 'withdrawal',
+            grossAmount: Number(amount.toFixed(2)),
+            platformFee: 0,
+            amount: Number(amount.toFixed(2)),
+            status: 'withdrawn',
+            availableAt: new Date(),
+            description: 'Saque via Pagar.me',
+          }], { session });
+        });
+      } finally {
+        await session.endSession();
+      }
+
+      // Agora chama Pagar.me — se falhar, reverte o débito no MongoDB
+      const amountCents = Math.round(amount * 100);
+      let transfer;
+      try {
+        transfer = await pagarme.createTransfer(user.pagarmeRecipientId, amountCents);
+      } catch (transferErr) {
+        console.error('[withdrawal] Erro Pagar.me createTransfer:', transferErr.message);
+        // Reverter: creditar de volta + cancelar o saque
+        await Promise.allSettled([
+          User.findByIdAndUpdate(req.user._id, { $inc: { 'wallet.balance': amount } }),
+          WithdrawalRequest.findByIdAndUpdate(createdWithdrawal._id, {
+            status: 'cancelled',
+            internalNote: `Falha Pagar.me: ${transferErr.message}`,
+          }),
+          Transaction.deleteOne({ withdrawalRequest: createdWithdrawal._id }),
+        ]);
+        return res.status(502).json({
+          message: 'Não foi possível processar o saque agora. Tente novamente em instantes.',
+        });
+      }
+
+      // Confirmar como concluído
+      await WithdrawalRequest.findByIdAndUpdate(createdWithdrawal._id, {
+        status: 'completed',
+        processedAt: new Date(),
+        completedAt: new Date(),
+        internalNote: `Pagar.me transfer id: ${transfer?.id || 'n/a'}`,
+      });
+
+      return res.status(201).json({
+        message: 'Saque realizado! O valor será depositado na sua conta bancária pelo Pagar.me no próximo dia útil.',
+        withdrawal: { ...createdWithdrawal.toObject(), status: 'completed' },
+        walletBalance: updatedUser.wallet?.balance || 0,
+        availableBalance: Math.max(0, availableBalance - amount),
+        nextAllowedAt: computeNextWithdrawalAt(createdWithdrawal.requestedAt),
+      });
+    }
+
+    // ── Fluxo legado: fila manual (sem Pagar.me configurado) ─────────────────
+    const normalizedCpf = normalizeCpf(user.cpf || '');
+    if (normalizedCpf.length !== 11) {
+      return res.status(400).json({
+        message: 'Seu CPF precisa estar válido no cadastro para saque via PIX.',
+      });
+    }
+
     const session = await mongoose.startSession();
     let createdWithdrawal = null;
     let updatedUser = null;
-
     try {
       await session.withTransaction(async () => {
         updatedUser = await User.findOneAndUpdate(
-          {
-            _id: req.user._id,
-            'wallet.balance': { $gte: amount },
-          },
-          {
-            $inc: { 'wallet.balance': -amount },
-          },
+          { _id: req.user._id, 'wallet.balance': { $gte: amount } },
+          { $inc: { 'wallet.balance': -amount } },
           { new: true, session }
         );
+        if (!updatedUser) throw new Error('Saldo insuficiente para este saque');
 
-        if (!updatedUser) {
-          throw new Error('Saldo insuficiente para este saque');
-        }
-
-        const [withdrawal] = await WithdrawalRequest.create([{
+        [createdWithdrawal] = await WithdrawalRequest.create([{
           professional: req.user._id,
           amount: Number(amount.toFixed(2)),
           pixKeyCpfSnapshot: normalizedCpf,
@@ -266,16 +432,15 @@ router.post('/withdrawals/request', auth, async (req, res) => {
           requestedAt: new Date(),
         }], { session });
 
-        createdWithdrawal = withdrawal;
-
         await Transaction.create([{
           professional: req.user._id,
-          withdrawalRequest: withdrawal._id,
+          withdrawalRequest: createdWithdrawal._id,
           type: 'withdrawal',
           grossAmount: Number(amount.toFixed(2)),
           platformFee: 0,
           amount: Number(amount.toFixed(2)),
           status: 'withdrawn',
+          availableAt: new Date(),
           description: 'Solicitação de saque PIX (processamento manual)',
         }], { session });
       });

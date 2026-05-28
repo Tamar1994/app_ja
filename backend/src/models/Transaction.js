@@ -29,7 +29,17 @@ const transactionSchema = new mongoose.Schema({
     enum: ['available', 'withdrawn'],
     default: 'available',
   },
+  // Quando o valor fica disponível para saque (PIX = imediato, cartão = +31 dias)
+  availableAt: { type: Date, default: null },
+  paymentMethod: {
+    type: String,
+    enum: ['pix', 'credit_card', 'wallet', null],
+    default: null,
+  },
   description: { type: String, default: '' },
 }, { timestamps: true });
+
+// Índice para calcular saldo disponível eficientemente
+transactionSchema.index({ professional: 1, type: 1, availableAt: 1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

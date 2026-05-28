@@ -134,9 +134,14 @@ export default function EarningsScreen() {
   const handleRequestWithdrawal = async () => {
     const amount = Number(withdrawAmount.replace(',', '.'));
     const minAmount = Number(summary?.withdrawalRules?.minAmount || 50);
+    const available = Number(summary?.availableBalance ?? summary?.balance ?? 0);
 
     if (!Number.isFinite(amount) || amount < minAmount) {
       Alert.alert('Valor inválido', `O saque mínimo é ${fmt(minAmount)}.`);
+      return;
+    }
+    if (amount > available) {
+      Alert.alert('Saldo insuficiente', `Seu saldo disponível para saque é ${fmt(available)}.${Number(summary?.pendingBalance || 0) > 0 ? '\n\nO restante está em processamento.' : ''}`);
       return;
     }
 
@@ -196,8 +201,27 @@ export default function EarningsScreen() {
           <Text style={styles.headerTitle}>Carteira</Text>
           {summary ? (
             <>
-              <Text style={styles.balanceLabel}>Saldo disponível</Text>
+              <Text style={styles.balanceLabel}>Saldo total</Text>
               <Text style={styles.balanceValue}>{fmt(summary.balance)}</Text>
+
+              {/* Disponível vs Bloqueado */}
+              <View style={styles.balanceSplitRow}>
+                <View style={styles.balanceSplitItem}>
+                  <Text style={styles.balanceSplitLabel}>✅ Disponível para saque</Text>
+                  <Text style={styles.balanceSplitValue}>{fmt(summary.availableBalance ?? summary.balance)}</Text>
+                </View>
+                {Number(summary.pendingBalance || 0) > 0 && (
+                  <>
+                    <View style={styles.headerStatDivider} />
+                    <View style={styles.balanceSplitItem}>
+                      <Text style={styles.balanceSplitLabel}>🔒 Em processamento</Text>
+                      <Text style={styles.balanceSplitValue}>{fmt(summary.pendingBalance)}</Text>
+                      <Text style={styles.balanceSplitHint}>PIX: libera em 1 dia · Cartão: 2 dias</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+
               <View style={styles.headerStats}>
                 <View style={styles.headerStat}>
                   <Ionicons name="trending-up-outline" size={16} color="rgba(255,255,255,0.8)" />
@@ -225,6 +249,11 @@ export default function EarningsScreen() {
                   Próxima solicitação disponível em {new Date(summary.nextWithdrawalAt).toLocaleString('pt-BR')}
                 </Text>
               )}
+              {!summary.canRequestWithdrawal && !summary.nextWithdrawalAt && Number(summary.pendingBalance || 0) > 0 && (
+                <Text style={styles.withdrawHint}>
+                  Aguardando compensação do cartão de crédito
+                </Text>
+              )}
 
               <TouchableOpacity
                 style={[styles.transferBtn, Number(summary?.balance || 0) <= 0 && styles.withdrawBtnDisabled]}
@@ -244,6 +273,44 @@ export default function EarningsScreen() {
             </>
           )}
         </LinearGradient>
+
+        {/* Card saldo Pagar.me */}
+        {summary?.pagarmeBalance != null && (
+          <View style={styles.pagarmeCard}>
+            <View style={styles.pagarmeCardHeader}>
+              <Ionicons name="business-outline" size={16} color="#6B21A8" />
+              <Text style={styles.pagarmeCardTitle}>Saldo na Pagar.me</Text>
+              <View style={styles.pagarmeBadge}>
+                <Text style={styles.pagarmeBadgeText}>Auto-transferência diária</Text>
+              </View>
+            </View>
+            <View style={styles.pagarmeRow}>
+              <View style={styles.pagarmeCol}>
+                <Text style={styles.pagarmeColLabel}>Disponível</Text>
+                <Text style={[styles.pagarmeColValue, { color: '#16A34A' }]}>
+                  {fmt(summary.pagarmeBalance.available)}
+                </Text>
+              </View>
+              <View style={styles.pagarmeColDivider} />
+              <View style={styles.pagarmeCol}>
+                <Text style={styles.pagarmeColLabel}>Em processamento</Text>
+                <Text style={[styles.pagarmeColValue, { color: '#D97706' }]}>
+                  {fmt(summary.pagarmeBalance.waitingFunds)}
+                </Text>
+              </View>
+              <View style={styles.pagarmeColDivider} />
+              <View style={styles.pagarmeCol}>
+                <Text style={styles.pagarmeColLabel}>Já transferido</Text>
+                <Text style={[styles.pagarmeColValue, { color: '#6B7280' }]}>
+                  {fmt(summary.pagarmeBalance.transferred)}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.pagarmeHint}>
+              O valor disponível é transferido automaticamente para sua conta bancária todo dia.
+            </Text>
+          </View>
+        )}
 
         {/* Filtro de período */}
         <View style={styles.periodBar}>
@@ -371,9 +438,9 @@ export default function EarningsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Solicitar saque</Text>
-            <Text style={styles.modalText}>O saque será realizado via PIX na chave CPF do seu cadastro.</Text>
-            <Text style={styles.modalText}>O processamento é manual e pode levar até 24 horas.</Text>
+            <Text style={styles.modalText}>O saque é processado automaticamente via Pagar.me e cai na sua conta bancária no próximo dia útil.</Text>
             <Text style={styles.modalText}>Regras: mínimo de {fmt(summary?.withdrawalRules?.minAmount || 50)} e 1 solicitação por semana.</Text>
+            <Text style={styles.modalText}>Disponível para saque: <Text style={{ fontWeight: '700', color: '#16A34A' }}>{fmt(summary?.availableBalance ?? summary?.balance ?? 0)}</Text></Text>
 
             <Text style={styles.modalLabel}>Valor do saque</Text>
             <TextInput
@@ -407,7 +474,7 @@ export default function EarningsScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Transferir para Carteira Cliente</Text>
             <Text style={styles.modalText}>O valor será movido do seu saldo de profissional para a carteira de créditos do seu perfil cliente.</Text>
-            <Text style={styles.modalText}>Saldo disponível: {fmt(summary?.balance || 0)}</Text>
+            <Text style={styles.modalText}>Disponível para saque: {fmt(summary?.availableBalance ?? summary?.balance ?? 0)}</Text>
 
             <Text style={styles.modalLabel}>Valor a transferir</Text>
             <TextInput
@@ -457,6 +524,20 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginBottom: 4 },
   balanceValue: { color: '#fff', fontSize: 38, fontWeight: '800', letterSpacing: -1 },
+  balanceSplitRow: {
+    flexDirection: 'row',
+    marginTop: 10,
+    marginBottom: 4,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    borderRadius: 10,
+    padding: 10,
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  balanceSplitItem: { flex: 1, alignItems: 'center', gap: 2 },
+  balanceSplitLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 11, textAlign: 'center' },
+  balanceSplitValue: { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  balanceSplitHint: { color: 'rgba(255,255,255,0.6)', fontSize: 10, textAlign: 'center' },
   headerStats: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -494,6 +575,74 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   withdrawHint: { marginTop: 8, color: 'rgba(255,255,255,0.8)', fontSize: 12, textAlign: 'center' },
+  // ── Card Pagar.me ──────────────────────────────────────────────────────────
+  pagarmeCard: {
+    marginHorizontal: spacing.md,
+    marginTop: 12,
+    marginBottom: 4,
+    backgroundColor: '#FAF5FF',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: '#E9D5FF',
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  pagarmeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+  },
+  pagarmeCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6B21A8',
+    flex: 1,
+  },
+  pagarmeBadge: {
+    backgroundColor: '#EDE9FE',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  pagarmeBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#7C3AED',
+  },
+  pagarmeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  pagarmeCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  pagarmeColDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: '#DDD6FE',
+    marginHorizontal: 8,
+  },
+  pagarmeColLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  pagarmeColValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  pagarmeHint: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  // ──────────────────────────────────────────────────────────────────────────
   periodBar: {
     flexDirection: 'row',
     margin: spacing.md,

@@ -17,6 +17,8 @@ const { dispatchToNextProfessional, clearRequestTimer, sendExpoPush } = require(
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
+const pagarme = require('../services/pagarmeService');
+const PagarmeOrder = require('../models/PagarmeOrder');
 const {
   findCoverageCityId,
   findCancellationConfig,
@@ -1059,6 +1061,24 @@ router.patch('/:id/complete', auth, async (req, res) => {
         'pricing.platformFee': platformFee,
       }, { new: true });
 
+      // Determinar quando o saldo fica disponível para saque, baseado no paidAt real do Pagar.me
+      // PIX: D+1 após o pagamento (clearing padrão Pagar.me)
+      // Cartão de crédito: D+2 após o pagamento (liquidação padrão 1x)
+      // Wallet-only: imediato (não passa pelo Pagar.me)
+      const pagarmeOrder = await PagarmeOrder.findOne({ serviceRequest: request._id, status: 'paid' })
+        .select('paymentMethod paidAt')
+        .lean();
+      const paymentMethod = pagarmeOrder?.paymentMethod || 'wallet';
+      const paidAt = pagarmeOrder?.paidAt ? new Date(pagarmeOrder.paidAt) : new Date();
+      let availableAt;
+      if (paymentMethod === 'credit_card') {
+        availableAt = new Date(paidAt.getTime() + 2 * 24 * 60 * 60 * 1000); // D+2
+      } else if (paymentMethod === 'pix') {
+        availableAt = new Date(paidAt.getTime() + 1 * 24 * 60 * 60 * 1000); // D+1
+      } else {
+        availableAt = new Date(); // wallet: imediato
+      }
+
       await Transaction.create({
         professional: req.user._id,
         serviceRequest: request._id,
@@ -1066,6 +1086,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
         grossAmount,
         platformFee,
         amount: netAmount,
+        paymentMethod,
+        availableAt,
         description: reward.coupon
           ? `Serviço concluído + incentivo (${reward.coupon.code})`
           : 'Serviço concluído',
@@ -1087,6 +1109,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
         platformFeeDiscountAmount: reward.feeDiscountAmount,
         platformFeePercentApplied: reward.feePercentApplied,
       };
+      // Nota: o repasse ao profissional ocorre quando ele solicita saque via Pagar.me.
+      // A plataforma retém o valor no recebedor da plataforma até a solicitação.
     } catch (paymentErr) {
       // Erro no processamento financeiro não impede a conclusão do serviço
       console.error('[complete] Erro no processamento financeiro:', paymentErr);

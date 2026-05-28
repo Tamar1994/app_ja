@@ -1,3 +1,4 @@
+﻿'use strict';
 const express = require('express');
 const mongoose = require('mongoose');
 const QRCode = require('qrcode');
@@ -7,136 +8,26 @@ const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
-const CoraPixCharge = require('../models/CoraPixCharge');
+const PagarmeOrder = require('../models/PagarmeOrder');
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
-const StripeConfig = require('../models/StripeConfig');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
 const { resolveCouponsForCheckout } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
-const {
-  hasCoraConfigured,
-  createPixInvoice,
-  getInvoice,
-  createWebhookEndpoint,
-} = require('../services/coraService');
+const pagarme = require('../services/pagarmeService');
 
 const router = express.Router();
 
-// Retorna cliente Stripe instanciado com a chave do modo atual
-async function getStripe() {
-  const config = await StripeConfig.getSingleton();
-  const key = config.mode === 'production'
-    ? process.env.STRIPE_SECRET_KEY_PROD
-    : (process.env.STRIPE_SECRET_KEY_TEST || process.env.STRIPE_SECRET_KEY);
-  if (!key) throw new Error('Chave Stripe não configurada para o modo ' + config.mode);
-  return require('stripe')(key);
-}
-
-// Retorna a chave publicável do modo atual
-async function getPublishableKey() {
-  const config = await StripeConfig.getSingleton();
-  return config.mode === 'production'
-    ? process.env.STRIPE_PUBLISHABLE_KEY_PROD
-    : (process.env.STRIPE_PUBLISHABLE_KEY_TEST || process.env.STRIPE_SECRET_KEY?.replace('sk_', 'pk_'));
-}
-
-// ── ENDPOINT PÚBLICO — mobile busca a chave e modo atual ──────────
-// GET /api/payments/config
-router.get('/config', async (req, res) => {
-  try {
-    const [config, publishableKey] = await Promise.all([
-      StripeConfig.getSingleton(),
-      getPublishableKey(),
-    ]);
-    res.json({ mode: config.mode, publishableKey });
-  } catch (err) {
-    res.status(500).json({ message: 'Erro ao buscar configuração de pagamento' });
-  }
-});
-
-// ── HELPERS ──────────────────────────────────────────────────────────
-
-async function getOrCreateCustomer(user) {
-  const stripe = await getStripe();
-
-  const isMissingCustomerError = (err) => {
-    const message = String(err?.message || err?.raw?.message || '').toLowerCase();
-    return err?.code === 'resource_missing'
-      && (err?.param === 'customer'
-        || err?.param === 'id'
-        || message.includes('no such customer'));
-  };
-
-  if (user.stripeCustomerId) {
-    try {
-      const existing = await stripe.customers.retrieve(user.stripeCustomerId);
-      if (existing && !existing.deleted) {
-        return user.stripeCustomerId;
-      }
-    } catch (err) {
-      const missingCustomer = isMissingCustomerError(err);
-      if (!missingCustomer) throw err;
-      // Se o customer salvo for de outro ambiente (test/live), cria um novo no ambiente atual.
-    }
-  }
-
-  const customer = await stripe.customers.create({
-    email: user.email,
-    name: user.name,
-    phone: user.phone,
-    metadata: { userId: user._id.toString() },
-  });
-  user.stripeCustomerId = customer.id;
-  await user.save();
-  return customer.id;
-}
-
-function parseCouponMeta(rawCodes, rawDiscounts) {
-  const codes = String(rawCodes || '')
-    .split(',')
-    .map((c) => c.trim())
-    .filter(Boolean);
-  const discounts = String(rawDiscounts || '')
-    .split(',')
-    .map((d) => Number(d));
-
-  return codes.map((code, idx) => ({
-    code,
-    discountAmount: Number.isFinite(discounts[idx]) ? discounts[idx] : 0,
-  }));
-}
+// ── Helpers genéricos ─────────────────────────────────────────────────────────
 
 function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
-}
-
-function toIsoDate(date = new Date()) {
-  return date.toISOString().slice(0, 10);
-}
-
-function mapCoraInvoiceStatus(status) {
-  if (status === 'PAID') return 'paid';
-  if (status === 'CANCELLED') return 'cancelled';
-  return 'pending';
-}
-
-function getWebhookBaseUrl(req) {
-  const explicit = process.env.PUBLIC_BASE_URL || process.env.API_PUBLIC_BASE_URL;
-  if (explicit) return explicit.replace(/\/$/, '');
-
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.headers['x-forwarded-host'] || req.get('host');
-  return `${proto}://${host}`;
 }
 
 function normalizeWalletInput(rawUseWallet, rawWalletAmount) {
   const useWallet = Boolean(rawUseWallet);
   const parsed = Number(rawWalletAmount);
   const walletAmount = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  return {
-    useWallet,
-    walletAmount,
-  };
+  return { useWallet, walletAmount };
 }
 
 function buildWalletUsage({ user, totalPayableAfterCoupons, requestedWalletAmount = null, forceUseWallet = false }) {
@@ -213,147 +104,35 @@ async function applyWalletDebit({ userId, serviceRequestId, walletUsage, transac
   }
 }
 
-// Cria o ServiceRequest a partir dos metadados do PaymentIntent (idempotente)
-async function createRequestFromIntent(intent, io) {
-  const existing = await ServiceRequest.findOne({ 'payment.transactionId': intent.id });
-  if (existing) return existing;
-  if (!intent.metadata?.clientId) return null;
+// ── Criação do ServiceRequest (idempotente) ───────────────────────────────────
 
-  const m = intent.metadata;
-  const address = JSON.parse(m.address);
-  const serviceTypeSlug = m.serviceTypeSlug || null;
-  const tierLabel = m.tierLabel || null;
-  const isScheduled = m.isScheduled === 'true';
-  let parsedUpsells = [];
-  try { parsedUpsells = JSON.parse(m.selectedUpsells || '[]'); } catch {}
-  const selectedUpsells = parsedUpsells.map((u) => (typeof u === 'string' ? u : u.key)).filter(Boolean);
-  const {
-    tier,
-    tierPrice,
-    upsellsTotal,
-    estimated,
-    platformFee,
-    platformFeePercent,
-    upsells: resolvedUpsells,
-  } = await calculateCheckoutPricing({
-    serviceTypeSlug,
-    tierLabel,
-    selectedUpsells,
-    scheduledDate: m.scheduledDate,
-    city: address?.city || null,
-    state: address?.state || null,
-  });
-  const couponsMeta = parseCouponMeta(m.couponCodes, m.couponDiscounts);
-  const discountTotal = couponsMeta.reduce((sum, c) => sum + Number(c.discountAmount || 0), 0);
-  const walletAppliedTotal = Number(m.walletAppliedTotal || 0);
-  const walletAppliedClient = Number(m.walletAppliedClient || 0);
-  const walletAppliedProfessional = Number(m.walletAppliedProfessional || 0);
-  const customerTotalAfterCoupons = Math.max(0, estimated - discountTotal);
-  const customerTotalPaid = Math.max(0, customerTotalAfterCoupons - walletAppliedTotal);
-  const couponDocs = await Coupon.find({ code: { $in: couponsMeta.map((c) => c.code) } }).select('_id code');
-  const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
-
-  const request = await ServiceRequest.create({
-    client: m.clientId,
-    serviceTypeSlug,
-    requestType: isScheduled ? 'scheduled' : 'immediate',
-    status: isScheduled ? 'pending_professional' : 'searching',
-    details: {
-      tierLabel,
-      durationMinutes: Number(m.durationMinutes) || tier.durationMinutes,
-      upsells: resolvedUpsells,
-      notes: m.notes || '',
-      scheduledDate: m.scheduledDate,
-    },
-    address,
-    pricing: {
-      tierPrice,
-      upsellsTotal,
-      estimated,
-      platformFeePercent,
-      platformFee,
-      final: customerTotalAfterCoupons,
-      customerTotal: customerTotalAfterCoupons,
-      customerPaidExternal: customerTotalPaid,
-      walletAppliedTotal,
-      walletAppliedClient,
-      walletAppliedProfessional,
-      discountTotal,
-      appliedCoupons: couponsMeta.map((c) => c.code),
-    },
-    payment: {
-      status: 'paid',
-      method: intent.payment_method_types?.[0] || 'card',
-      transactionId: intent.id,
-      paidAt: new Date(),
-      walletUsedAmount: walletAppliedTotal,
-    },
-  });
-
-  if (walletAppliedTotal > 0) {
-    await applyWalletDebit({
-      userId: m.clientId,
-      serviceRequestId: request._id,
-      walletUsage: {
-        fromClientWallet: walletAppliedClient,
-        fromProfessionalWallet: walletAppliedProfessional,
-      },
-      transactionLabel: 'Pagamento parcial com carteira',
-    });
+async function createRequestFromPagarmeOrder(order, io) {
+  if (order.serviceRequest) {
+    const existing = await ServiceRequest.findById(order.serviceRequest);
+    if (existing) return existing;
   }
 
-  if (couponsMeta.length) {
-    const redemptions = couponsMeta
-      .filter((coupon) => couponByCode.has(coupon.code))
-      .map((coupon) => ({
-      updateOne: {
-        filter: { paymentIntentId: intent.id, coupon: couponByCode.get(coupon.code)._id },
-        update: {
-          $setOnInsert: {
-            coupon: couponByCode.get(coupon.code)._id,
-            user: m.clientId,
-            serviceRequest: request._id,
-            paymentIntentId: intent.id,
-            couponCodeSnapshot: coupon.code,
-            discountAmount: coupon.discountAmount,
-          },
-        },
-        upsert: true,
-      },
-    }));
-    if (redemptions.length) {
-      await CouponRedemption.bulkWrite(redemptions, { ordered: false });
+  const txId = `pagarme:${order.pagarmeOrderId}`;
+  const existingByTx = await ServiceRequest.findOne({ 'payment.transactionId': txId });
+  if (existingByTx) {
+    if (!order.serviceRequest) {
+      order.serviceRequest = existingByTx._id;
+      order.status = 'paid';
+      if (!order.paidAt) order.paidAt = new Date();
+      await order.save();
     }
+    return existingByTx;
   }
 
-  if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
-  return request;
-}
-
-async function createRequestFromCoraCharge(charge, io) {
-  if (charge.serviceRequest) {
-    const existingByReference = await ServiceRequest.findById(charge.serviceRequest);
-    if (existingByReference) return existingByReference;
-  }
-
-  const txId = `cora:${charge.coraInvoiceId}`;
-  const existing = await ServiceRequest.findOne({ 'payment.transactionId': txId });
-  if (existing) {
-    if (!charge.serviceRequest) {
-      charge.serviceRequest = existing._id;
-      charge.status = 'paid';
-      if (!charge.paidAt) charge.paidAt = new Date();
-      await charge.save();
-    }
-    return existing;
-  }
-
-  const p = charge.requestPayload || {};
+  const p = order.requestPayload || {};
   const address = p.address || {};
   const serviceTypeSlug = p.serviceTypeSlug || null;
   const tierLabel = p.tierLabel || null;
   const isScheduled = !!p.isScheduled;
-  const selectedUpsells = (p.selectedUpsells || []).map((u) => (typeof u === 'string' ? u : u.key)).filter(Boolean);
+  const selectedUpsells = (p.selectedUpsells || [])
+    .map((u) => (typeof u === 'string' ? u : u.key))
+    .filter(Boolean);
+
   const {
     tier,
     tierPrice,
@@ -371,18 +150,19 @@ async function createRequestFromCoraCharge(charge, io) {
     state: address?.state || null,
   });
 
-  const discountTotal = Number(charge.discountTotal || 0);
-  const walletAppliedTotal = Number(charge.walletAppliedTotal || 0);
-  const walletAppliedClient = Number(charge.walletAppliedClient || 0);
-  const walletAppliedProfessional = Number(charge.walletAppliedProfessional || 0);
+  const discountTotal = Number(order.discountTotal || 0);
+  const walletAppliedTotal = Number(order.walletAppliedTotal || 0);
+  const walletAppliedClient = Number(order.walletAppliedClient || 0);
+  const walletAppliedProfessional = Number(order.walletAppliedProfessional || 0);
   const customerTotalAfterCoupons = Math.max(0, estimated - discountTotal);
   const customerTotalPaid = Math.max(0, customerTotalAfterCoupons - walletAppliedTotal);
-  const appliedCoupons = Array.isArray(charge.appliedCoupons) ? charge.appliedCoupons : [];
+
+  const appliedCoupons = Array.isArray(order.appliedCoupons) ? order.appliedCoupons : [];
   const couponDocs = await Coupon.find({ code: { $in: appliedCoupons.map((c) => c.code) } }).select('_id code');
   const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
 
   const request = await ServiceRequest.create({
-    client: charge.client,
+    client: order.client,
     serviceTypeSlug,
     requestType: isScheduled ? 'scheduled' : 'immediate',
     status: isScheduled ? 'pending_professional' : 'searching',
@@ -411,22 +191,19 @@ async function createRequestFromCoraCharge(charge, io) {
     },
     payment: {
       status: 'paid',
-      method: 'pix',
+      method: order.paymentMethod === 'credit_card' ? 'card' : 'pix',
       transactionId: txId,
-      paidAt: charge.paidAt || new Date(),
+      paidAt: order.paidAt || new Date(),
       walletUsedAmount: walletAppliedTotal,
     },
   });
 
   if (walletAppliedTotal > 0) {
     await applyWalletDebit({
-      userId: charge.client,
+      userId: order.client,
       serviceRequestId: request._id,
-      walletUsage: {
-        fromClientWallet: walletAppliedClient,
-        fromProfessionalWallet: walletAppliedProfessional,
-      },
-      transactionLabel: 'Pagamento Pix parcial com carteira',
+      walletUsage: { fromClientWallet: walletAppliedClient, fromProfessionalWallet: walletAppliedProfessional },
+      transactionLabel: `Pagamento ${order.paymentMethod === 'pix' ? 'Pix' : 'Cartão'} parcial com carteira`,
     });
   }
 
@@ -439,7 +216,7 @@ async function createRequestFromCoraCharge(charge, io) {
           update: {
             $setOnInsert: {
               coupon: couponByCode.get(coupon.code)._id,
-              user: charge.client,
+              user: order.client,
               serviceRequest: request._id,
               paymentIntentId: txId,
               couponCodeSnapshot: coupon.code,
@@ -449,249 +226,52 @@ async function createRequestFromCoraCharge(charge, io) {
           upsert: true,
         },
       }));
-
-    if (redemptions.length) {
-      await CouponRedemption.bulkWrite(redemptions, { ordered: false });
-    }
+    if (redemptions.length) await CouponRedemption.bulkWrite(redemptions, { ordered: false });
   }
 
-  charge.serviceRequest = request._id;
-  charge.status = 'paid';
-  if (!charge.paidAt) charge.paidAt = new Date();
-  await charge.save();
+  order.serviceRequest = request._id;
+  order.status = 'paid';
+  if (!order.paidAt) order.paidAt = new Date();
+  await order.save();
 
   if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
   return request;
 }
 
-// ── ROTAS ─────────────────────────────────────────────────────────────
+function buildPagarmeCustomer(user) {
+  const phoneDigits = onlyDigits(user.phone);
+  const ddd = phoneDigits.slice(0, 2);
+  const number = phoneDigits.slice(2);
+  return {
+    name: user.name,
+    email: user.email,
+    document: onlyDigits(user.cpf) || undefined,
+    document_type: 'CPF',
+    type: 'individual',
+    ...(ddd && number ? { phones: { home_phone: { country_code: '55', area_code: ddd, number } } } : {}),
+  };
+}
 
-// POST /api/payments/create-intent
-// Cria PaymentIntent + EphemeralKey para o Payment Sheet do Stripe
-router.post('/create-intent', auth, async (req, res) => {
-  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
-    return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
-  }
+// ── ROTAS ─────────────────────────────────────────────────────────────────────
 
-  const {
-    serviceTypeSlug,
-    tierLabel,
-    selectedUpsells = [],
-    notes,
-    address,
-    scheduledDate,
-    couponCodes,
-    useWallet,
-    walletAmount,
-    isScheduled = false,
-  } = req.body;
-  if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
-    console.warn('[create-intent] 400 – dados incompletos:', { tierLabel, street: address?.street, city: address?.city, scheduledDate });
-    return res.status(400).json({ message: 'Dados do pedido incompletos' });
-  }
-
-  try {
-    const {
-      tier,
-      tierPrice,
-      upsellsTotal,
-      estimated,
-      platformFee,
-      platformFeePercent,
-      upsells: resolvedUpsells,
-    } = await calculateCheckoutPricing({
-      serviceTypeSlug,
-      tierLabel,
-      selectedUpsells,
-      scheduledDate,
-    });
-    const checkout = await resolveCouponsForCheckout({
-      couponCodes,
-      user: req.user,
-      orderSubtotal: estimated,
-    });
-
-    const finalAmount = Number(checkout.pricing.finalTotal || 0);
-    const user = await User.findById(req.user._id);
-    const walletInput = normalizeWalletInput(useWallet, walletAmount);
-    const walletUsage = buildWalletUsage({
-      user,
-      totalPayableAfterCoupons: finalAmount,
-      requestedWalletAmount: walletInput.walletAmount,
-      forceUseWallet: walletInput.useWallet,
-    });
-    const payableAfterWallet = Number((finalAmount - walletUsage.totalWalletUsed).toFixed(2));
-
-    if (payableAfterWallet <= 0) {
-      const request = await ServiceRequest.create({
-        client: req.user._id,
-        serviceTypeSlug: serviceTypeSlug || null,
-        requestType: isScheduled ? 'scheduled' : 'immediate',
-        status: isScheduled ? 'pending_professional' : 'searching',
-        details: {
-          tierLabel,
-          durationMinutes: tier.durationMinutes,
-          upsells: resolvedUpsells,
-          notes: notes || '',
-          scheduledDate,
-        },
-        address,
-        pricing: {
-          tierPrice,
-          upsellsTotal,
-          estimated,
-          platformFeePercent,
-          platformFee,
-          final: finalAmount,
-          customerTotal: finalAmount,
-          customerPaidExternal: 0,
-          walletAppliedTotal: walletUsage.totalWalletUsed,
-          walletAppliedClient: walletUsage.fromClientWallet,
-          walletAppliedProfessional: walletUsage.fromProfessionalWallet,
-          discountTotal: checkout.pricing.totalDiscount,
-          appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code),
-        },
-        payment: {
-          status: 'paid',
-          method: 'wallet',
-          transactionId: `wallet:${req.user._id}:${Date.now()}`,
-          paidAt: new Date(),
-          walletUsedAmount: walletUsage.totalWalletUsed,
-        },
-      });
-
-      await applyWalletDebit({
-        userId: req.user._id,
-        serviceRequestId: request._id,
-        walletUsage,
-        transactionLabel: 'Pagamento integral com carteira',
-      });
-
-      const io = req.app.get('io');
-      if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
-
-      return res.status(201).json({
-        walletOnly: true,
-        request,
-        amount: 0,
-        subtotal: estimated,
-        discountTotal: checkout.pricing.totalDiscount,
-        walletApplied: walletUsage.totalWalletUsed,
-        walletAppliedClient: walletUsage.fromClientWallet,
-        walletAppliedProfessional: walletUsage.fromProfessionalWallet,
-        appliedCoupons: checkout.pricing.appliedCoupons,
-        rejectedCoupons: checkout.rejectedCoupons,
-      });
-    }
-
-    const payableCents = Math.round(payableAfterWallet * 100);
-    const stripe = await getStripe();
-    const customerId = await getOrCreateCustomer(user);
-
-    if (user.cpf) {
-      try {
-        await stripe.customers.update(customerId, {
-          tax_id_data: [{ type: 'br_cpf', value: user.cpf.replace(/\D/g, '') }],
-        });
-      } catch {
-        // Ignora erro se CPF já foi cadastrado antes
-      }
-    }
-
-    const [intent, ephemeralKey] = await Promise.all([
-      stripe.paymentIntents.create({
-        amount: payableCents,
-        currency: 'brl',
-        customer: customerId,
-        automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-        payment_method_options: {
-          card: { setup_future_usage: 'off_session' },
-        },
-        metadata: {
-          clientId: req.user._id.toString(),
-          serviceTypeSlug: serviceTypeSlug || '',
-          tierLabel: tierLabel || '',
-          selectedUpsells: JSON.stringify(resolvedUpsells),
-          durationMinutes: String(tier.durationMinutes),
-          notes: notes || '',
-          scheduledDate,
-          isScheduled: String(!!isScheduled),
-          couponCodes: checkout.pricing.appliedCoupons.map((c) => c.code).join(','),
-          couponDiscounts: checkout.pricing.appliedCoupons.map((c) => String(c.discountAmount)).join(','),
-          walletAppliedTotal: String(walletUsage.totalWalletUsed),
-          walletAppliedClient: String(walletUsage.fromClientWallet),
-          walletAppliedProfessional: String(walletUsage.fromProfessionalWallet),
-          address: JSON.stringify(address),
-        },
-      }),
-      stripe.ephemeralKeys.create(
-        { customer: customerId },
-        { apiVersion: '2024-06-20' }
-      ),
-    ]);
-
-    res.json({
-      clientSecret: intent.client_secret,
-      paymentIntentId: intent.id,
-      ephemeralKey: ephemeralKey.secret,
-      customerId,
-      amount: payableAfterWallet,
-      subtotal: estimated,
-      discountTotal: checkout.pricing.totalDiscount,
-      walletApplied: walletUsage.totalWalletUsed,
-      walletAppliedClient: walletUsage.fromClientWallet,
-      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
-      walletAvailable: walletUsage.maxWalletAvailable,
-      totalBeforeWallet: finalAmount,
-      appliedCoupons: checkout.pricing.appliedCoupons,
-      rejectedCoupons: checkout.rejectedCoupons,
-    });
-  } catch (err) {
-    console.error('Stripe create-intent error:', err);
-    res.status(500).json({ message: 'Erro ao iniciar pagamento: ' + err.message });
-  }
+// GET /api/payments/config
+router.get('/config', (req, res) => {
+  res.json({ mode: pagarme.getMode(), publicKey: pagarme.getPublicKey() || null });
 });
 
 // POST /api/payments/preview
-// Pré-visualiza o total com cupons antes de abrir o Payment Sheet
 router.post('/preview', auth, async (req, res) => {
   if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem simular pagamento' });
   }
-
-  const {
-    serviceTypeSlug,
-    tierLabel,
-    selectedUpsells = [],
-    scheduledDate,
-    couponCodes,
-    useWallet,
-    walletAmount,
-  } = req.body;
+  const { serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate, couponCodes, useWallet, walletAmount } = req.body;
   if (!tierLabel) return res.status(400).json({ message: 'tierLabel é obrigatório' });
-
   try {
-    const { estimated } = await calculateCheckoutPricing({
-      serviceTypeSlug,
-      tierLabel,
-      selectedUpsells,
-      scheduledDate: scheduledDate || null,
-    });
-    const checkout = await resolveCouponsForCheckout({
-      couponCodes,
-      user: req.user,
-      orderSubtotal: estimated,
-    });
-
+    const { estimated } = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate: scheduledDate || null });
+    const checkout = await resolveCouponsForCheckout({ couponCodes, user: req.user, orderSubtotal: estimated });
     const walletInput = normalizeWalletInput(useWallet, walletAmount);
-    const walletUsage = buildWalletUsage({
-      user: req.user,
-      totalPayableAfterCoupons: checkout.pricing.finalTotal,
-      requestedWalletAmount: walletInput.walletAmount,
-      forceUseWallet: walletInput.useWallet,
-    });
-
-    res.json({
+    const walletUsage = buildWalletUsage({ user: req.user, totalPayableAfterCoupons: checkout.pricing.finalTotal, requestedWalletAmount: walletInput.walletAmount, forceUseWallet: walletInput.useWallet });
+    return res.json({
       subtotal: estimated,
       discountTotal: checkout.pricing.totalDiscount,
       totalBeforeWallet: checkout.pricing.finalTotal,
@@ -703,507 +283,394 @@ router.post('/preview', auth, async (req, res) => {
       appliedCoupons: checkout.pricing.appliedCoupons,
       rejectedCoupons: checkout.rejectedCoupons,
     });
-  } catch {
-    res.status(500).json({ message: 'Erro ao simular pagamento com cupons' });
-  }
+  } catch { return res.status(500).json({ message: 'Erro ao simular pagamento' }); }
 });
 
-// POST /api/payments/confirm
-// Chamado pelo app após confirmação bem-sucedida no Payment Sheet (cartão/débito)
-// Verifica o PaymentIntent no Stripe e cria o ServiceRequest
-router.post('/confirm', auth, async (req, res) => {
-  const { paymentIntentId } = req.body;
-  if (!paymentIntentId) return res.status(400).json({ message: 'paymentIntentId obrigatório' });
-
-  try {
-    const stripe = await getStripe();
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    const user = await User.findById(req.user._id);
-
-    if (intent.customer !== user.stripeCustomerId) {
-      return res.status(403).json({ message: 'Acesso negado' });
-    }
-    if (intent.status !== 'succeeded') {
-      return res.status(400).json({ message: `Pagamento não aprovado (${intent.status})` });
-    }
-
-    const io = req.app.get('io');
-    const request = await createRequestFromIntent(intent, io);
-    if (!request) return res.status(400).json({ message: 'Erro ao processar pedido' });
-
-    res.status(201).json({ request });
-  } catch (err) {
-    console.error('Confirm payment error:', err);
-    res.status(500).json({ message: 'Erro ao confirmar pagamento' });
-  }
-});
-
-// POST /api/payments/cora/pix/create
-// Cria uma cobranca Pix Cora com expiracao local de 15 minutos (sem reutilizacao)
-router.post('/cora/pix/create', auth, async (req, res) => {
+// POST /api/payments/pix/create
+router.post('/pix/create', auth, async (req, res) => {
   if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
+  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
 
-  if (!hasCoraConfigured()) {
-    return res.status(503).json({ message: 'Cora nao configurada no backend' });
-  }
-
-  const {
-    serviceTypeSlug,
-    tierLabel,
-    selectedUpsells = [],
-    notes,
-    address,
-    scheduledDate,
-    couponCodes,
-    useWallet,
-    walletAmount,
-    isScheduled = false,
-  } = req.body;
-
+  const { serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address, scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false } = req.body;
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
-    console.warn('[cora/pix/create] 400 – dados incompletos:', { tierLabel, street: address?.street, city: address?.city, scheduledDate });
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
 
   try {
     const user = await User.findById(req.user._id);
     const cpf = onlyDigits(user.cpf);
-    if (!cpf || cpf.length !== 11) {
-      console.warn('[cora/pix/create] 400 – CPF inválido:', { cpf, userId: req.user._id });
-      return res.status(400).json({ message: 'CPF valido e obrigatorio para pagamento via Pix' });
-    }
+    if (!cpf || cpf.length !== 11) return res.status(400).json({ message: 'CPF válido é obrigatório para pagamento via Pix' });
 
-    const {
-      tier,
-      tierPrice,
-      upsellsTotal,
-      estimated,
-      platformFee,
-      platformFeePercent,
-      upsells: resolvedUpsells,
-    } = await calculateCheckoutPricing({
-      serviceTypeSlug,
-      tierLabel,
-      selectedUpsells,
-      scheduledDate,
-      city: address?.city || null,
-      state: address?.state || null,
-    });
-    const checkout = await resolveCouponsForCheckout({
-      couponCodes,
-      user: req.user,
-      orderSubtotal: estimated,
-    });
-
+    const { tier, tierPrice, upsellsTotal, estimated, platformFee, platformFeePercent, upsells: resolvedUpsells } = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate, city: address?.city || null, state: address?.state || null });
+    const checkout = await resolveCouponsForCheckout({ couponCodes, user: req.user, orderSubtotal: estimated });
     const walletInput = normalizeWalletInput(useWallet, walletAmount);
-    const walletUsage = buildWalletUsage({
-      user,
-      totalPayableAfterCoupons: checkout.pricing.finalTotal,
-      requestedWalletAmount: walletInput.walletAmount,
-      forceUseWallet: walletInput.useWallet,
-    });
-
+    const walletUsage = buildWalletUsage({ user, totalPayableAfterCoupons: checkout.pricing.finalTotal, requestedWalletAmount: walletInput.walletAmount, forceUseWallet: walletInput.useWallet });
     const payableAfterWallet = Number((checkout.pricing.finalTotal - walletUsage.totalWalletUsed).toFixed(2));
-    const payableCents = Math.round(payableAfterWallet * 100);
 
     if (payableAfterWallet <= 0) {
       const request = await ServiceRequest.create({
-        client: req.user._id,
-        serviceTypeSlug: serviceTypeSlug || null,
-        requestType: isScheduled ? 'scheduled' : 'immediate',
-        status: isScheduled ? 'pending_professional' : 'searching',
-        details: {
-          tierLabel,
-          durationMinutes: tier.durationMinutes,
-          upsells: resolvedUpsells,
-          notes: notes || '',
-          scheduledDate,
-        },
+        client: req.user._id, serviceTypeSlug: serviceTypeSlug || null,
+        requestType: isScheduled ? 'scheduled' : 'immediate', status: isScheduled ? 'pending_professional' : 'searching',
+        details: { tierLabel, durationMinutes: tier.durationMinutes, upsells: resolvedUpsells, notes: notes || '', scheduledDate },
         address,
-        pricing: {
-          tierPrice,
-          upsellsTotal,
-          estimated,
-          platformFeePercent,
-          platformFee,
-          final: checkout.pricing.finalTotal,
-          customerTotal: checkout.pricing.finalTotal,
-          customerPaidExternal: 0,
-          walletAppliedTotal: walletUsage.totalWalletUsed,
-          walletAppliedClient: walletUsage.fromClientWallet,
-          walletAppliedProfessional: walletUsage.fromProfessionalWallet,
-          discountTotal: checkout.pricing.totalDiscount,
-          appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code),
-        },
-        payment: {
-          status: 'paid',
-          method: 'wallet',
-          transactionId: `wallet:${req.user._id}:${Date.now()}`,
-          paidAt: new Date(),
-          walletUsedAmount: walletUsage.totalWalletUsed,
-        },
+        pricing: { tierPrice, upsellsTotal, estimated, platformFeePercent, platformFee, final: checkout.pricing.finalTotal, customerTotal: checkout.pricing.finalTotal, customerPaidExternal: 0, walletAppliedTotal: walletUsage.totalWalletUsed, walletAppliedClient: walletUsage.fromClientWallet, walletAppliedProfessional: walletUsage.fromProfessionalWallet, discountTotal: checkout.pricing.totalDiscount, appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code) },
+        payment: { status: 'paid', method: 'wallet', transactionId: `wallet:${req.user._id}:${Date.now()}`, paidAt: new Date(), walletUsedAmount: walletUsage.totalWalletUsed },
       });
-
-      await applyWalletDebit({
-        userId: req.user._id,
-        serviceRequestId: request._id,
-        walletUsage,
-        transactionLabel: 'Pagamento integral com carteira (Pix flow)',
-      });
-
+      await applyWalletDebit({ userId: req.user._id, serviceRequestId: request._id, walletUsage, transactionLabel: 'Pagamento integral com carteira' });
       const io = req.app.get('io');
       if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
-
-      return res.status(201).json({
-        walletOnly: true,
-        request,
-        charge: null,
-      });
+      return res.status(201).json({ walletOnly: true, request });
     }
 
-    if (payableCents < 500) {
-      return res.status(400).json({ message: 'Valor minimo para Pix e de R$ 5,00 apos carteira' });
-    }
+    if (payableAfterWallet < 5) return res.status(400).json({ message: 'Valor mínimo para Pix é de R$ 5,00 após carteira' });
 
-    const invoice = await createPixInvoice({
-      amountCents: payableCents,
-      code: `ja-${req.user._id}-${Date.now()}`,
-      customer: {
-        name: user.name,
-        email: user.email,
-        document: cpf,
-        documentType: 'CPF',
-      },
-      serviceDescription: `Servico agendado para ${scheduledDate}`,
-      dueDate: toIsoDate(new Date()),
+    const amountCents = Math.round(payableAfterWallet * 100);
+    const splitRules = pagarme.buildSplitRules({ amountCents, platformFeePercent, professionalRecipientId: null });
+    const orderCode = `ja-${req.user._id}-${Date.now()}`;
+
+    const pagarmeResult = await pagarme.createPixOrder({
+      code: orderCode, amountCents, customer: buildPagarmeCustomer(user),
+      description: `Serviço ${tierLabel} - ${scheduledDate}`, expiresIn: 900, splitRules,
     });
 
-    const expiresAt = new Date(Date.now() + (15 * 60 * 1000));
-    const charge = await CoraPixCharge.create({
-      client: req.user._id,
-      coraInvoiceId: invoice.invoiceId,
-      coraStatus: invoice.status || 'OPEN',
-      status: mapCoraInvoiceStatus(invoice.status),
-      amount: payableAfterWallet,
-      subtotal: estimated,
-      discountTotal: checkout.pricing.totalDiscount,
-      walletAppliedTotal: walletUsage.totalWalletUsed,
-      walletAppliedClient: walletUsage.fromClientWallet,
-      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
-      appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({
-        code: c.code,
-        discountAmount: c.discountAmount,
-      })),
+    const charge = pagarmeResult.charges?.[0];
+    const lastTx = charge?.last_transaction || {};
+    const pixEmv = lastTx.qr_code || null;
+    const pixQrCodeUrl = lastTx.qr_code_url || null;
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    const pagarmeOrder = await PagarmeOrder.create({
+      client: req.user._id, pagarmeOrderId: pagarmeResult.id, pagarmeChargeId: charge?.id || null,
+      paymentMethod: 'pix', status: 'pending', amount: payableAfterWallet, amountCents,
+      subtotal: estimated, discountTotal: checkout.pricing.totalDiscount,
+      walletAppliedTotal: walletUsage.totalWalletUsed, walletAppliedClient: walletUsage.fromClientWallet, walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+      appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({ code: c.code, discountAmount: c.discountAmount })),
       rejectedCoupons: checkout.rejectedCoupons,
-      requestPayload: {
-        serviceTypeSlug: serviceTypeSlug || null,
-        tierLabel,
-        selectedUpsells: resolvedUpsells,
-        notes: notes || '',
-        address,
-        scheduledDate,
-        isScheduled: !!isScheduled,
-      },
-      qrCodeUrl: invoice.qrCodeUrl,
-      emv: invoice.emv,
-      expiresAt,
-      paidAt: invoice.status === 'PAID' ? new Date() : null,
+      requestPayload: { serviceTypeSlug: serviceTypeSlug || null, tierLabel, selectedUpsells: resolvedUpsells, notes: notes || '', address, scheduledDate, isScheduled: !!isScheduled },
+      pixEmv, pixQrCodeUrl, pixExpiresAt: expiresAt,
+      platformRecipientId: pagarme.getPlatformRecipientId() || null, professionalRecipientId: null, splitApplied: splitRules.length > 0,
     });
-
-    if (charge.status === 'paid') {
-      const io = req.app.get('io');
-      await createRequestFromCoraCharge(charge, io);
-    }
 
     return res.status(201).json({
       charge: {
-        id: charge._id,
-        status: charge.status,
-        amount: charge.amount,
-        subtotal: charge.subtotal,
-        discountTotal: charge.discountTotal,
-        walletApplied: charge.walletAppliedTotal || 0,
-        walletAppliedClient: charge.walletAppliedClient || 0,
-        walletAppliedProfessional: charge.walletAppliedProfessional || 0,
-        appliedCoupons: charge.appliedCoupons,
-        rejectedCoupons: charge.rejectedCoupons,
-        qrCodeUrl: charge.qrCodeUrl,
-        emv: charge.emv,
-        expiresAt: charge.expiresAt,
+        id: pagarmeOrder._id, status: pagarmeOrder.status, amount: pagarmeOrder.amount,
+        subtotal: pagarmeOrder.subtotal, discountTotal: pagarmeOrder.discountTotal,
+        walletApplied: pagarmeOrder.walletAppliedTotal, walletAppliedClient: pagarmeOrder.walletAppliedClient, walletAppliedProfessional: pagarmeOrder.walletAppliedProfessional,
+        appliedCoupons: pagarmeOrder.appliedCoupons, rejectedCoupons: pagarmeOrder.rejectedCoupons,
+        emv: pixEmv, qrCodeUrl: pixQrCodeUrl, expiresAt: pagarmeOrder.pixExpiresAt,
       },
     });
   } catch (err) {
-    console.error('Cora pix create error:', err);
-    return res.status(500).json({ message: 'Erro ao criar cobranca Pix Cora' });
+    console.error('[pix/create] error:', err);
+    return res.status(500).json({ message: 'Erro ao criar cobrança Pix: ' + err.message });
   }
 });
 
-// GET /api/payments/cora/pix/:chargeId/status
-// Consulta status local e sincroniza com Cora quando pendente
-router.get('/cora/pix/:chargeId/status', auth, async (req, res) => {
+// GET /api/payments/pix/:orderId/status
+router.get('/pix/:orderId/status', auth, async (req, res) => {
   try {
-    const charge = await CoraPixCharge.findById(req.params.chargeId);
-    if (!charge) return res.status(404).json({ message: 'Cobranca nao encontrada' });
-    if (String(charge.client) !== String(req.user._id)) {
-      return res.status(403).json({ message: 'Acesso negado' });
+    const pagarmeOrder = await PagarmeOrder.findById(req.params.orderId);
+    if (!pagarmeOrder) return res.status(404).json({ message: 'Pedido não encontrado' });
+    if (String(pagarmeOrder.client) !== String(req.user._id)) return res.status(403).json({ message: 'Acesso negado' });
+
+    if (pagarmeOrder.status === 'pending' && pagarmeOrder.pixExpiresAt && new Date() > pagarmeOrder.pixExpiresAt) {
+      pagarmeOrder.status = 'expired';
+      await pagarmeOrder.save();
     }
 
-    if (charge.status === 'pending' && new Date() > charge.expiresAt) {
-      charge.status = 'expired';
-      await charge.save();
-    }
-
-    if (charge.status === 'pending' && hasCoraConfigured()) {
+    if (pagarmeOrder.status === 'pending' && pagarme.isConfigured()) {
       try {
-        const invoice = await getInvoice(charge.coraInvoiceId);
-        const nextStatus = mapCoraInvoiceStatus(invoice.status);
-        charge.coraStatus = invoice.status || charge.coraStatus;
-
-        if (nextStatus === 'paid') {
-          charge.status = 'paid';
-          charge.paidAt = charge.paidAt || new Date();
-          await charge.save();
+        const remoteOrder = await pagarme.getOrder(pagarmeOrder.pagarmeOrderId);
+        if (remoteOrder.status === 'paid') {
+          pagarmeOrder.status = 'paid';
+          pagarmeOrder.paidAt = pagarmeOrder.paidAt || new Date();
+          if (remoteOrder.charges?.[0]?.id && !pagarmeOrder.pagarmeChargeId) pagarmeOrder.pagarmeChargeId = remoteOrder.charges[0].id;
+          await pagarmeOrder.save();
           const io = req.app.get('io');
-          await createRequestFromCoraCharge(charge, io);
-        } else if (nextStatus === 'cancelled') {
-          charge.status = 'cancelled';
-          await charge.save();
-        } else {
-          await charge.save();
+          await createRequestFromPagarmeOrder(pagarmeOrder, io);
+        } else if (remoteOrder.status === 'canceled') {
+          pagarmeOrder.status = 'cancelled';
+          await pagarmeOrder.save();
         }
-      } catch {
-        // Mantem status local se a consulta externa falhar.
-      }
+      } catch { /* mantém status local */ }
     }
 
-    const remainingMs = Math.max(0, new Date(charge.expiresAt).getTime() - Date.now());
-    const response = {
-      id: charge._id,
-      status: charge.status,
-      amount: charge.amount,
-      subtotal: charge.subtotal,
-      discountTotal: charge.discountTotal,
-      walletApplied: charge.walletAppliedTotal || 0,
-      walletAppliedClient: charge.walletAppliedClient || 0,
-      walletAppliedProfessional: charge.walletAppliedProfessional || 0,
-      qrCodeUrl: charge.qrCodeUrl,
-      emv: charge.emv,
-      expiresAt: charge.expiresAt,
-      remainingSeconds: Math.ceil(remainingMs / 1000),
-      requestId: charge.serviceRequest || null,
-    };
-
-    return res.json(response);
-  } catch {
-    return res.status(500).json({ message: 'Erro ao consultar cobranca Pix' });
-  }
+    const remainingMs = pagarmeOrder.pixExpiresAt ? Math.max(0, new Date(pagarmeOrder.pixExpiresAt).getTime() - Date.now()) : 0;
+    return res.json({
+      id: pagarmeOrder._id, status: pagarmeOrder.status, amount: pagarmeOrder.amount,
+      subtotal: pagarmeOrder.subtotal, discountTotal: pagarmeOrder.discountTotal,
+      walletApplied: pagarmeOrder.walletAppliedTotal, walletAppliedClient: pagarmeOrder.walletAppliedClient, walletAppliedProfessional: pagarmeOrder.walletAppliedProfessional,
+      emv: pagarmeOrder.pixEmv, qrCodeUrl: pagarmeOrder.pixQrCodeUrl, expiresAt: pagarmeOrder.pixExpiresAt,
+      remainingSeconds: Math.ceil(remainingMs / 1000), requestId: pagarmeOrder.serviceRequest || null,
+    });
+  } catch { return res.status(500).json({ message: 'Erro ao consultar pedido Pix' }); }
 });
 
-// GET /api/payments/cora/pix/:chargeId/qr
-// Gera um QR code puro (sem branding Cora) em formato PNG a partir do EMV
-router.get('/cora/pix/:chargeId/qr', async (req, res) => {
+// GET /api/payments/pix/:orderId/qr
+router.get('/pix/:orderId/qr', async (req, res) => {
   try {
-    const charge = await CoraPixCharge.findById(req.params.chargeId);
-    if (!charge) {
-      return res.status(404).json({ message: 'Cobranca nao encontrada' });
-    }
-
-    if (!charge.emv) {
-      return res.status(400).json({ message: 'Cobranca sem codigo EMV disponivel' });
-    }
-
-    // React Native <Image /> renderiza PNG remoto com mais confiabilidade que SVG.
-    const qrPng = await QRCode.toBuffer(charge.emv, {
-      type: 'png',
-      width: 300,
-      margin: 1,
-      color: {
-        dark: '#000000',
-        light: '#FFFFFF',
-      },
-    });
-
+    const pagarmeOrder = await PagarmeOrder.findById(req.params.orderId).select('pixEmv');
+    if (!pagarmeOrder) return res.status(404).json({ message: 'Pedido não encontrado' });
+    if (!pagarmeOrder.pixEmv) return res.status(400).json({ message: 'QR code não disponível' });
+    const qrPng = await QRCode.toBuffer(pagarmeOrder.pixEmv, { type: 'png', width: 300, margin: 1, color: { dark: '#000000', light: '#FFFFFF' } });
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     return res.send(qrPng);
   } catch (err) {
-    console.error('Erro ao gerar QR code:', err);
+    console.error('[pix/qr] error:', err);
     return res.status(500).json({ message: 'Erro ao gerar QR code' });
   }
 });
 
-// GET /api/payments/cora/webhook/endpoints
-// Retorna URLs para cadastro de webhooks no Cora Web
-router.get('/cora/webhook/endpoints', adminAuth, requireRole('super_admin', 'admin'), (req, res) => {
-  const base = getWebhookBaseUrl(req);
-  return res.json({
-    webhookUrl: `${base}/api/payments/cora/webhook`,
-    suggestedEvents: [
-      { resource: 'invoice', trigger: 'paid' },
-      { resource: 'invoice', trigger: '*' },
-    ],
-  });
-});
-
-// POST /api/payments/cora/webhook/register
-// Opcional: registra endpoint na Cora automaticamente para invoice.paid
-router.post('/cora/webhook/register', adminAuth, requireRole('super_admin', 'admin'), async (req, res) => {
-
-  if (!hasCoraConfigured()) {
-    return res.status(503).json({ message: 'Cora nao configurada no backend' });
+// POST /api/payments/card/pay
+// O mobile tokeniza o cartão direto no Pagar.me e envia o token aqui
+router.post('/card/pay', auth, async (req, res) => {
+  if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
+    return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
+  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
+
+  const { cardToken, serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address, scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false, installments = 1 } = req.body;
+  if (!cardToken) return res.status(400).json({ message: 'cardToken é obrigatório' });
+  if (!tierLabel || !address?.street || !address?.city || !scheduledDate) return res.status(400).json({ message: 'Dados do pedido incompletos' });
 
   try {
-    const { url, resource = 'invoice', trigger = 'paid' } = req.body || {};
-    const endpointUrl = String(url || '').trim() || `${getWebhookBaseUrl(req)}/api/payments/cora/webhook`;
-    const result = await createWebhookEndpoint({ url: endpointUrl, resource, trigger });
-    return res.status(201).json({ endpoint: result });
-  } catch (err) {
-    console.error('Cora webhook register error:', err);
-    return res.status(500).json({ message: 'Erro ao registrar endpoint de webhook na Cora' });
-  }
-});
+    const user = await User.findById(req.user._id);
+    const { tier, tierPrice, upsellsTotal, estimated, platformFee, platformFeePercent, upsells: resolvedUpsells } = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate, city: address?.city || null, state: address?.state || null });
+    const checkout = await resolveCouponsForCheckout({ couponCodes, user: req.user, orderSubtotal: estimated });
+    const walletInput = normalizeWalletInput(useWallet, walletAmount);
+    const walletUsage = buildWalletUsage({ user, totalPayableAfterCoupons: checkout.pricing.finalTotal, requestedWalletAmount: walletInput.walletAmount, forceUseWallet: walletInput.useWallet });
+    const payableAfterWallet = Number((checkout.pricing.finalTotal - walletUsage.totalWalletUsed).toFixed(2));
 
-// POST /api/payments/cora/webhook
-// Webhook de eventos da Cora. O evento chega via headers.
-router.post('/cora/webhook', async (req, res) => {
-  try {
-    const eventType = String(req.headers['webhook-event-type'] || '').toLowerCase();
-    const resourceId = String(req.headers['webhook-resource-id'] || '').trim();
-
-    if (!resourceId) return res.json({ success: true, ignored: true });
-
-    const charge = await CoraPixCharge.findOne({ coraInvoiceId: resourceId });
-    if (!charge) return res.json({ success: true, ignored: true });
-
-    if (eventType === 'invoice.paid' || eventType.endsWith('.paid')) {
-      charge.status = 'paid';
-      charge.coraStatus = 'PAID';
-      charge.paidAt = charge.paidAt || new Date();
-      await charge.save();
+    if (payableAfterWallet <= 0) {
+      const request = await ServiceRequest.create({
+        client: req.user._id, serviceTypeSlug: serviceTypeSlug || null,
+        requestType: isScheduled ? 'scheduled' : 'immediate', status: isScheduled ? 'pending_professional' : 'searching',
+        details: { tierLabel, durationMinutes: tier.durationMinutes, upsells: resolvedUpsells, notes: notes || '', scheduledDate },
+        address,
+        pricing: { tierPrice, upsellsTotal, estimated, platformFeePercent, platformFee, final: checkout.pricing.finalTotal, customerTotal: checkout.pricing.finalTotal, customerPaidExternal: 0, walletAppliedTotal: walletUsage.totalWalletUsed, walletAppliedClient: walletUsage.fromClientWallet, walletAppliedProfessional: walletUsage.fromProfessionalWallet, discountTotal: checkout.pricing.totalDiscount, appliedCoupons: checkout.pricing.appliedCoupons.map((c) => c.code) },
+        payment: { status: 'paid', method: 'wallet', transactionId: `wallet:${req.user._id}:${Date.now()}`, paidAt: new Date(), walletUsedAmount: walletUsage.totalWalletUsed },
+      });
+      await applyWalletDebit({ userId: req.user._id, serviceRequestId: request._id, walletUsage, transactionLabel: 'Pagamento integral com carteira' });
       const io = req.app.get('io');
-      await createRequestFromCoraCharge(charge, io);
-    } else if (eventType === 'invoice.canceled' || eventType.endsWith('.canceled')) {
-      if (charge.status === 'pending') {
-        charge.status = 'cancelled';
-        charge.coraStatus = 'CANCELLED';
-        await charge.save();
-      }
+      if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
+      return res.status(201).json({ walletOnly: true, request });
     }
 
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('Cora webhook error:', err);
-    return res.status(500).json({ success: false });
-  }
-});
+    const amountCents = Math.round(payableAfterWallet * 100);
+    const splitRules = pagarme.buildSplitRules({ amountCents, platformFeePercent, professionalRecipientId: null });
+    const orderCode = `ja-card-${req.user._id}-${Date.now()}`;
 
-// GET /api/payments/methods
-// Lista cartões salvos do cliente (carteira)
-router.get('/methods', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-    if (!user.stripeCustomerId) return res.json({ methods: [] });
-
-    const stripe = await getStripe();
-    const [methods, customer] = await Promise.all([
-      stripe.paymentMethods.list({ customer: user.stripeCustomerId, type: 'card' }),
-      stripe.customers.retrieve(user.stripeCustomerId),
-    ]);
-
-    const defaultPmId = customer.invoice_settings?.default_payment_method;
-    res.json({
-      methods: methods.data.map((pm) => ({
-        id: pm.id,
-        brand: pm.card.brand,
-        last4: pm.card.last4,
-        expMonth: pm.card.exp_month,
-        expYear: pm.card.exp_year,
-        isDefault: pm.id === defaultPmId,
-      })),
+    const pagarmeResult = await pagarme.createCardOrder({
+      code: orderCode, amountCents, customer: buildPagarmeCustomer(user),
+      cardToken, installments: Number(installments) || 1, splitRules,
     });
-  } catch (err) {
-    res.status(500).json({ message: 'Erro ao listar cartões' });
-  }
-});
 
-// DELETE /api/payments/methods/:id
-// Remove um cartão da carteira
-router.delete('/methods/:id', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-    const stripe = await getStripe();
-    const method = await stripe.paymentMethods.retrieve(req.params.id);
-    if (method.customer !== user.stripeCustomerId) {
-      return res.status(403).json({ message: 'Cartão não pertence a este usuário' });
-    }
-    await stripe.paymentMethods.detach(req.params.id);
-    res.json({ message: 'Cartão removido com sucesso' });
-  } catch (err) {
-    res.status(500).json({ message: 'Erro ao remover cartão' });
-  }
-});
+    const charge = pagarmeResult.charges?.[0];
+    const orderStatus = pagarmeResult.status || 'pending';
 
-// PATCH /api/payments/methods/:id/default
-// Define cartão padrão
-router.patch('/methods/:id/default', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-    const stripe = await getStripe();
-    const method = await stripe.paymentMethods.retrieve(req.params.id);
-    if (method.customer !== user.stripeCustomerId) {
-      return res.status(403).json({ message: 'Cartão não pertence a este usuário' });
-    }
-    await stripe.customers.update(user.stripeCustomerId, {
-      invoice_settings: { default_payment_method: req.params.id },
+    const pagarmeOrder = await PagarmeOrder.create({
+      client: req.user._id, pagarmeOrderId: pagarmeResult.id, pagarmeChargeId: charge?.id || null,
+      paymentMethod: 'credit_card', status: orderStatus === 'paid' ? 'paid' : 'failed',
+      amount: payableAfterWallet, amountCents, subtotal: estimated,
+      discountTotal: checkout.pricing.totalDiscount, walletAppliedTotal: walletUsage.totalWalletUsed, walletAppliedClient: walletUsage.fromClientWallet, walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+      appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({ code: c.code, discountAmount: c.discountAmount })),
+      rejectedCoupons: checkout.rejectedCoupons,
+      requestPayload: { serviceTypeSlug: serviceTypeSlug || null, tierLabel, selectedUpsells: resolvedUpsells, notes: notes || '', address, scheduledDate, isScheduled: !!isScheduled },
+      platformRecipientId: pagarme.getPlatformRecipientId() || null, professionalRecipientId: null, splitApplied: splitRules.length > 0,
+      paidAt: orderStatus === 'paid' ? new Date() : null,
     });
-    res.json({ message: 'Cartão padrão atualizado' });
+
+    if (orderStatus !== 'paid') {
+      const errMsg = charge?.last_transaction?.gateway_response?.message || 'Cartão recusado';
+      return res.status(402).json({ message: errMsg, status: orderStatus });
+    }
+
+    const io = req.app.get('io');
+    const request = await createRequestFromPagarmeOrder(pagarmeOrder, io);
+    if (!request) return res.status(400).json({ message: 'Erro ao processar pedido após pagamento' });
+    return res.status(201).json({ request });
   } catch (err) {
-    res.status(500).json({ message: 'Erro ao atualizar cartão padrão' });
+    console.error('[card/pay] error:', err);
+    const msg = err.pagarmeResponse?.errors?.[0]?.message || err.pagarmeResponse?.message || err.message;
+    return res.status(500).json({ message: 'Erro ao processar pagamento: ' + msg });
   }
 });
 
 // POST /api/payments/webhook
-// Webhook do Stripe para eventos assíncronos (principalmente PIX)
-// ATENÇÃO: express.raw() é aplicado em app.js ANTES do express.json() para esta rota
+// Webhook Pagar.me — express.raw() aplicado em app.js ANTES do express.json()
 router.post('/webhook', async (req, res) => {
-  const sig = req.headers['stripe-signature'];
+  const authHeader = req.headers['authorization'] || '';
+
+  if (!pagarme.verifyWebhookAuth(authHeader)) {
+    console.warn('[webhook] Autenticação inválida');
+    return res.status(401).json({ message: 'Autenticação inválida' });
+  }
 
   let event;
   try {
-    const stripe = await getStripe();
-    const config = await StripeConfig.getSingleton();
-    const webhookSecret = config.mode === 'production'
-      ? (process.env.STRIPE_WEBHOOK_SECRET_PROD || process.env.STRIPE_WEBHOOK_SECRET)
-      : (process.env.STRIPE_WEBHOOK_SECRET_TEST || process.env.STRIPE_WEBHOOK_SECRET);
+    event = JSON.parse(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body);
+  } catch (err) {
+    console.error('[webhook] Body inválido:', err.message);
+    return res.status(400).json({ message: 'Body inválido' });
+  }
 
-    if (webhookSecret) {
-      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-    } else {
-      event = JSON.parse(req.body.toString());
+  const eventType = event.type || '';
+  const data = event.data || {};
+
+  try {
+    if (eventType === 'order.paid' || eventType === 'charge.paid') {
+      const pagarmeOrderId = data.order_id || data.id;
+      const pagarmeOrder = await PagarmeOrder.findOne({ pagarmeOrderId });
+      if (!pagarmeOrder) {
+        return res.json({ received: true, ignored: true });
+      }
+      if (pagarmeOrder.status !== 'paid') {
+        pagarmeOrder.status = 'paid';
+        pagarmeOrder.paidAt = pagarmeOrder.paidAt || new Date();
+        if (data.charges?.[0]?.id && !pagarmeOrder.pagarmeChargeId) pagarmeOrder.pagarmeChargeId = data.charges[0].id;
+        await pagarmeOrder.save();
+        const io = req.app.get('io');
+        await createRequestFromPagarmeOrder(pagarmeOrder, io);
+        console.log(`[webhook] ${eventType} processado — order ${pagarmeOrderId}`);
+      }
+    } else if (eventType === 'order.canceled' || eventType === 'order.payment_failed') {
+      const pagarmeOrderId = data.id;
+      const pagarmeOrder = await PagarmeOrder.findOne({ pagarmeOrderId });
+      if (pagarmeOrder && pagarmeOrder.status === 'pending') {
+        pagarmeOrder.status = eventType === 'order.canceled' ? 'cancelled' : 'failed';
+        await pagarmeOrder.save();
+      }
     }
   } catch (err) {
-    console.error('Webhook signature error:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error('[webhook] Erro ao processar evento:', err.message);
   }
 
-  if (event.type === 'payment_intent.succeeded') {
-    const intent = event.data.object;
-    try {
-      const io = req.app.get('io');
-      const request = await createRequestFromIntent(intent, io);
-      if (request) {
-        console.log(`✅ Webhook: ServiceRequest ${request._id} criado (intent ${intent.id})`);
+  return res.json({ received: true });
+});
+
+// POST /api/payments/recipients
+// Cria recebedor Pagar.me para o profissional autenticado
+router.post('/recipients', auth, async (req, res) => {
+  if (req.user.userType !== 'professional' && req.user.activeProfile !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem cadastrar dados bancários' });
+  }
+  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
+
+  const { bank, branchNumber, branchCheckDigit, accountNumber, accountCheckDigit, accountType, holderName } = req.body;
+  if (!bank || !branchNumber || !accountNumber || !accountCheckDigit) {
+    return res.status(400).json({ message: 'Dados bancários incompletos' });
+  }
+
+  try {
+    const user = await User.findById(req.user._id);
+    const doc = onlyDigits(user.cpf);
+    if (!doc || doc.length !== 11) return res.status(400).json({ message: 'CPF válido é obrigatório para cadastrar conta bancária' });
+
+    const recipient = await pagarme.createRecipient({
+      name: user.name, email: user.email, document: doc,
+      holderName: holderName || user.name, bank, branchNumber,
+      branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit,
+      accountType: accountType || 'checking', phone: user.phone,
+    });
+
+    user.pagarmeRecipientId = recipient.id;
+    user.bankAccount = { holderName: holderName || user.name, bank, branchNumber, branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit, accountType: accountType || 'checking' };
+    await user.save();
+
+    return res.status(201).json({ recipientId: recipient.id, message: 'Conta bancária cadastrada com sucesso' });
+  } catch (err) {
+    console.error('[recipients] error:', err);
+    const msg = err.pagarmeResponse?.errors?.[0]?.message || err.message;
+    return res.status(500).json({ message: 'Erro ao cadastrar conta bancária: ' + msg });
+  }
+});
+
+// GET /api/payments/recipients/me
+router.get('/recipients/me', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('pagarmeRecipientId bankAccount name email cpf phone');
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
+
+    // Lazy auto-create: se tem dados bancários mas ainda não foi criado no Pagar.me
+    if (!user.pagarmeRecipientId && user.bankAccount?.accountNumber && pagarme.isConfigured()) {
+      try {
+        const doc = onlyDigits(user.cpf);
+        if (doc && doc.length === 11) {
+          const ba = user.bankAccount;
+          const recipient = await pagarme.createRecipient({
+            name: user.name, email: user.email, document: doc,
+            holderName: ba.holderName || user.name, bank: ba.bank,
+            branchNumber: ba.branchNumber, branchCheckDigit: ba.branchCheckDigit || '0',
+            accountNumber: ba.accountNumber, accountCheckDigit: ba.accountCheckDigit,
+            accountType: ba.accountType || 'checking', phone: user.phone,
+          });
+          user.pagarmeRecipientId = recipient.id;
+          await user.save();
+          console.log(`[recipients/me] Recebedor auto-criado: ${recipient.id} para ${user._id}`);
+        }
+      } catch (autoErr) {
+        console.error('[recipients/me] Erro ao auto-criar recebedor:', autoErr.message);
       }
-    } catch (err) {
-      console.error('Webhook create request error:', err);
     }
+
+    return res.json({
+      hasRecipient: Boolean(user.pagarmeRecipientId),
+      recipientId: user.pagarmeRecipientId || null,
+      bankAccount: user.bankAccount || null,
+    });
+  } catch { return res.status(500).json({ message: 'Erro ao buscar dados bancários' }); }
+});
+
+// PATCH /api/payments/recipients — atualiza dados bancários e recria recebedor no Pagar.me
+router.patch('/recipients', auth, async (req, res) => {
+  if (req.user.userType !== 'professional' && req.user.activeProfile !== 'professional') {
+    return res.status(403).json({ message: 'Apenas profissionais podem atualizar dados bancários' });
+  }
+  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
+
+  const { bank, branchNumber, branchCheckDigit, accountNumber, accountCheckDigit, accountType, holderName } = req.body;
+  if (!bank || !branchNumber || !accountNumber || !accountCheckDigit) {
+    return res.status(400).json({ message: 'Dados bancários incompletos' });
   }
 
-  res.json({ received: true });
+  try {
+    const user = await User.findById(req.user._id);
+    const doc = onlyDigits(user.cpf);
+    if (!doc || doc.length !== 11) return res.status(400).json({ message: 'CPF válido é obrigatório' });
+
+    // Cria novo recebedor no Pagar.me (cada mudança de conta gera um novo rcp_)
+    const recipient = await pagarme.createRecipient({
+      name: user.name, email: user.email, document: doc,
+      holderName: holderName || user.name, bank, branchNumber,
+      branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit,
+      accountType: accountType || 'checking', phone: user.phone,
+    });
+
+    user.pagarmeRecipientId = recipient.id;
+    user.bankAccount = { holderName: holderName || user.name, bank, branchNumber, branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit, accountType: accountType || 'checking' };
+    await user.save();
+
+    return res.json({ recipientId: recipient.id, message: 'Conta bancária atualizada com sucesso' });
+  } catch (err) {
+    console.error('[recipients/patch] error:', err);
+    const msg = err.pagarmeResponse?.errors?.[0]?.message || err.message;
+    return res.status(500).json({ message: 'Erro ao atualizar conta bancária: ' + msg });
+  }
+});
+
+// GET /api/payments/webhook/info
+router.get('/webhook/info', adminAuth, requireRole('super_admin', 'admin'), (req, res) => {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  const base = process.env.PUBLIC_BASE_URL || `${proto}://${host}`;
+  return res.json({
+    webhookUrl: `${base}/api/payments/webhook`,
+    events: ['order.paid', 'order.canceled', 'order.payment_failed', 'charge.paid'],
+    note: 'Configure no painel Pagar.me → Configurações → Webhooks. Defina a senha do webhook em PAGARME_WEBHOOK_SECRET no Render.',
+  });
 });
 
 module.exports = router;
-module.exports.getStripe = getStripe;

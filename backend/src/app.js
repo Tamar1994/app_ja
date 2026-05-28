@@ -43,7 +43,7 @@ app.use(cors());
 // Rate limiting global
 app.use(apiLimiter);
 
-// Webhook Stripe precisa de raw body ANTES do express.json()
+// Webhook Pagar.me precisa de raw body ANTES do express.json() para verificação de assinatura HMAC
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 

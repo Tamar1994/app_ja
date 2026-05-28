@@ -62,15 +62,19 @@ export default function PixCheckoutScreen({ navigation, route }) {
     statusRequestRef.current = true;
     try {
       if (manual) setManualChecking(true);
-      const { data } = await paymentAPI.getCoraPixStatus(charge.id);
+      const { data } = await paymentAPI.getPixStatus(charge.id);
       setCharge((prev) => ({ ...prev, ...data }));
       setStatus(data.status);
       if (Number.isFinite(data.remainingSeconds)) {
         setRemainingSeconds(data.remainingSeconds);
       }
 
-      if (data.status === 'paid' && data.requestId) {
-        navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.requestId });
+      if (data.status === 'paid') {
+        if (data.requestId) {
+          navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.requestId });
+        }
+        // requestId ainda null — backend ainda criando o pedido. Tela fica presa aqui.
+        // O próximo ciclo de polling vai pegar quando estiver pronto.
       }
     } catch {
       // Falha de rede nao deve interromper o fluxo.
@@ -122,17 +126,20 @@ export default function PixCheckoutScreen({ navigation, route }) {
           <Text style={styles.timer}>Expira em {formatRemaining(remainingSeconds)}</Text>
         </View>
 
-        {charge.id ? (
+        {charge.id && charge.emv ? (
           <View style={styles.qrWrap}>
             <Image 
-              source={{ uri: `${API_BASE_URL}/payments/cora/pix/${charge.id}/qr` }} 
+              source={{ uri: `${API_BASE_URL}/payments/pix/${charge.id}/qr` }} 
               style={styles.qrImage} 
-              resizeMode="contain" 
+              resizeMode="contain"
+              onError={() => { /* QR PNG falhou — usuario pode usar copia e cola abaixo */ }}
             />
           </View>
         ) : (
           <View style={styles.noticeBox}>
-            <Text style={styles.noticeText}>QR code nao disponivel.</Text>
+            <Text style={styles.noticeText}>
+              {charge.id ? 'QR code indisponível. Use o código copia e cola abaixo.' : 'QR code não disponível.'}
+            </Text>
           </View>
         )}
 
@@ -157,6 +164,13 @@ export default function PixCheckoutScreen({ navigation, route }) {
 
         {status === 'expired' && (
           <Text style={styles.warning}>Tempo esgotado. Gere um novo QR para pagar.</Text>
+        )}
+        {status === 'paid' && !charge.requestId && (
+          <View style={styles.processingBanner}>
+            <Text style={styles.processingBannerText}>
+              ✅ Pagamento confirmado! Aguarde um instante enquanto preparamos seu pedido...
+            </Text>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -279,5 +293,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#B91C1C',
     fontWeight: '600',
+  },
+  processingBanner: {
+    backgroundColor: '#D1FAE5',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+  },
+  processingBannerText: {
+    color: '#065F46',
+    fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

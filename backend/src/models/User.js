@@ -175,10 +175,25 @@ const userSchema = new mongoose.Schema({
     active: { type: Boolean, default: false },
     expiresAt: { type: Date, default: null },
   },
-  // Stripe Customer ID (para carteira de pagamentos)
+  // Stripe Customer ID (legado — mantido para referência histórica)
   stripeCustomerId: {
     type: String,
     default: null,
+  },
+  // Pagar.me — ID do recebedor (rcp_...) criado ao cadastrar dados bancários
+  pagarmeRecipientId: {
+    type: String,
+    default: null,
+  },
+  // Dados bancários do profissional (usados para criar o recebedor no Pagar.me)
+  bankAccount: {
+    holderName:        { type: String, default: null },
+    bank:              { type: String, default: null }, // código do banco ex: "341"
+    branchNumber:      { type: String, default: null },
+    branchCheckDigit:  { type: String, default: null },
+    accountNumber:     { type: String, default: null },
+    accountCheckDigit: { type: String, default: null },
+    accountType:       { type: String, enum: ['checking', 'savings', null], default: null },
   },
   // Data em que o usuário aceitou os Termos de Uso
   termsAcceptedAt: {

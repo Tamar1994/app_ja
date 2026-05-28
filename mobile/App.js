@@ -1,12 +1,10 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useRef, useState } from 'react';
-import { AppRegistry } from 'react-native';
+import React, { useEffect, useRef } from 'react';
 import { registerRootComponent } from 'expo';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from './src/context/AuthContext';
 import { SocketProvider } from './src/context/SocketContext';
 import { NotificationProvider } from './src/context/NotificationContext';
@@ -15,28 +13,10 @@ import { setPendingNotification } from './src/services/pendingNotification';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api';
 
-// Chave publicável fallback (teste) — substituída dinamicamente ao conectar ao backend
-const STRIPE_KEY_FALLBACK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
-  || 'pk_test_51TUoUF4ADp0LjMACG0EjuLkj8Iy2iCr4XiTHmml5rfXZj7SfPxBH9gBLfpJnDBsy00zYpuFAgqwYXnd6WmqsSf9p00OPpz9IUx';
 
-// Registra a tarefa headless exigida pelo SDK do Stripe para evitar o warning
-// "No task registered for key StripeKeepJsAwakeTask"
-AppRegistry.registerHeadlessTask('StripeKeepJsAwakeTask', () => async () => {});
 
 function App() {
   const notificationResponseSub = useRef(null);
-  const [stripeKey, setStripeKey] = useState(STRIPE_KEY_FALLBACK);
-
-  useEffect(() => {
-    // Busca a chave publicável atual do backend (pode ser test ou production)
-    fetch(`${API_URL}/payments/config`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.publishableKey) setStripeKey(data.publishableKey);
-      })
-      .catch(() => {/* usa fallback */});
-  }, []);
-
   useEffect(() => {
     // Quando usuário TOCA na notificação (app estava em background ou fechado)
     notificationResponseSub.current = Notifications.addNotificationResponseReceivedListener(
@@ -78,16 +58,14 @@ function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StripeProvider publishableKey={stripeKey} merchantIdentifier="merchant.com.chamejabr.app" scheme="ja-app" locale="pt-BR">
-          <AuthProvider>
-            <SocketProvider>
-              <NotificationProvider>
-                <RootNavigator />
-              </NotificationProvider>
-              <StatusBar style="auto" />
-            </SocketProvider>
-          </AuthProvider>
-        </StripeProvider>
+        <AuthProvider>
+          <SocketProvider>
+            <NotificationProvider>
+              <RootNavigator />
+            </NotificationProvider>
+            <StatusBar style="auto" />
+          </SocketProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
