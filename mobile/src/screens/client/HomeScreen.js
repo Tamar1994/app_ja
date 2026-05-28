@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList,
   SafeAreaView, StatusBar, ActivityIndicator, RefreshControl, Dimensions, Image,
   Modal, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
@@ -54,6 +54,104 @@ const STATUS_ICONS = {
   completed: 'checkmark-circle',
   cancelled: 'close-circle',
 };
+
+// ------- Como funciona — carrossel -------
+const HOW_SLIDES_RAW = [
+  { key: 'h1', src: require('../../../assets/how-1.png'), bg: '#FDE8D8' },
+  { key: 'h2', src: require('../../../assets/how-2.png'), bg: '#EEF0FA' },
+  { key: 'h3', src: require('../../../assets/how-3.png'), bg: '#EAF5EA' },
+];
+// Clone do primeiro slide no final para loop infinito avançando
+const HOW_SLIDES = [...HOW_SLIDES_RAW, { ...HOW_SLIDES_RAW[0], key: 'h1c' }];
+const SLIDE_W = width - spacing.lg * 2;
+const SLIDE_H = Math.min(Math.round(SLIDE_W * (4 / 3)), 400);
+
+function HowItWorksCarousel() {
+  const [dotIdx, setDotIdx] = useState(0);
+  const listRef = useRef(null);
+  const timerRef = useRef(null);
+  const listIdxRef = useRef(0);
+  const blockRef = useRef(false);
+
+  const scrollTo = useCallback((idx, animated = true) => {
+    listRef.current?.scrollToIndex({ index: idx, animated });
+    listIdxRef.current = idx;
+    setDotIdx(idx % HOW_SLIDES_RAW.length);
+  }, []);
+
+  const startTimer = useCallback(() => {
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const next = listIdxRef.current + 1;
+      if (next >= HOW_SLIDES.length - 1) {
+        // Rola até o clone do slide 1 (parece transição suave)
+        scrollTo(HOW_SLIDES.length - 1);
+        // Depois salta de volta para o real índice 0 sem animação
+        setTimeout(() => { blockRef.current = true; scrollTo(0, false); }, 380);
+      } else {
+        scrollTo(next);
+      }
+    }, 3800);
+  }, [scrollTo]);
+
+  useEffect(() => {
+    startTimer();
+    return () => clearInterval(timerRef.current);
+  }, [startTimer]);
+
+  const onMomentumScrollEnd = useCallback((e) => {
+    if (blockRef.current) { blockRef.current = false; return; }
+    const page = Math.round(e.nativeEvent.contentOffset.x / SLIDE_W);
+    if (page >= HOW_SLIDES_RAW.length) {
+      // Usuário chegou no clone → volta para o real sem animação
+      blockRef.current = true;
+      scrollTo(0, false);
+    } else {
+      listIdxRef.current = page;
+      setDotIdx(page);
+    }
+    startTimer();
+  }, [scrollTo, startTimer]);
+
+  return (
+    <View style={styles.howCarousel}>
+      <Text style={styles.sectionTitle}>Como funciona</Text>
+      <View style={styles.howCarouselTrack}>
+        <FlatList
+          ref={listRef}
+          data={HOW_SLIDES}
+          keyExtractor={item => item.key}
+          horizontal
+          pagingEnabled
+          bounces={false}
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={onMomentumScrollEnd}
+          getItemLayout={(_, i) => ({ length: SLIDE_W, offset: SLIDE_W * i, index: i })}
+          renderItem={({ item }) => (
+            <Image
+              source={item.src}
+              style={{ width: SLIDE_W, height: SLIDE_H }}
+              resizeMode="cover"
+            />
+          )}
+        />
+      </View>
+      <View style={styles.howDots}>
+        {HOW_SLIDES_RAW.map((_, i) => (
+          <TouchableOpacity
+            key={i}
+            onPress={() => { scrollTo(i); startTimer(); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <View style={[styles.howDot, i === dotIdx && styles.howDotActive]} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+// ------- fim carrossel -------
 
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
@@ -438,45 +536,8 @@ export default function HomeScreen({ navigation }) {
           })}
         </View>
 
-        {/* Como funciona */}
-        <View style={styles.howSection}>
-          <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Como funciona</Text>
-              <Text style={styles.sectionSubtitle}>Uma experiência pensada para ser rápida, clara e bonita.</Text>
-            </View>
-          </View>
-
-          <LinearGradient
-            colors={['#FFFFFF', '#FFF7EF']}
-            style={styles.howPanel}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View style={styles.howPanelGlow} />
-            {[
-              { icon: 'clipboard-outline', title: 'Solicite', desc: 'Descreva o que precisa e o app entende o pedido.', color: '#FF8C38' },
-              { icon: 'person-circle-outline', title: 'Conectamos', desc: 'O profissional certo recebe sua solicitação com prioridade.', color: '#2563EB' },
-              { icon: 'checkmark-circle-outline', title: 'Pronto', desc: 'Acompanhe, confirme e finalize tudo no aplicativo.', color: '#16A34A' },
-            ].map((step, index) => (
-              <View key={step.title} style={styles.howStepRow}>
-                <View style={styles.howStepRail}>
-                  <View style={[styles.howStepDot, { backgroundColor: step.color }]} />
-                  {index < 2 && <View style={styles.howStepLine} />}
-                </View>
-                <View style={styles.howStepCard}>
-                  <View style={[styles.howStepIcon, { backgroundColor: `${step.color}12` }]}>
-                    <Ionicons name={step.icon} size={22} color={step.color} />
-                  </View>
-                  <View style={styles.howStepText}>
-                    <Text style={styles.howStepTitle}>{step.title}</Text>
-                    <Text style={styles.howStepDesc}>{step.desc}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </LinearGradient>
-        </View>
+        {/* Como funciona — carrossel */}
+        <HowItWorksCarousel />
       </ScrollView>
 
       <Modal
@@ -732,7 +793,13 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   soonText: { fontSize: 10, color: colors.textLight, fontWeight: '600' },
-  // How it works
+  // How it works — carrossel
+  howCarousel: { marginTop: spacing.xs, marginBottom: spacing.md },
+  howCarouselTrack: { borderRadius: 20, overflow: 'hidden', ...shadows.md },
+  howDots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 },
+  howDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
+  howDotActive: { width: 22, height: 8, borderRadius: 4, backgroundColor: colors.primary },
+  // How it works (legacy, kept for safety)
   howSection: { gap: spacing.sm, marginTop: spacing.xs },
   sectionHeaderRow: {
     flexDirection: 'row',
