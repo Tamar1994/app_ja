@@ -18,10 +18,11 @@ Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const type = notification.request.content.data?.type;
     if (type === 'support_message' && isSupportChatOpen()) {
-      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+      return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
     }
     return {
-      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: true,
       shouldSetBadge: false,
     };
