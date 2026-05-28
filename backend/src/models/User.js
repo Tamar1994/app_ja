@@ -180,12 +180,12 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
-  // Pagar.me — ID do recebedor (rcp_...) criado ao cadastrar dados bancários
-  pagarmeRecipientId: {
+  // Asaas — ID do cliente (cus_...) criado lazy na primeira cobrança
+  asaasCustomerId: {
     type: String,
     default: null,
   },
-  // Dados bancários do profissional (usados para criar o recebedor no Pagar.me)
+  // Dados bancários do profissional (usados para saque via Asaas)
   bankAccount: {
     holderName:        { type: String, default: null },
     bank:              { type: String, default: null }, // código do banco ex: "341"

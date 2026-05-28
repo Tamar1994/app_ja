@@ -17,8 +17,8 @@ const { dispatchToNextProfessional, clearRequestTimer, sendExpoPush } = require(
 const { ensureServiceChatForRequest, closeServiceChatForRequest } = require('../utils/serviceChat');
 const { resolveProfessionalRewardForCompletion } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
-const pagarme = require('../services/pagarmeService');
-const PagarmeOrder = require('../models/PagarmeOrder');
+const AsaasPayment = require('../models/AsaasPayment');
+const asaas = require('../services/asaasService');
 const {
   findCoverageCityId,
   findCancellationConfig,
@@ -1061,15 +1061,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
         'pricing.platformFee': platformFee,
       }, { new: true });
 
-      // Determinar quando o saldo fica disponível para saque, baseado no paidAt real do Pagar.me
-      // PIX: D+1 após o pagamento (clearing padrão Pagar.me)
+      // Determinar quando o saldo fica disponível para saque, baseado no paidAt real da Asaas
+      // PIX: D+1 após o pagamento (clearing padrão)
       // Cartão de crédito: D+2 após o pagamento (liquidação padrão 1x)
-      // Wallet-only: imediato (não passa pelo Pagar.me)
-      const pagarmeOrder = await PagarmeOrder.findOne({ serviceRequest: request._id, status: 'paid' })
+      // Wallet-only: imediato (não passa pela Asaas)
+      const asaasPayment = await AsaasPayment.findOne({ serviceRequest: request._id, status: 'paid' })
         .select('paymentMethod paidAt')
         .lean();
-      const paymentMethod = pagarmeOrder?.paymentMethod || 'wallet';
-      const paidAt = pagarmeOrder?.paidAt ? new Date(pagarmeOrder.paidAt) : new Date();
+      const paymentMethod = asaasPayment?.paymentMethod || 'wallet';
+      const paidAt = asaasPayment?.paidAt ? new Date(asaasPayment.paidAt) : new Date();
       let availableAt;
       if (paymentMethod === 'credit_card') {
         availableAt = new Date(paidAt.getTime() + 2 * 24 * 60 * 60 * 1000); // D+2
@@ -1109,8 +1109,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
         platformFeeDiscountAmount: reward.feeDiscountAmount,
         platformFeePercentApplied: reward.feePercentApplied,
       };
-      // Nota: o repasse ao profissional ocorre quando ele solicita saque via Pagar.me.
-      // A plataforma retém o valor no recebedor da plataforma até a solicitação.
+      // Nota: o repasse ao profissional ocorre quando ele solicita saque via Asaas (PIX CPF).
+      // A plataforma retém o valor na conta Asaas até a solicitação de saque.
     } catch (paymentErr) {
       // Erro no processamento financeiro não impede a conclusão do serviço
       console.error('[complete] Erro no processamento financeiro:', paymentErr);
@@ -1193,7 +1193,7 @@ router.get('/:id/cancel-preview', auth, async (req, res) => {
 
     const paymentMethod = request.payment?.method || null;
     const externalPaid  = amounts.externalPaid;
-    const isCard = paymentMethod && (paymentMethod.startsWith('stripe') || paymentMethod === 'card');
+    const isCard = paymentMethod && paymentMethod === 'card'; // 'card' = Asaas cartão
     const isPix  = paymentMethod && (paymentMethod.startsWith('pix') || paymentMethod === 'cora_pix');
 
     res.json({
@@ -1219,9 +1219,9 @@ router.get('/:id/cancel-preview', auth, async (req, res) => {
           method: paymentMethod,
           label: isCard ? 'Cartão de crédito' : isPix ? 'PIX' : null,
           note: isCard
-            ? 'O estorno é automático via Stripe. Pode levar até 2 faturas para aparecer.'
+            ? 'O estorno é automático via Asaas. Pode levar até 2 faturas para aparecer no cartão.'
             : isPix
-              ? 'O estorno é feito em até 24 horas via PIX para a chave cadastrada.'
+              ? 'O estorno é processado automaticamente via PIX. Pode levar até 10 dias úteis.'
               : null,
         },
       },
@@ -1352,8 +1352,8 @@ router.patch('/:id/cancel', auth, async (req, res) => {
  *  - Devolve parcela de wallet profissional ao wallet (imediato)
  *  - Crédita taxa do profissional no wallet profissional (se aplicável)
  *  - Para 'wallet': restante vai para clientWallet
- *  - Para 'original' + cartão: solicita refund via Stripe
- *  - Para 'original' + PIX: cria PixRefundRequest na fila do admin
+ *  - Para 'original' + cartão: solicita refund via Asaas (automático)
+ *  - Para 'original' + PIX: tenta refund via Asaas; cria PixRefundRequest como fallback
  */
 async function processCancellationRefund({ preCancel, request, feeResult, amounts, refundDestination }) {
   logger.info('[refund] iniciando processCancellationRefund', {
@@ -1456,12 +1456,12 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
             metadata: { label: 'Estorno de cancelamento (pagamento externo → carteira)' },
           }], { session });
         } else {
-          // 'original' → Stripe ou PIX — tratado fora da transação (abaixo)
+          // 'original' → Asaas ou PIX — tratado fora da transação (abaixo)
           const paymentMethod = preCancel.payment?.method || '';
           const isPix = paymentMethod.startsWith('pix') || paymentMethod === 'cora_pix';
 
           if (isPix) {
-            // Cria entrada na fila de estorno PIX
+            // Cria entrada de auditoria e fallback para fila de admin
             const pixKeyUser = await User.findById(preCancel.client).select('cpf').lean();
             const [prd] = await PixRefundRequest.create([{
               serviceRequest: preCancel._id,
@@ -1481,7 +1481,7 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
             }], { session });
             pixRefundDoc = prd;
           }
-          // Stripe: processado fora da transação para evitar rollback em caso de erro de rede
+          // Asaas (cartão): processado fora da transação para não misturar erros de rede
         }
       }
 
@@ -1504,29 +1504,30 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
     logger.debug('[refund] sessão MongoDB encerrada', { requestId: preCancel._id });
   }
 
-  // Stripe refund (fora da transação Mongo para não misturar erros de rede)
+  // Asaas refund — cartão (fora da transação Mongo para não misturar erros de rede)
   if (
     refundDestination === 'original' &&
     amounts.externalRefundAmount > 0 &&
     !pixRefundDoc
   ) {
-    const paymentMethod   = preCancel.payment?.method || '';
-    const isStripe = paymentMethod.startsWith('stripe') || paymentMethod === 'card';
-    if (isStripe && preCancel.payment?.transactionId) {
+    const paymentMethod = preCancel.payment?.method || '';
+    const isCard = paymentMethod === 'card' || paymentMethod.startsWith('stripe'); // 'card' = Asaas cartão
+    if (isCard) {
       try {
-        const getStripe = require('../routes/payments').getStripe;
-        const stripe    = await getStripe();
-        const stripeRefund = await stripe.refunds.create({
-          payment_intent: preCancel.payment.transactionId,
-          amount: Math.round(amounts.externalRefundAmount * 100), // centavos
-          reason: 'requested_by_customer',
-        });
-        await ServiceRequest.findByIdAndUpdate(preCancel._id, {
-          'cancellation.stripeRefundId': stripeRefund.id,
-        });
+        const asaasDoc = await AsaasPayment.findOne({ serviceRequest: preCancel._id, status: 'paid' }).lean();
+        if (asaasDoc?.asaasPaymentId && asaas.isConfigured()) {
+          await asaas.refundPayment(asaasDoc.asaasPaymentId);
+          await ServiceRequest.findByIdAndUpdate(preCancel._id, {
+            'cancellation.asaasRefundId': asaasDoc.asaasPaymentId,
+          });
+          logger.info('[refund] estorno cartão Asaas OK', { requestId: preCancel._id, asaasId: asaasDoc.asaasPaymentId });
+        } else {
+          // Asaas não configurado ou pagamento não encontrado → fallback para carteira
+          throw new Error('AsaasPayment não encontrado ou Asaas não configurado');
+        }
       } catch (err) {
-        logger.error('[refund] erro no estorno Stripe', { requestId: preCancel._id, err: err.message, stack: err.stack });
-        // Falha no Stripe → retorna para carteira como fallback
+        logger.error('[refund] erro no estorno Asaas (cartão)', { requestId: preCancel._id, err: err.message });
+        // Fallback: creditar na carteira do cliente
         const clientUser = await User.findById(preCancel.client);
         if (clientUser) {
           if (!clientUser.clientWallet) clientUser.clientWallet = { balance: 0, totalRefunded: 0 };
@@ -1544,10 +1545,28 @@ async function processCancellationRefund({ preCancel, request, feeResult, amount
             source: 'client_wallet',
             amount: amounts.externalRefundAmount,
             balanceAfterClientWallet: clientUser.clientWallet.balance,
-            metadata: { label: 'Estorno de cancelamento (fallback carteira — falha Stripe)' },
+            metadata: { label: 'Estorno de cancelamento (fallback carteira — falha Asaas)' },
           });
         }
       }
+    }
+  }
+
+  // Asaas refund — PIX (tenta automatizar; PixRefundRequest serve de fallback/auditoria)
+  if (pixRefundDoc && refundDestination === 'original' && amounts.externalRefundAmount > 0) {
+    try {
+      const asaasDoc = await AsaasPayment.findOne({ serviceRequest: preCancel._id, status: 'paid' }).lean();
+      if (asaasDoc?.asaasPaymentId && asaas.isConfigured()) {
+        await asaas.refundPayment(asaasDoc.asaasPaymentId);
+        await PixRefundRequest.findByIdAndUpdate(pixRefundDoc._id, { status: 'completed', processedAt: new Date() });
+        await ServiceRequest.findByIdAndUpdate(preCancel._id, {
+          'cancellation.asaasRefundId': asaasDoc.asaasPaymentId,
+        });
+        logger.info('[refund] estorno PIX Asaas OK', { requestId: preCancel._id, asaasId: asaasDoc.asaasPaymentId });
+      }
+      // Se não conseguir, PixRefundRequest permanece 'pending' para admin processar manualmente
+    } catch (err) {
+      logger.warn('[refund] falha no estorno PIX via Asaas — fila manual ativa', { requestId: preCancel._id, err: err.message });
     }
   }
 

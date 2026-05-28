@@ -26,7 +26,7 @@ export default function PaymentScreen({ navigation, route }) {
   const [useWallet, setUseWallet] = useState(false);
   const [walletPreview, setWalletPreview] = useState({ walletApplied: 0, walletAppliedClient: 0, walletAppliedProfessional: 0 });
 
-  // Formulário de cartão Pagar.me
+  // Formulário de cartão
   const [cardNumber, setCardNumber] = useState('');
   const [cardHolder, setCardHolder] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
@@ -157,7 +157,7 @@ export default function PaymentScreen({ navigation, route }) {
         return;
       }
 
-      // ── Fluxo cartão via Pagar.me ──────────────────────────────────────────
+      // ── Fluxo cartão via Asaas (dados enviados ao backend) ───────────────
       const rawNumber = cardNumber.replace(/\s/g, '');
       if (!rawNumber || rawNumber.length < 13) { Alert.alert('Atenção', 'Número de cartão inválido.'); setPaying(false); return; }
       if (!cardHolder.trim()) { Alert.alert('Atenção', 'Nome do titular é obrigatório.'); setPaying(false); return; }
@@ -174,37 +174,13 @@ export default function PaymentScreen({ navigation, route }) {
       }
       if (!cardCvv || cardCvv.length < 3) { Alert.alert('Atenção', 'CVV inválido.'); setPaying(false); return; }
 
-      // 1. Buscar chave pública
-      const { data: configData } = await paymentAPI.getConfig();
-      const publicKey = configData?.publicKey;
-      if (!publicKey) { Alert.alert('Erro', 'Não foi possível obter a chave de pagamento. Tente novamente.'); setPaying(false); return; }
-
-      // 2. Tokenizar cartão diretamente no Pagar.me (dados nunca passam pelo nosso backend)
-      const tokenRes = await fetch(`https://api.pagar.me/core/v5/tokens?appId=${publicKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'card',
-          card: {
-            number: rawNumber,
-            holder_name: cardHolder.trim(),
-            exp_month: expMonth,
-            exp_year: '20' + expYear,
-            cvv: cardCvv,
-          },
-        }),
-      });
-      const tokenData = await tokenRes.json();
-      if (!tokenData?.id) {
-        const errMsg = tokenData?.errors?.[0]?.message || tokenData?.message || 'Dados do cartão inválidos.';
-        Alert.alert('Cartão recusado', errMsg);
-        setPaying(false);
-        return;
-      }
-
-      // 3. Enviar token ao backend para cobrança
+      // Enviar dados do cartão ao backend — Asaas processa servidor-a-servidor
       const { data } = await paymentAPI.cardPay({
-        cardToken: tokenData.id,
+        holderName: cardHolder.trim(),
+        cardNumber: rawNumber,
+        expiryMonth: expMonth,
+        expiryYear: expYear,
+        ccv: cardCvv,
         ...requestData,
         couponCodes: selectedCouponCodes,
         useWallet,
@@ -331,11 +307,11 @@ export default function PaymentScreen({ navigation, route }) {
           <Text style={styles.secureText}>
             {selectedMethod === 'pix'
               ? 'PIX com QR único e expiração em 15 minutos'
-              : 'Pagamento seguro via Pagar.me · Dados tokenizados'}
+              : 'Pagamento seguro via Asaas · Dados criptografados'}
           </Text>
         </View>
 
-        {/* Formulário de cartão Pagar.me */}
+        {/* Formulário de cartão */}
         {selectedMethod === 'card' && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Dados do cartão</Text>
@@ -492,6 +468,12 @@ export default function PaymentScreen({ navigation, route }) {
           <View style={styles.totalRow}>
             <Text style={styles.discountLabel}>Desconto em cupons</Text>
             <Text style={styles.discountValue}>- R$ {discountTotal.toFixed(2)}</Text>
+          </View>
+        )}
+        {useWallet && walletPreview.walletApplied > 0 && (
+          <View style={styles.totalRow}>
+            <Text style={styles.walletDiscountLabel}>Créditos da carteira</Text>
+            <Text style={styles.walletDiscountValue}>- R$ {walletPreview.walletApplied.toFixed(2).replace('.', ',')}</Text>
           </View>
         )}
         <View style={styles.totalRow}>
@@ -677,6 +659,8 @@ const styles = StyleSheet.create({
   subtotalValue: { fontSize: 13, color: colors.textSecondary, textDecorationLine: 'line-through' },
   discountLabel: { fontSize: 13, color: '#2E7D32', fontWeight: '600' },
   discountValue: { fontSize: 13, color: '#2E7D32', fontWeight: '700' },
+  walletDiscountLabel: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+  walletDiscountValue: { fontSize: 13, color: colors.primary, fontWeight: '700' },
   totalLabel: { fontSize: 16, fontWeight: '600', color: colors.textSecondary },
   totalValue: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
   payBtnWrap: { borderRadius: borderRadius.lg, overflow: 'hidden' },

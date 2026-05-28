@@ -1,19 +1,18 @@
-﻿'use strict';
+'use strict';
 const express = require('express');
 const mongoose = require('mongoose');
-const QRCode = require('qrcode');
 const auth = require('../middleware/auth');
 const { adminAuth, requireRole } = require('../middleware/adminAuth');
 const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
-const PagarmeOrder = require('../models/PagarmeOrder');
+const AsaasPayment = require('../models/AsaasPayment');
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
 const { resolveCouponsForCheckout } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
-const pagarme = require('../services/pagarmeService');
+const asaas = require('../services/asaasService');
 
 const router = express.Router();
 
@@ -104,27 +103,27 @@ async function applyWalletDebit({ userId, serviceRequestId, walletUsage, transac
   }
 }
 
-// ── Criação do ServiceRequest (idempotente) ───────────────────────────────────
+// ── Criação do ServiceRequest a partir de pagamento Asaas ─────────────────────
 
-async function createRequestFromPagarmeOrder(order, io) {
-  if (order.serviceRequest) {
-    const existing = await ServiceRequest.findById(order.serviceRequest);
+async function createRequestFromAsaasPayment(payment, io) {
+  if (payment.serviceRequest) {
+    const existing = await ServiceRequest.findById(payment.serviceRequest);
     if (existing) return existing;
   }
 
-  const txId = `pagarme:${order.pagarmeOrderId}`;
+  const txId = `asaas:${payment.asaasPaymentId}`;
   const existingByTx = await ServiceRequest.findOne({ 'payment.transactionId': txId });
   if (existingByTx) {
-    if (!order.serviceRequest) {
-      order.serviceRequest = existingByTx._id;
-      order.status = 'paid';
-      if (!order.paidAt) order.paidAt = new Date();
-      await order.save();
+    if (!payment.serviceRequest) {
+      payment.serviceRequest = existingByTx._id;
+      payment.status = 'paid';
+      if (!payment.paidAt) payment.paidAt = new Date();
+      await payment.save();
     }
     return existingByTx;
   }
 
-  const p = order.requestPayload || {};
+  const p = payment.requestPayload || {};
   const address = p.address || {};
   const serviceTypeSlug = p.serviceTypeSlug || null;
   const tierLabel = p.tierLabel || null;
@@ -150,19 +149,19 @@ async function createRequestFromPagarmeOrder(order, io) {
     state: address?.state || null,
   });
 
-  const discountTotal = Number(order.discountTotal || 0);
-  const walletAppliedTotal = Number(order.walletAppliedTotal || 0);
-  const walletAppliedClient = Number(order.walletAppliedClient || 0);
-  const walletAppliedProfessional = Number(order.walletAppliedProfessional || 0);
+  const discountTotal = Number(payment.discountTotal || 0);
+  const walletAppliedTotal = Number(payment.walletAppliedTotal || 0);
+  const walletAppliedClient = Number(payment.walletAppliedClient || 0);
+  const walletAppliedProfessional = Number(payment.walletAppliedProfessional || 0);
   const customerTotalAfterCoupons = Math.max(0, estimated - discountTotal);
   const customerTotalPaid = Math.max(0, customerTotalAfterCoupons - walletAppliedTotal);
 
-  const appliedCoupons = Array.isArray(order.appliedCoupons) ? order.appliedCoupons : [];
+  const appliedCoupons = Array.isArray(payment.appliedCoupons) ? payment.appliedCoupons : [];
   const couponDocs = await Coupon.find({ code: { $in: appliedCoupons.map((c) => c.code) } }).select('_id code');
   const couponByCode = new Map(couponDocs.map((c) => [c.code, c]));
 
   const request = await ServiceRequest.create({
-    client: order.client,
+    client: payment.client,
     serviceTypeSlug,
     requestType: isScheduled ? 'scheduled' : 'immediate',
     status: isScheduled ? 'pending_professional' : 'searching',
@@ -191,19 +190,19 @@ async function createRequestFromPagarmeOrder(order, io) {
     },
     payment: {
       status: 'paid',
-      method: order.paymentMethod === 'credit_card' ? 'card' : 'pix',
+      method: payment.paymentMethod === 'credit_card' ? 'card' : 'pix',
       transactionId: txId,
-      paidAt: order.paidAt || new Date(),
+      paidAt: payment.paidAt || new Date(),
       walletUsedAmount: walletAppliedTotal,
     },
   });
 
   if (walletAppliedTotal > 0) {
     await applyWalletDebit({
-      userId: order.client,
+      userId: payment.client,
       serviceRequestId: request._id,
       walletUsage: { fromClientWallet: walletAppliedClient, fromProfessionalWallet: walletAppliedProfessional },
-      transactionLabel: `Pagamento ${order.paymentMethod === 'pix' ? 'Pix' : 'Cartão'} parcial com carteira`,
+      transactionLabel: `Pagamento ${payment.paymentMethod === 'pix' ? 'Pix' : 'Cartão'} parcial com carteira`,
     });
   }
 
@@ -216,7 +215,7 @@ async function createRequestFromPagarmeOrder(order, io) {
           update: {
             $setOnInsert: {
               coupon: couponByCode.get(coupon.code)._id,
-              user: order.client,
+              user: payment.client,
               serviceRequest: request._id,
               paymentIntentId: txId,
               couponCodeSnapshot: coupon.code,
@@ -229,34 +228,37 @@ async function createRequestFromPagarmeOrder(order, io) {
     if (redemptions.length) await CouponRedemption.bulkWrite(redemptions, { ordered: false });
   }
 
-  order.serviceRequest = request._id;
-  order.status = 'paid';
-  if (!order.paidAt) order.paidAt = new Date();
-  await order.save();
+  payment.serviceRequest = request._id;
+  payment.status = 'paid';
+  if (!payment.paidAt) payment.paidAt = new Date();
+  await payment.save();
 
   if (io && !isScheduled) dispatchToNextProfessional(request._id, io);
   return request;
 }
 
-function buildPagarmeCustomer(user) {
-  const phoneDigits = onlyDigits(user.phone);
-  const ddd = phoneDigits.slice(0, 2);
-  const number = phoneDigits.slice(2);
-  return {
+// ── Obter (ou criar) customerId Asaas para o usuário (lazy) ──────────────────
+
+async function getOrCreateAsaasCustomerId(user) {
+  if (user.asaasCustomerId) return user.asaasCustomerId;
+
+  const customerId = await asaas.findOrCreateCustomer({
     name: user.name,
     email: user.email,
-    document: onlyDigits(user.cpf) || undefined,
-    document_type: 'CPF',
-    type: 'individual',
-    ...(ddd && number ? { phones: { home_phone: { country_code: '55', area_code: ddd, number } } } : {}),
-  };
+    cpf: user.cpf,
+    phone: user.phone,
+  });
+
+  await User.findByIdAndUpdate(user._id, { asaasCustomerId: customerId });
+  user.asaasCustomerId = customerId;
+  return customerId;
 }
 
 // ── ROTAS ─────────────────────────────────────────────────────────────────────
 
 // GET /api/payments/config
 router.get('/config', (req, res) => {
-  res.json({ mode: pagarme.getMode(), publicKey: pagarme.getPublicKey() || null });
+  res.json({ mode: asaas.getMode(), provider: 'asaas', configured: asaas.isConfigured() });
 });
 
 // POST /api/payments/preview
@@ -264,10 +266,15 @@ router.post('/preview', auth, async (req, res) => {
   if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem simular pagamento' });
   }
-  const { serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate, couponCodes, useWallet, walletAmount } = req.body;
+  const { serviceTypeSlug, tierLabel, selectedUpsells = [], scheduledDate, address, couponCodes, useWallet, walletAmount } = req.body;
   if (!tierLabel) return res.status(400).json({ message: 'tierLabel é obrigatório' });
   try {
-    const { estimated } = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate: scheduledDate || null });
+    const { estimated } = await calculateCheckoutPricing({
+      serviceTypeSlug, tierLabel, selectedUpsells,
+      scheduledDate: scheduledDate || null,
+      city: address?.city || null,
+      state: address?.state || null,
+    });
     const checkout = await resolveCouponsForCheckout({ couponCodes, user: req.user, orderSubtotal: estimated });
     const walletInput = normalizeWalletInput(useWallet, walletAmount);
     const walletUsage = buildWalletUsage({ user: req.user, totalPayableAfterCoupons: checkout.pricing.finalTotal, requestedWalletAmount: walletInput.walletAmount, forceUseWallet: walletInput.useWallet });
@@ -291,9 +298,13 @@ router.post('/pix/create', auth, async (req, res) => {
   if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
-  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
+  if (!asaas.isConfigured()) return res.status(503).json({ message: 'Asaas não configurado' });
 
-  const { serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address, scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false } = req.body;
+  const {
+    serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address,
+    scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false,
+  } = req.body;
+
   if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
     return res.status(400).json({ message: 'Dados do pedido incompletos' });
   }
@@ -309,6 +320,7 @@ router.post('/pix/create', auth, async (req, res) => {
     const walletUsage = buildWalletUsage({ user, totalPayableAfterCoupons: checkout.pricing.finalTotal, requestedWalletAmount: walletInput.walletAmount, forceUseWallet: walletInput.useWallet });
     const payableAfterWallet = Number((checkout.pricing.finalTotal - walletUsage.totalWalletUsed).toFixed(2));
 
+    // Pagamento 100% via carteira interna
     if (payableAfterWallet <= 0) {
       const request = await ServiceRequest.create({
         client: req.user._id, serviceTypeSlug: serviceTypeSlug || null,
@@ -326,40 +338,64 @@ router.post('/pix/create', auth, async (req, res) => {
 
     if (payableAfterWallet < 5) return res.status(400).json({ message: 'Valor mínimo para Pix é de R$ 5,00 após carteira' });
 
-    const amountCents = Math.round(payableAfterWallet * 100);
-    const splitRules = pagarme.buildSplitRules({ amountCents, platformFeePercent, professionalRecipientId: null });
-    const orderCode = `ja-${req.user._id}-${Date.now()}`;
+    const customerId = await getOrCreateAsaasCustomerId(user);
 
-    const pagarmeResult = await pagarme.createPixOrder({
-      code: orderCode, amountCents, customer: buildPagarmeCustomer(user),
-      description: `Serviço ${tierLabel} - ${scheduledDate}`, expiresIn: 900, splitRules,
+    const asaasResult = await asaas.createPixPayment({
+      customerId,
+      value: payableAfterWallet,
+      description: `Serviço ${tierLabel}`,
+      externalReference: `ja-${req.user._id}-${Date.now()}`,
     });
 
-    const charge = pagarmeResult.charges?.[0];
-    const lastTx = charge?.last_transaction || {};
-    const pixEmv = lastTx.qr_code || null;
-    const pixQrCodeUrl = lastTx.qr_code_url || null;
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    let pixPayload = null;
+    let pixEncodedImage = null;
+    let pixExpiresAt = null;
 
-    const pagarmeOrder = await PagarmeOrder.create({
-      client: req.user._id, pagarmeOrderId: pagarmeResult.id, pagarmeChargeId: charge?.id || null,
-      paymentMethod: 'pix', status: 'pending', amount: payableAfterWallet, amountCents,
-      subtotal: estimated, discountTotal: checkout.pricing.totalDiscount,
-      walletAppliedTotal: walletUsage.totalWalletUsed, walletAppliedClient: walletUsage.fromClientWallet, walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+    try {
+      const qr = await asaas.getPixQrCode(asaasResult.id);
+      pixPayload = qr.payload || null;
+      pixEncodedImage = qr.encodedImage || null;
+      pixExpiresAt = qr.expirationDate ? new Date(qr.expirationDate) : new Date(Date.now() + 30 * 60 * 1000);
+    } catch (qrErr) {
+      console.error('[pix/create] Erro ao buscar QR Asaas:', qrErr.message);
+      pixExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    }
+
+    const asaasPayment = await AsaasPayment.create({
+      client: req.user._id,
+      asaasPaymentId: asaasResult.id,
+      asaasCustomerId: customerId,
+      paymentMethod: 'pix',
+      status: 'pending',
+      asaasStatus: asaasResult.status,
+      amount: payableAfterWallet,
+      subtotal: estimated,
+      discountTotal: checkout.pricing.totalDiscount,
+      walletAppliedTotal: walletUsage.totalWalletUsed,
+      walletAppliedClient: walletUsage.fromClientWallet,
+      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
       appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({ code: c.code, discountAmount: c.discountAmount })),
       rejectedCoupons: checkout.rejectedCoupons,
       requestPayload: { serviceTypeSlug: serviceTypeSlug || null, tierLabel, selectedUpsells: resolvedUpsells, notes: notes || '', address, scheduledDate, isScheduled: !!isScheduled },
-      pixEmv, pixQrCodeUrl, pixExpiresAt: expiresAt,
-      platformRecipientId: pagarme.getPlatformRecipientId() || null, professionalRecipientId: null, splitApplied: splitRules.length > 0,
+      pixPayload,
+      pixEncodedImage,
+      pixExpiresAt,
     });
 
     return res.status(201).json({
       charge: {
-        id: pagarmeOrder._id, status: pagarmeOrder.status, amount: pagarmeOrder.amount,
-        subtotal: pagarmeOrder.subtotal, discountTotal: pagarmeOrder.discountTotal,
-        walletApplied: pagarmeOrder.walletAppliedTotal, walletAppliedClient: pagarmeOrder.walletAppliedClient, walletAppliedProfessional: pagarmeOrder.walletAppliedProfessional,
-        appliedCoupons: pagarmeOrder.appliedCoupons, rejectedCoupons: pagarmeOrder.rejectedCoupons,
-        emv: pixEmv, qrCodeUrl: pixQrCodeUrl, expiresAt: pagarmeOrder.pixExpiresAt,
+        id: asaasPayment._id,
+        status: asaasPayment.status,
+        amount: asaasPayment.amount,
+        subtotal: asaasPayment.subtotal,
+        discountTotal: asaasPayment.discountTotal,
+        walletApplied: asaasPayment.walletAppliedTotal,
+        walletAppliedClient: asaasPayment.walletAppliedClient,
+        walletAppliedProfessional: asaasPayment.walletAppliedProfessional,
+        appliedCoupons: asaasPayment.appliedCoupons,
+        rejectedCoupons: asaasPayment.rejectedCoupons,
+        emv: pixPayload,
+        expiresAt: asaasPayment.pixExpiresAt,
       },
     });
   } catch (err) {
@@ -368,76 +404,120 @@ router.post('/pix/create', auth, async (req, res) => {
   }
 });
 
-// GET /api/payments/pix/:orderId/status
-router.get('/pix/:orderId/status', auth, async (req, res) => {
+// GET /api/payments/pix/:paymentId/status
+router.get('/pix/:paymentId/status', auth, async (req, res) => {
   try {
-    const pagarmeOrder = await PagarmeOrder.findById(req.params.orderId);
-    if (!pagarmeOrder) return res.status(404).json({ message: 'Pedido não encontrado' });
-    if (String(pagarmeOrder.client) !== String(req.user._id)) return res.status(403).json({ message: 'Acesso negado' });
+    const payment = await AsaasPayment.findById(req.params.paymentId);
+    if (!payment) return res.status(404).json({ message: 'Pedido não encontrado' });
+    if (String(payment.client) !== String(req.user._id)) return res.status(403).json({ message: 'Acesso negado' });
 
-    if (pagarmeOrder.status === 'pending' && pagarmeOrder.pixExpiresAt && new Date() > pagarmeOrder.pixExpiresAt) {
-      pagarmeOrder.status = 'expired';
-      await pagarmeOrder.save();
+    if (payment.status === 'pending' && payment.pixExpiresAt && new Date() > payment.pixExpiresAt) {
+      payment.status = 'expired';
+      payment.asaasStatus = 'OVERDUE';
+      await payment.save();
     }
 
-    if (pagarmeOrder.status === 'pending' && pagarme.isConfigured()) {
+    if (payment.status === 'pending' && asaas.isConfigured()) {
       try {
-        const remoteOrder = await pagarme.getOrder(pagarmeOrder.pagarmeOrderId);
-        if (remoteOrder.status === 'paid') {
-          pagarmeOrder.status = 'paid';
-          pagarmeOrder.paidAt = pagarmeOrder.paidAt || new Date();
-          if (remoteOrder.charges?.[0]?.id && !pagarmeOrder.pagarmeChargeId) pagarmeOrder.pagarmeChargeId = remoteOrder.charges[0].id;
-          await pagarmeOrder.save();
+        const remote = await asaas.getPayment(payment.asaasPaymentId);
+        const remoteStatus = remote.status || '';
+
+        if (remoteStatus === 'RECEIVED' || remoteStatus === 'CONFIRMED') {
+          payment.status = 'paid';
+          payment.asaasStatus = remoteStatus;
+          payment.paidAt = payment.paidAt || new Date();
+          await payment.save();
           const io = req.app.get('io');
-          await createRequestFromPagarmeOrder(pagarmeOrder, io);
-        } else if (remoteOrder.status === 'canceled') {
-          pagarmeOrder.status = 'cancelled';
-          await pagarmeOrder.save();
+          await createRequestFromAsaasPayment(payment, io);
+        } else if (remoteStatus === 'OVERDUE' || remoteStatus === 'DELETED') {
+          payment.status = 'expired';
+          payment.asaasStatus = remoteStatus;
+          await payment.save();
+        } else {
+          payment.asaasStatus = remoteStatus;
+          await payment.save();
         }
-      } catch { /* mantém status local */ }
+      } catch (pollErr) {
+        console.warn('[pix/status] Erro ao consultar Asaas:', pollErr.message);
+      }
     }
 
-    const remainingMs = pagarmeOrder.pixExpiresAt ? Math.max(0, new Date(pagarmeOrder.pixExpiresAt).getTime() - Date.now()) : 0;
+    const remainingMs = payment.pixExpiresAt ? Math.max(0, new Date(payment.pixExpiresAt).getTime() - Date.now()) : 0;
     return res.json({
-      id: pagarmeOrder._id, status: pagarmeOrder.status, amount: pagarmeOrder.amount,
-      subtotal: pagarmeOrder.subtotal, discountTotal: pagarmeOrder.discountTotal,
-      walletApplied: pagarmeOrder.walletAppliedTotal, walletAppliedClient: pagarmeOrder.walletAppliedClient, walletAppliedProfessional: pagarmeOrder.walletAppliedProfessional,
-      emv: pagarmeOrder.pixEmv, qrCodeUrl: pagarmeOrder.pixQrCodeUrl, expiresAt: pagarmeOrder.pixExpiresAt,
-      remainingSeconds: Math.ceil(remainingMs / 1000), requestId: pagarmeOrder.serviceRequest || null,
+      id: payment._id,
+      status: payment.status,
+      amount: payment.amount,
+      subtotal: payment.subtotal,
+      discountTotal: payment.discountTotal,
+      walletApplied: payment.walletAppliedTotal,
+      walletAppliedClient: payment.walletAppliedClient,
+      walletAppliedProfessional: payment.walletAppliedProfessional,
+      emv: payment.pixPayload,
+      expiresAt: payment.pixExpiresAt,
+      remainingSeconds: Math.ceil(remainingMs / 1000),
+      requestId: payment.serviceRequest || null,
     });
-  } catch { return res.status(500).json({ message: 'Erro ao consultar pedido Pix' }); }
+  } catch (err) {
+    console.error('[pix/status] error:', err);
+    return res.status(500).json({ message: 'Erro ao consultar pedido Pix' });
+  }
 });
 
-// GET /api/payments/pix/:orderId/qr
-router.get('/pix/:orderId/qr', async (req, res) => {
+// GET /api/payments/pix/:paymentId/qr
+router.get('/pix/:paymentId/qr', async (req, res) => {
   try {
-    const pagarmeOrder = await PagarmeOrder.findById(req.params.orderId).select('pixEmv');
-    if (!pagarmeOrder) return res.status(404).json({ message: 'Pedido não encontrado' });
-    if (!pagarmeOrder.pixEmv) return res.status(400).json({ message: 'QR code não disponível' });
-    const qrPng = await QRCode.toBuffer(pagarmeOrder.pixEmv, { type: 'png', width: 300, margin: 1, color: { dark: '#000000', light: '#FFFFFF' } });
+    const payment = await AsaasPayment.findById(req.params.paymentId).select('pixEncodedImage pixPayload asaasPaymentId');
+    if (!payment) return res.status(404).json({ message: 'Pedido não encontrado' });
+
+    let encoded = payment.pixEncodedImage;
+
+    if (!encoded && payment.asaasPaymentId && asaas.isConfigured()) {
+      try {
+        const qr = await asaas.getPixQrCode(payment.asaasPaymentId);
+        encoded = qr.encodedImage || null;
+        if (encoded) {
+          AsaasPayment.findByIdAndUpdate(payment._id, { pixEncodedImage: encoded, pixPayload: qr.payload || payment.pixPayload }).catch(() => {});
+        }
+      } catch { /* serve 404 abaixo */ }
+    }
+
+    if (!encoded) return res.status(404).json({ message: 'QR code não disponível' });
+
+    const imgBuffer = Buffer.from(encoded, 'base64');
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    return res.send(qrPng);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return res.send(imgBuffer);
   } catch (err) {
     console.error('[pix/qr] error:', err);
-    return res.status(500).json({ message: 'Erro ao gerar QR code' });
+    return res.status(500).json({ message: 'Erro ao servir QR code' });
   }
 });
 
 // POST /api/payments/card/pay
-// O mobile tokeniza o cartão direto no Pagar.me e envia o token aqui
 router.post('/card/pay', auth, async (req, res) => {
   if (req.user.userType !== 'client' && req.user.activeProfile !== 'client') {
     return res.status(403).json({ message: 'Apenas clientes podem fazer pagamentos' });
   }
-  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
+  if (!asaas.isConfigured()) return res.status(503).json({ message: 'Asaas não configurado' });
 
-  const { cardToken, serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address, scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false, installments = 1 } = req.body;
-  if (!cardToken) return res.status(400).json({ message: 'cardToken é obrigatório' });
-  if (!tierLabel || !address?.street || !address?.city || !scheduledDate) return res.status(400).json({ message: 'Dados do pedido incompletos' });
+  const {
+    holderName, cardNumber, expiryMonth, expiryYear, ccv,
+    serviceTypeSlug, tierLabel, selectedUpsells = [], notes, address,
+    scheduledDate, couponCodes, useWallet, walletAmount, isScheduled = false, installments = 1,
+  } = req.body;
+
+  if (!holderName || !cardNumber || !expiryMonth || !expiryYear || !ccv) {
+    return res.status(400).json({ message: 'Dados do cartão são obrigatórios' });
+  }
+  if (!tierLabel || !address?.street || !address?.city || !scheduledDate) {
+    return res.status(400).json({ message: 'Dados do pedido incompletos' });
+  }
 
   try {
     const user = await User.findById(req.user._id);
+    const cpf = onlyDigits(user.cpf);
+    if (!cpf || cpf.length !== 11) return res.status(400).json({ message: 'CPF válido é obrigatório para pagamento com cartão' });
+
     const { tier, tierPrice, upsellsTotal, estimated, platformFee, platformFeePercent, upsells: resolvedUpsells } = await calculateCheckoutPricing({ serviceTypeSlug, tierLabel, selectedUpsells, scheduledDate, city: address?.city || null, state: address?.state || null });
     const checkout = await resolveCouponsForCheckout({ couponCodes, user: req.user, orderSubtotal: estimated });
     const walletInput = normalizeWalletInput(useWallet, walletAmount);
@@ -459,89 +539,110 @@ router.post('/card/pay', auth, async (req, res) => {
       return res.status(201).json({ walletOnly: true, request });
     }
 
-    const amountCents = Math.round(payableAfterWallet * 100);
-    const splitRules = pagarme.buildSplitRules({ amountCents, platformFeePercent, professionalRecipientId: null });
-    const orderCode = `ja-card-${req.user._id}-${Date.now()}`;
+    const customerId = await getOrCreateAsaasCustomerId(user);
+    const remoteIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1').split(',')[0].trim();
 
-    const pagarmeResult = await pagarme.createCardOrder({
-      code: orderCode, amountCents, customer: buildPagarmeCustomer(user),
-      cardToken, installments: Number(installments) || 1, splitRules,
-    });
+    let asaasResult;
+    try {
+      asaasResult = await asaas.createCreditCardPayment({
+        customerId,
+        value: payableAfterWallet,
+        description: `Serviço ${tierLabel}`,
+        externalReference: `ja-card-${req.user._id}-${Date.now()}`,
+        holderName,
+        cardNumber,
+        expiryMonth,
+        expiryYear,
+        ccv,
+        cpf,
+        email: user.email,
+        phone: user.phone,
+        postalCode: address?.zipCode || '00000000',
+        addressNumber: address?.number || 'S/N',
+        installments: Number(installments) || 1,
+        remoteIp,
+      });
+    } catch (cardErr) {
+      const cardMsg = (cardErr.asaasResponse?.errors?.[0]?.description) || cardErr.message || 'Cartão recusado';
+      return res.status(402).json({ message: cardMsg });
+    }
 
-    const charge = pagarmeResult.charges?.[0];
-    const orderStatus = pagarmeResult.status || 'pending';
+    const isPaid = asaasResult.status === 'CONFIRMED' || asaasResult.status === 'RECEIVED';
 
-    const pagarmeOrder = await PagarmeOrder.create({
-      client: req.user._id, pagarmeOrderId: pagarmeResult.id, pagarmeChargeId: charge?.id || null,
-      paymentMethod: 'credit_card', status: orderStatus === 'paid' ? 'paid' : 'failed',
-      amount: payableAfterWallet, amountCents, subtotal: estimated,
-      discountTotal: checkout.pricing.totalDiscount, walletAppliedTotal: walletUsage.totalWalletUsed, walletAppliedClient: walletUsage.fromClientWallet, walletAppliedProfessional: walletUsage.fromProfessionalWallet,
+    const asaasPayment = await AsaasPayment.create({
+      client: req.user._id,
+      asaasPaymentId: asaasResult.id,
+      asaasCustomerId: customerId,
+      paymentMethod: 'credit_card',
+      status: isPaid ? 'paid' : 'failed',
+      asaasStatus: asaasResult.status,
+      amount: payableAfterWallet,
+      subtotal: estimated,
+      discountTotal: checkout.pricing.totalDiscount,
+      walletAppliedTotal: walletUsage.totalWalletUsed,
+      walletAppliedClient: walletUsage.fromClientWallet,
+      walletAppliedProfessional: walletUsage.fromProfessionalWallet,
       appliedCoupons: checkout.pricing.appliedCoupons.map((c) => ({ code: c.code, discountAmount: c.discountAmount })),
       rejectedCoupons: checkout.rejectedCoupons,
       requestPayload: { serviceTypeSlug: serviceTypeSlug || null, tierLabel, selectedUpsells: resolvedUpsells, notes: notes || '', address, scheduledDate, isScheduled: !!isScheduled },
-      platformRecipientId: pagarme.getPlatformRecipientId() || null, professionalRecipientId: null, splitApplied: splitRules.length > 0,
-      paidAt: orderStatus === 'paid' ? new Date() : null,
+      installments: Number(installments) || 1,
+      paidAt: isPaid ? new Date() : null,
     });
 
-    if (orderStatus !== 'paid') {
-      const errMsg = charge?.last_transaction?.gateway_response?.message || 'Cartão recusado';
-      return res.status(402).json({ message: errMsg, status: orderStatus });
+    if (!isPaid) {
+      return res.status(402).json({ message: 'Cartão recusado pela operadora', status: asaasResult.status });
     }
 
     const io = req.app.get('io');
-    const request = await createRequestFromPagarmeOrder(pagarmeOrder, io);
+    const request = await createRequestFromAsaasPayment(asaasPayment, io);
     if (!request) return res.status(400).json({ message: 'Erro ao processar pedido após pagamento' });
     return res.status(201).json({ request });
   } catch (err) {
     console.error('[card/pay] error:', err);
-    const msg = err.pagarmeResponse?.errors?.[0]?.message || err.pagarmeResponse?.message || err.message;
-    return res.status(500).json({ message: 'Erro ao processar pagamento: ' + msg });
+    return res.status(500).json({ message: 'Erro ao processar pagamento: ' + err.message });
   }
 });
 
 // POST /api/payments/webhook
-// Webhook Pagar.me — express.raw() aplicado em app.js ANTES do express.json()
 router.post('/webhook', async (req, res) => {
-  const authHeader = req.headers['authorization'] || '';
-
-  if (!pagarme.verifyWebhookAuth(authHeader)) {
-    console.warn('[webhook] Autenticação inválida');
-    return res.status(401).json({ message: 'Autenticação inválida' });
+  if (!asaas.verifyWebhookToken(req)) {
+    console.warn('[webhook] Token inválido');
+    return res.status(401).json({ message: 'Token inválido' });
   }
 
   let event;
   try {
-    event = JSON.parse(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body);
+    event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   } catch (err) {
     console.error('[webhook] Body inválido:', err.message);
     return res.status(400).json({ message: 'Body inválido' });
   }
 
-  const eventType = event.type || '';
-  const data = event.data || {};
+  const eventType = event.event || '';
+  const paymentData = event.payment || {};
+
+  console.info(`[webhook] Evento: ${eventType} — ${paymentData.id || '?'}`);
 
   try {
-    if (eventType === 'order.paid' || eventType === 'charge.paid') {
-      const pagarmeOrderId = data.order_id || data.id;
-      const pagarmeOrder = await PagarmeOrder.findOne({ pagarmeOrderId });
-      if (!pagarmeOrder) {
-        return res.json({ received: true, ignored: true });
-      }
-      if (pagarmeOrder.status !== 'paid') {
-        pagarmeOrder.status = 'paid';
-        pagarmeOrder.paidAt = pagarmeOrder.paidAt || new Date();
-        if (data.charges?.[0]?.id && !pagarmeOrder.pagarmeChargeId) pagarmeOrder.pagarmeChargeId = data.charges[0].id;
-        await pagarmeOrder.save();
+    if ((eventType === 'PAYMENT_RECEIVED' || eventType === 'PAYMENT_CONFIRMED') && paymentData.id) {
+      const doc = await AsaasPayment.findOne({ asaasPaymentId: paymentData.id });
+      if (!doc) return res.json({ received: true, ignored: true });
+
+      if (doc.status !== 'paid') {
+        doc.status = 'paid';
+        doc.asaasStatus = paymentData.status || eventType;
+        doc.paidAt = doc.paidAt || new Date();
+        await doc.save();
         const io = req.app.get('io');
-        await createRequestFromPagarmeOrder(pagarmeOrder, io);
-        console.log(`[webhook] ${eventType} processado — order ${pagarmeOrderId}`);
+        await createRequestFromAsaasPayment(doc, io);
+        console.log(`[webhook] ${eventType} processado — ${paymentData.id}`);
       }
-    } else if (eventType === 'order.canceled' || eventType === 'order.payment_failed') {
-      const pagarmeOrderId = data.id;
-      const pagarmeOrder = await PagarmeOrder.findOne({ pagarmeOrderId });
-      if (pagarmeOrder && pagarmeOrder.status === 'pending') {
-        pagarmeOrder.status = eventType === 'order.canceled' ? 'cancelled' : 'failed';
-        await pagarmeOrder.save();
+    } else if ((eventType === 'PAYMENT_OVERDUE' || eventType === 'PAYMENT_DELETED') && paymentData.id) {
+      const doc = await AsaasPayment.findOne({ asaasPaymentId: paymentData.id });
+      if (doc && doc.status === 'pending') {
+        doc.status = 'expired';
+        doc.asaasStatus = paymentData.status || eventType;
+        await doc.save();
       }
     }
   } catch (err) {
@@ -551,125 +652,16 @@ router.post('/webhook', async (req, res) => {
   return res.json({ received: true });
 });
 
-// POST /api/payments/recipients
-// Cria recebedor Pagar.me para o profissional autenticado
-router.post('/recipients', auth, async (req, res) => {
-  if (req.user.userType !== 'professional' && req.user.activeProfile !== 'professional') {
-    return res.status(403).json({ message: 'Apenas profissionais podem cadastrar dados bancários' });
-  }
-  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
-
-  const { bank, branchNumber, branchCheckDigit, accountNumber, accountCheckDigit, accountType, holderName } = req.body;
-  if (!bank || !branchNumber || !accountNumber || !accountCheckDigit) {
-    return res.status(400).json({ message: 'Dados bancários incompletos' });
-  }
-
-  try {
-    const user = await User.findById(req.user._id);
-    const doc = onlyDigits(user.cpf);
-    if (!doc || doc.length !== 11) return res.status(400).json({ message: 'CPF válido é obrigatório para cadastrar conta bancária' });
-
-    const recipient = await pagarme.createRecipient({
-      name: user.name, email: user.email, document: doc,
-      holderName: holderName || user.name, bank, branchNumber,
-      branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit,
-      accountType: accountType || 'checking', phone: user.phone,
-    });
-
-    user.pagarmeRecipientId = recipient.id;
-    user.bankAccount = { holderName: holderName || user.name, bank, branchNumber, branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit, accountType: accountType || 'checking' };
-    await user.save();
-
-    return res.status(201).json({ recipientId: recipient.id, message: 'Conta bancária cadastrada com sucesso' });
-  } catch (err) {
-    console.error('[recipients] error:', err);
-    const msg = err.pagarmeResponse?.errors?.[0]?.message || err.message;
-    return res.status(500).json({ message: 'Erro ao cadastrar conta bancária: ' + msg });
-  }
-});
-
-// GET /api/payments/recipients/me
-router.get('/recipients/me', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).select('pagarmeRecipientId bankAccount name email cpf phone');
-    if (!user) return res.status(404).json({ message: 'Usuário não encontrado' });
-
-    // Lazy auto-create: se tem dados bancários mas ainda não foi criado no Pagar.me
-    if (!user.pagarmeRecipientId && user.bankAccount?.accountNumber && pagarme.isConfigured()) {
-      try {
-        const doc = onlyDigits(user.cpf);
-        if (doc && doc.length === 11) {
-          const ba = user.bankAccount;
-          const recipient = await pagarme.createRecipient({
-            name: user.name, email: user.email, document: doc,
-            holderName: ba.holderName || user.name, bank: ba.bank,
-            branchNumber: ba.branchNumber, branchCheckDigit: ba.branchCheckDigit || '0',
-            accountNumber: ba.accountNumber, accountCheckDigit: ba.accountCheckDigit,
-            accountType: ba.accountType || 'checking', phone: user.phone,
-          });
-          user.pagarmeRecipientId = recipient.id;
-          await user.save();
-          console.log(`[recipients/me] Recebedor auto-criado: ${recipient.id} para ${user._id}`);
-        }
-      } catch (autoErr) {
-        console.error('[recipients/me] Erro ao auto-criar recebedor:', autoErr.message);
-      }
-    }
-
-    return res.json({
-      hasRecipient: Boolean(user.pagarmeRecipientId),
-      recipientId: user.pagarmeRecipientId || null,
-      bankAccount: user.bankAccount || null,
-    });
-  } catch { return res.status(500).json({ message: 'Erro ao buscar dados bancários' }); }
-});
-
-// PATCH /api/payments/recipients — atualiza dados bancários e recria recebedor no Pagar.me
-router.patch('/recipients', auth, async (req, res) => {
-  if (req.user.userType !== 'professional' && req.user.activeProfile !== 'professional') {
-    return res.status(403).json({ message: 'Apenas profissionais podem atualizar dados bancários' });
-  }
-  if (!pagarme.isConfigured()) return res.status(503).json({ message: 'Pagar.me não configurado' });
-
-  const { bank, branchNumber, branchCheckDigit, accountNumber, accountCheckDigit, accountType, holderName } = req.body;
-  if (!bank || !branchNumber || !accountNumber || !accountCheckDigit) {
-    return res.status(400).json({ message: 'Dados bancários incompletos' });
-  }
-
-  try {
-    const user = await User.findById(req.user._id);
-    const doc = onlyDigits(user.cpf);
-    if (!doc || doc.length !== 11) return res.status(400).json({ message: 'CPF válido é obrigatório' });
-
-    // Cria novo recebedor no Pagar.me (cada mudança de conta gera um novo rcp_)
-    const recipient = await pagarme.createRecipient({
-      name: user.name, email: user.email, document: doc,
-      holderName: holderName || user.name, bank, branchNumber,
-      branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit,
-      accountType: accountType || 'checking', phone: user.phone,
-    });
-
-    user.pagarmeRecipientId = recipient.id;
-    user.bankAccount = { holderName: holderName || user.name, bank, branchNumber, branchCheckDigit: branchCheckDigit || '0', accountNumber, accountCheckDigit, accountType: accountType || 'checking' };
-    await user.save();
-
-    return res.json({ recipientId: recipient.id, message: 'Conta bancária atualizada com sucesso' });
-  } catch (err) {
-    console.error('[recipients/patch] error:', err);
-    const msg = err.pagarmeResponse?.errors?.[0]?.message || err.message;
-    return res.status(500).json({ message: 'Erro ao atualizar conta bancária: ' + msg });
-  }
-});
-
-// GET /api/payments/webhook/info
+// GET /api/payments/webhook/info (admin)
 router.get('/webhook/info', adminAuth, requireRole('super_admin', 'admin'), (req, res) => {
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host');
   const base = process.env.PUBLIC_BASE_URL || `${proto}://${host}`;
   return res.json({
     webhookUrl: `${base}/api/payments/webhook`,
-    events: ['order.paid', 'order.canceled', 'order.payment_failed', 'charge.paid'],
-    note: 'Configure no painel Pagar.me → Configurações → Webhooks. Defina a senha do webhook em PAGARME_WEBHOOK_SECRET no Render.',
+    events: ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED'],
+    note: 'Configure no painel Asaas → Integrações → Webhooks. Defina o token em ASAAS_WEBHOOK_TOKEN no Render.',
+    authHeader: 'asaas-access-token',
   });
 });
 

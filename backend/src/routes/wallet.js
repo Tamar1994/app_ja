@@ -5,7 +5,7 @@ const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
-const pagarme = require('../services/pagarmeService');
+const asaas = require('../services/asaasService');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -30,7 +30,7 @@ router.get('/summary', auth, async (req, res) => {
     const now = new Date();
 
     const [user, recentTransactions, latestWithdrawal, balanceAgg] = await Promise.all([
-      User.findById(req.user._id).select('wallet professional cpf userType activeProfile pagarmeRecipientId'),
+      User.findById(req.user._id).select('wallet professional cpf userType activeProfile'),
       Transaction.find({ professional: req.user._id })
         .sort({ createdAt: -1 })
         .limit(10)
@@ -80,16 +80,6 @@ router.get('/summary', auth, async (req, res) => {
       && availableBalance >= WITHDRAWAL_MIN_AMOUNT
       && (!nextWithdrawalAt || now >= nextWithdrawalAt);
 
-    // Buscar saldo Pagar.me do profissional no recebedor (referência externa)
-    let pagarmeBalance = null;
-    if (user.pagarmeRecipientId && pagarme.isConfigured()) {
-      try {
-        pagarmeBalance = await pagarme.getRecipientBalance(user.pagarmeRecipientId);
-      } catch {
-        // Falha silenciosa — não impede o carregamento da carteira
-      }
-    }
-
     res.json({
       balance: currentBalance,
       availableBalance, // saldo disponível para saque (PIX liberado + cartões já compensados)
@@ -105,7 +95,6 @@ router.get('/summary', auth, async (req, res) => {
       canRequestWithdrawal,
       nextWithdrawalAt,
       latestWithdrawal: latestWithdrawal || null,
-      pagarmeBalance, // { available, waitingFunds, transferred } em R$ — null se não configurado
     });
   } catch (err) {
     console.error(err);
@@ -283,7 +272,7 @@ router.post('/withdrawals/request', auth, async (req, res) => {
 
     // Calcular saldo disponível (ganhos liberados − já sacados)
     const now = new Date();
-    const user = await User.findById(req.user._id).select('wallet cpf pagarmeRecipientId');
+    const user = await User.findById(req.user._id).select('wallet cpf');
     const [balanceAgg] = await Transaction.aggregate([
       { $match: { professional: req.user._id, type: 'earning' } },
       {
@@ -310,26 +299,14 @@ router.post('/withdrawals/request', auth, async (req, res) => {
       return res.status(400).json({ message: 'Saldo insuficiente para este saque' });
     }
 
-    // ── Fluxo Pagar.me: transferência imediata ────────────────────────────────
-    if (user.pagarmeRecipientId && pagarme.isConfigured()) {
-      // Verificar se a plataforma tem saldo disponível suficiente no Pagar.me
-      try {
-        const platformId = pagarme.getPlatformRecipientId();
-        if (platformId) {
-          const platformBalance = await pagarme.getRecipientBalance(platformId);
-          if (platformBalance.available < amount) {
-            return res.status(400).json({
-              message: `Pagamento ainda não liquidado no Pagar.me. Tente novamente em algumas horas. Disponível na plataforma: R$ ${platformBalance.available.toFixed(2).replace('.', ',')}`,
-              platformAvailable: platformBalance.available,
-            });
-          }
-        }
-      } catch {
-        console.warn('[withdrawal] Não foi possível verificar saldo Pagar.me — prosseguindo sem verificação');
+    // ── Fluxo Asaas: transferência PIX direta ao CPF do profissional ──────────
+    if (asaas.isConfigured()) {
+      const normalizedCpf = normalizeCpf(user.cpf || '');
+      if (normalizedCpf.length !== 11) {
+        return res.status(400).json({ message: 'CPF válido é obrigatório para saque via Pix' });
       }
 
-      // ORDEM CORRETA: debitar MongoDB PRIMEIRO, depois chamar Pagar.me.
-      // Se Pagar.me falhar, revertemos o débito. Se MongoDB falhar, nada saiu.
+      // ORDEM: debitar MongoDB PRIMEIRO, depois Asaas. Rollback se Asaas falhar.
       const session = await mongoose.startSession();
       let createdWithdrawal, updatedUser;
       try {
@@ -344,10 +321,10 @@ router.post('/withdrawals/request', auth, async (req, res) => {
           [createdWithdrawal] = await WithdrawalRequest.create([{
             professional: req.user._id,
             amount: Number(amount.toFixed(2)),
-            pixKeyCpfSnapshot: user.cpf || '',
-            status: 'processing', // marcado como processando — confirmado após Pagar.me
+            pixKeyCpfSnapshot: normalizedCpf,
+            status: 'processing',
             requestedAt: new Date(),
-            internalNote: 'Aguardando confirmação Pagar.me',
+            internalNote: 'Aguardando confirmação Asaas',
           }], { session });
 
           await Transaction.create([{
@@ -359,26 +336,24 @@ router.post('/withdrawals/request', auth, async (req, res) => {
             amount: Number(amount.toFixed(2)),
             status: 'withdrawn',
             availableAt: new Date(),
-            description: 'Saque via Pagar.me',
+            description: 'Saque via Asaas PIX',
           }], { session });
         });
       } finally {
         await session.endSession();
       }
 
-      // Agora chama Pagar.me — se falhar, reverte o débito no MongoDB
-      const amountCents = Math.round(amount * 100);
+      // Chamar Asaas — se falhar, reverter MongoDB
       let transfer;
       try {
-        transfer = await pagarme.createTransfer(user.pagarmeRecipientId, amountCents);
+        transfer = await asaas.transferToPixKey(normalizedCpf, amount, `Saque profissional ${req.user._id}`);
       } catch (transferErr) {
-        console.error('[withdrawal] Erro Pagar.me createTransfer:', transferErr.message);
-        // Reverter: creditar de volta + cancelar o saque
+        console.error('[withdrawal] Erro Asaas transferToPixKey:', transferErr.message);
         await Promise.allSettled([
           User.findByIdAndUpdate(req.user._id, { $inc: { 'wallet.balance': amount } }),
           WithdrawalRequest.findByIdAndUpdate(createdWithdrawal._id, {
             status: 'cancelled',
-            internalNote: `Falha Pagar.me: ${transferErr.message}`,
+            internalNote: `Falha Asaas: ${transferErr.message}`,
           }),
           Transaction.deleteOne({ withdrawalRequest: createdWithdrawal._id }),
         ]);
@@ -387,16 +362,15 @@ router.post('/withdrawals/request', auth, async (req, res) => {
         });
       }
 
-      // Confirmar como concluído
       await WithdrawalRequest.findByIdAndUpdate(createdWithdrawal._id, {
         status: 'completed',
         processedAt: new Date(),
         completedAt: new Date(),
-        internalNote: `Pagar.me transfer id: ${transfer?.id || 'n/a'}`,
+        internalNote: `Asaas transfer id: ${transfer?.id || 'n/a'}`,
       });
 
       return res.status(201).json({
-        message: 'Saque realizado! O valor será depositado na sua conta bancária pelo Pagar.me no próximo dia útil.',
+        message: 'Saque realizado! O valor será depositado na sua chave PIX (CPF) em instantes.',
         withdrawal: { ...createdWithdrawal.toObject(), status: 'completed' },
         walletBalance: updatedUser.wallet?.balance || 0,
         availableBalance: Math.max(0, availableBalance - amount),
@@ -404,7 +378,7 @@ router.post('/withdrawals/request', auth, async (req, res) => {
       });
     }
 
-    // ── Fluxo legado: fila manual (sem Pagar.me configurado) ─────────────────
+    // ── Fluxo legado: fila manual (sem Asaas configurado) ────────────────────
     const normalizedCpf = normalizeCpf(user.cpf || '');
     if (normalizedCpf.length !== 11) {
       return res.status(400).json({

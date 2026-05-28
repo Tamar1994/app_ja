@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as ExpoClipboard from 'expo-clipboard';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   SafeAreaView,
@@ -41,7 +42,13 @@ export default function PixCheckoutScreen({ navigation, route }) {
   const pollingRef = useRef(null);
   const statusRequestRef = useRef(false);
 
-  const isFinished = useMemo(() => ['paid', 'expired', 'cancelled', 'failed'].includes(status), [status]);
+  // Só considera "terminado" quando:
+  // - pago E requestId disponível (navegação já ocorreu ou vai ocorrer)
+  // - ou status terminal definitivo (expirado/cancelado/falhou)
+  const isFinished = useMemo(() => {
+    if (status === 'paid') return Boolean(charge.requestId);
+    return ['expired', 'cancelled', 'failed'].includes(status);
+  }, [status, charge.requestId]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -69,15 +76,13 @@ export default function PixCheckoutScreen({ navigation, route }) {
         setRemainingSeconds(data.remainingSeconds);
       }
 
-      if (data.status === 'paid') {
-        if (data.requestId) {
-          navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.requestId });
-        }
-        // requestId ainda null — backend ainda criando o pedido. Tela fica presa aqui.
-        // O próximo ciclo de polling vai pegar quando estiver pronto.
+      if (data.status === 'paid' && data.requestId) {
+        // requestId disponível → navega imediatamente
+        navigation.replace(isScheduled ? 'ScheduledPending' : 'Searching', { requestId: data.requestId });
       }
+      // Se status=paid mas requestId=null, isFinished permanece false → polling continua
     } catch {
-      // Falha de rede nao deve interromper o fluxo.
+      // Falha de rede não interrompe o fluxo.
     } finally {
       if (manual) setManualChecking(false);
       statusRequestRef.current = false;
@@ -97,15 +102,15 @@ export default function PixCheckoutScreen({ navigation, route }) {
 
   const handleCopyPix = async () => {
     if (!charge.emv) {
-      Alert.alert('PIX copia e cola indisponivel', 'Este QR nao retornou codigo copia e cola.');
+      Alert.alert('PIX copia e cola indisponível', 'Este QR não retornou código copia e cola.');
       return;
     }
 
     try {
       await ExpoClipboard.setStringAsync(charge.emv);
-      Alert.alert('\u2713 Codigo copiado!', 'Cole no app do seu banco para pagar.');
+      Alert.alert('✓ Código copiado!', 'Cole no app do seu banco para pagar.');
     } catch (e) {
-      Alert.alert('Erro', 'Nao consegui copiar. Copie manualmente da tela.');
+      Alert.alert('Erro', 'Não foi possível copiar. Copie manualmente da tela.');
     }
   };
 
@@ -123,54 +128,72 @@ export default function PixCheckoutScreen({ navigation, route }) {
         <View style={styles.card}>
           <Text style={styles.label}>Valor</Text>
           <Text style={styles.value}>{formatCurrency(charge.amount)}</Text>
-          <Text style={styles.timer}>Expira em {formatRemaining(remainingSeconds)}</Text>
+          {status === 'pending' && (
+            <Text style={styles.timer}>Expira em {formatRemaining(remainingSeconds)}</Text>
+          )}
         </View>
 
-        {charge.id && charge.emv ? (
-          <View style={styles.qrWrap}>
-            <Image 
-              source={{ uri: `${API_BASE_URL}/payments/pix/${charge.id}/qr` }} 
-              style={styles.qrImage} 
-              resizeMode="contain"
-              onError={() => { /* QR PNG falhou — usuario pode usar copia e cola abaixo */ }}
-            />
-          </View>
-        ) : (
-          <View style={styles.noticeBox}>
-            <Text style={styles.noticeText}>
-              {charge.id ? 'QR code indisponível. Use o código copia e cola abaixo.' : 'QR code não disponível.'}
-            </Text>
-          </View>
-        )}
-
-        {charge.emv && (
-          <View style={styles.card}>
-            <Text style={styles.label}>PIX copia e cola</Text>
-            <Text selectable style={styles.emvText}>{charge.emv}</Text>
-            <TouchableOpacity style={styles.copyBtn} onPress={handleCopyPix}>
-              <Ionicons name="copy" size={16} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.copyBtnText}>Copiar codigo</Text>
+        {status === 'expired' ? (
+          <View style={styles.expiredBox}>
+            <Ionicons name="time-outline" size={40} color="#B45309" style={{ marginBottom: 10 }} />
+            <Text style={styles.expiredTitle}>QR Code expirado</Text>
+            <Text style={styles.expiredSub}>O tempo para pagamento esgotou. Volte e gere um novo QR.</Text>
+            <TouchableOpacity style={styles.newQrBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="refresh" size={16} color="#fff" style={{ marginRight: 6 }} />
+              <Text style={styles.newQrBtnText}>Gerar novo QR</Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : (
+          <>
+            {charge.id && charge.emv ? (
+              <View style={styles.qrWrap}>
+                <Image
+                  source={{ uri: `${API_BASE_URL}/payments/pix/${charge.id}/qr` }}
+                  style={styles.qrImage}
+                  resizeMode="contain"
+                  onError={() => { /* QR PNG falhou — usuário pode usar copia e cola abaixo */ }}
+                />
+              </View>
+            ) : (
+              <View style={styles.noticeBox}>
+                <Text style={styles.noticeText}>
+                  {charge.id ? 'QR code indisponível. Use o código copia e cola abaixo.' : 'QR code não disponível.'}
+                </Text>
+              </View>
+            )}
 
-        <TouchableOpacity
-          style={styles.primaryBtn}
-          disabled={manualChecking}
-          onPress={() => refreshStatus({ manual: true })}
-        >
-          <Text style={styles.primaryBtnText}>{manualChecking ? 'Atualizando...' : 'Ja paguei, atualizar status'}</Text>
-        </TouchableOpacity>
+            {charge.emv && (
+              <View style={styles.card}>
+                <Text style={styles.label}>PIX copia e cola</Text>
+                <Text selectable style={styles.emvText}>{charge.emv}</Text>
+                <TouchableOpacity style={styles.copyBtn} onPress={handleCopyPix}>
+                  <Ionicons name="copy" size={16} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.copyBtnText}>Copiar código</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-        {status === 'expired' && (
-          <Text style={styles.warning}>Tempo esgotado. Gere um novo QR para pagar.</Text>
-        )}
-        {status === 'paid' && !charge.requestId && (
-          <View style={styles.processingBanner}>
-            <Text style={styles.processingBannerText}>
-              ✅ Pagamento confirmado! Aguarde um instante enquanto preparamos seu pedido...
-            </Text>
-          </View>
+            {status !== 'paid' && (
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                disabled={manualChecking}
+                onPress={() => refreshStatus({ manual: true })}
+              >
+                <Text style={styles.primaryBtnText}>
+                  {manualChecking ? 'Verificando...' : 'Já paguei, verificar status'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {status === 'paid' && !charge.requestId && (
+              <View style={styles.processingBanner}>
+                <ActivityIndicator size="small" color="#065F46" style={{ marginRight: 8 }} />
+                <Text style={styles.processingBannerText}>
+                  ✅ Pagamento confirmado! Preparando seu pedido...
+                </Text>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -295,6 +318,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   processingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#D1FAE5',
     borderRadius: 12,
     padding: 14,
@@ -305,8 +330,43 @@ const styles = StyleSheet.create({
   processingBannerText: {
     color: '#065F46',
     fontWeight: '600',
-    textAlign: 'center',
+    flex: 1,
     fontSize: 14,
     lineHeight: 20,
+  },
+  expiredBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  expiredTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#92400E',
+    marginBottom: 6,
+  },
+  expiredSub: {
+    fontSize: 14,
+    color: '#78350F',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  newQrBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  newQrBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });

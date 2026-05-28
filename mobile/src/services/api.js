@@ -151,16 +151,12 @@ export const serviceChatAPI = {
 export const paymentAPI = {
   preview: (requestData, couponCodes = [], useWallet = false, walletAmount = null) =>
     api.post('/payments/preview', { ...requestData, couponCodes, useWallet, walletAmount }),
-  // PIX via Pagar.me
+  // PIX via Asaas
   createPixCharge: (requestData) => api.post('/payments/pix/create', requestData),
   getPixStatus: (orderId) => api.get(`/payments/pix/${orderId}/status`),
-  // Cartão via Pagar.me (cardToken gerado no mobile direto na API do Pagar.me)
+  // Cartão via Asaas (dados enviados ao backend — processamento servidor-a-servidor)
   cardPay: (requestData) => api.post('/payments/card/pay', requestData),
-  // Dados bancários do profissional / recebedor
-  createRecipient: (bankData) => api.post('/payments/recipients', bankData),
-  updateRecipient: (bankData) => api.patch('/payments/recipients', bankData),
-  getMyRecipient: () => api.get('/payments/recipients/me'),
-  // Config (modo + chave pública)
+  // Config (modo + provedor)
   getConfig: () => api.get('/payments/config'),
 };
 
