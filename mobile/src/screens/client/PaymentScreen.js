@@ -364,8 +364,8 @@ export default function PaymentScreen({ navigation, route }) {
               <View style={styles.summaryRow}><Ionicons name="add-circle-outline" size={15} color={colors.textSecondary} /><Text style={styles.summaryLabel} numberOfLines={2}>{estimate?.upsells?.length ? estimate.upsells.map((u) => u.label).join(', ') : selectedUpsells.join(', ')}</Text></View>
             )}
             {estimate?.dayNightBreakdown?.nightMinutes > 0 && (<>
-              <View style={styles.summaryRow}><Ionicons name="sunny-outline" size={15} color={colors.textSecondary} /><Text style={styles.summaryLabel}>Diurno {estimate.dayNightBreakdown.dayMinutes}min — R$ {Number(estimate.dayNightBreakdown.dayPrice).toFixed(2)}</Text></View>
-              <View style={styles.summaryRow}><Ionicons name="moon-outline" size={15} color={colors.textSecondary} /><Text style={styles.summaryLabel}>Noturno {estimate.dayNightBreakdown.nightMinutes}min — R$ {Number(estimate.dayNightBreakdown.nightPrice).toFixed(2)}</Text></View>
+              <View style={styles.summaryRow}><Ionicons name="sunny-outline" size={15} color={colors.textSecondary} /><Text style={styles.summaryLabel}>Diurno {estimate.dayNightBreakdown.dayMinutes}min — R$ {Number(estimate.dayNightBreakdown.dayPrice).toFixed(2).replace('.', ',')}</Text></View>
+              <View style={styles.summaryRow}><Ionicons name="moon-outline" size={15} color={colors.textSecondary} /><Text style={styles.summaryLabel}>Noturno {estimate.dayNightBreakdown.nightMinutes}min — R$ {Number(estimate.dayNightBreakdown.nightPrice).toFixed(2).replace('.', ',')}</Text></View>
             </>)}
             <View style={styles.summaryRow}><Ionicons name="location-outline" size={15} color={colors.textSecondary} /><Text style={styles.summaryLabel} numberOfLines={1}>{address.street}, {address.city}</Text></View>
             <View style={[styles.summaryRow, { marginTop: 8, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
@@ -503,7 +503,7 @@ export default function PaymentScreen({ navigation, route }) {
                         <Text style={[styles.couponChipCode, selected && styles.couponChipCodeActive]}>{coupon.code}</Text>
                         {coupon.description ? <Text style={styles.couponChipDesc}>{coupon.description}</Text> : null}
                       </View>
-                      {coupon.discountValue ? <Text style={styles.couponChipDiscount}>{coupon.discountType === 'percentage' ? '-' + coupon.discountValue + '%' : '-R$ ' + Number(coupon.discountValue).toFixed(2)}</Text> : null}
+                      {coupon.discountValue ? <Text style={styles.couponChipDiscount}>{coupon.discountType === 'percentage' ? '-' + coupon.discountValue + '%' : '-R$ ' + Number(coupon.discountValue).toFixed(2).replace('.', ',')}</Text> : null}
                     </TouchableOpacity>
                   );
                 })}

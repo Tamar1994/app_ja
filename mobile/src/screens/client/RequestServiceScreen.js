@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, ActivityIndicator, Alert, TextInput,
@@ -11,6 +11,10 @@ import { requestAPI } from '../../services/api';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 
 const TIME_OPTIONS = ['07:00', '08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
+
+function fmtBRL(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function getDateLabel(date) {
   const today = new Date(); today.setHours(0,0,0,0);
@@ -154,15 +158,19 @@ export default function RequestServiceScreen({ navigation, route }) {
     );
   };
 
+  const estimateDateRef = useRef(null);
+
   const fetchEstimate = useCallback(async () => {
     if (!selectedTier || !serviceType?.slug) return;
+    const lockedDate = getFinalScheduledDate();
+    estimateDateRef.current = lockedDate;
     setLoadingEstimate(true);
     try {
       const { data } = await requestAPI.estimate(
         serviceType.slug,
         selectedTier.label,
         selectedUpsellKeys,
-        getFinalScheduledDate(),
+        lockedDate,
         address.city || null,
         address.state || null,
       );
@@ -287,7 +295,7 @@ export default function RequestServiceScreen({ navigation, route }) {
           selectedUpsells: selectedUpsellKeys,
           notes,
           address: requestAddress,
-          scheduledDate: getFinalScheduledDate(),
+          scheduledDate: estimateDateRef.current || getFinalScheduledDate(),
           isScheduled: scheduleMode === 'later',
         };
         navigation.navigate('Payment', { requestData, estimate, serviceType });
@@ -416,7 +424,7 @@ export default function RequestServiceScreen({ navigation, route }) {
                           </View>
                           <View style={{ alignItems: 'flex-end' }}>
                             <Text style={[styles.tierPrice, active && styles.tierPriceActive]}>
-                              R$ {displayPrice.toFixed(0)}
+                              R$ {fmtBRL(displayPrice)}
                             </Text>
                             {bd && (
                               <Text style={[styles.nightSurchargeNote, active && styles.nightSurchargeNoteActive]}>
@@ -456,7 +464,7 @@ export default function RequestServiceScreen({ navigation, route }) {
                             <Text style={styles.checkLabel}>{upsell.label}</Text>
                           </View>
                           <Text style={[styles.upsellPrice, active && { color: colors.primary }]}>
-                            +R$ {Number(upsell.price).toFixed(0)}
+                            +R$ {fmtBRL(upsell.price)}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -485,8 +493,8 @@ export default function RequestServiceScreen({ navigation, route }) {
                       <>
                         <Text style={styles.estimateValue}>
                           R$ {estimate
-                            ? Number(estimate.estimated).toFixed(2)
-                            : (Number(selectedTier.price) + upsellsTotal).toFixed(2)}
+                            ? fmtBRL(Number(estimate.estimated))
+                            : fmtBRL(Number(selectedTier.price) + upsellsTotal)}
                         </Text>
                         <Text style={styles.estimateDetail}>
                           {selectedTier.label}{selectedUpsells.length > 0 && ` + ${selectedUpsells.length} opcional(is)`}
@@ -687,8 +695,8 @@ export default function RequestServiceScreen({ navigation, route }) {
                 <Text style={styles.totalLabel}>Total a pagar</Text>
                 <Text style={styles.totalValue}>
                   R$ {estimate
-                    ? Number(estimate.estimated).toFixed(2)
-                    : (Number(selectedTier?.price || 0) + upsellsTotal).toFixed(2)}
+                    ? fmtBRL(Number(estimate.estimated))
+                    : fmtBRL(Number(selectedTier?.price || 0) + upsellsTotal)}
                 </Text>
                 <View style={styles.totalDetail}>
                   <Ionicons name="lock-closed" size={12} color={colors.success} />
