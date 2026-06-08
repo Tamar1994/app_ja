@@ -178,13 +178,12 @@
       animation: fadeDown 0.6s 0.2s ease both;
     }
 
-    /* ─── CAPTURE FORM ─── */
-    .capture-card {
-      background: var(--dark2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 36px 40px;
-      max-width: 520px;
+    /* ─── STORE BUTTONS (HERO) ─── */
+    .hero-store-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 420px;
       width: 100%;
       margin: 0 auto;
       animation: fadeDown 0.6s 0.3s ease both;
@@ -192,101 +191,52 @@
       z-index: 1;
     }
 
-    .capture-card::before {
-      content: '';
-      position: absolute;
-      inset: -1px;
-      border-radius: calc(var(--radius) + 1px);
-      background: linear-gradient(135deg, rgba(255,107,0,0.4), transparent 60%);
-      z-index: -1;
-      pointer-events: none;
-    }
-
-    .capture-title {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 6px;
-      color: var(--text);
-    }
-
-    .capture-sub {
-      font-size: 14px;
-      color: var(--text-muted);
-      margin-bottom: 24px;
-    }
-
-    .capture-form {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .capture-input {
-      background: var(--dark3);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 14px 18px;
-      font-size: 15px;
-      color: var(--text);
-      font-family: 'Inter', sans-serif;
-      outline: none;
-      transition: border-color 0.2s;
-      width: 100%;
-    }
-
-    .capture-input::placeholder { color: var(--text-dim); }
-    .capture-input:focus { border-color: var(--orange); }
-
-    .capture-btn {
-      background: linear-gradient(135deg, var(--orange), var(--orange-dark));
-      color: #fff;
-      font-size: 15px;
-      font-weight: 700;
-      padding: 15px;
-      border: none;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: opacity 0.2s, transform 0.15s;
-      font-family: 'Inter', sans-serif;
-    }
-
-    .capture-btn:hover { opacity: 0.92; transform: translateY(-1px); }
-    .capture-btn:active { transform: translateY(0); }
-
-    .capture-success {
-      display: none;
-      text-align: center;
-      padding: 12px 0 4px;
-    }
-
-    .capture-success-icon {
-      width: 52px;
-      height: 52px;
-      background: rgba(34,197,94,0.12);
-      border-radius: 50%;
+    .hero-store-btn {
       display: flex;
       align-items: center;
-      justify-content: center;
-      margin: 0 auto 14px;
-      font-size: 24px;
+      gap: 16px;
+      padding: 18px 24px;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      cursor: pointer;
+      border: 1px solid rgba(255,107,0,0.3);
+      background: var(--dark2);
+      transition: border-color 0.2s, transform 0.15s, background 0.2s;
     }
 
-    .capture-success h3 {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 6px;
+    .hero-store-btn:hover {
+      border-color: var(--orange);
+      background: rgba(255,107,0,0.06);
+      transform: translateY(-2px);
     }
 
-    .capture-success p {
-      font-size: 14px;
-      color: var(--text-muted);
-    }
+    .hero-store-btn:active { transform: translateY(0); }
 
-    .capture-privacy {
-      font-size: 12px;
+    .hero-store-btn-icon { font-size: 28px; flex-shrink: 0; }
+
+    .hero-store-btn-text { text-align: left; }
+
+    .hero-store-btn-sub {
+      display: block;
+      font-size: 11px;
       color: var(--text-dim);
-      text-align: center;
-      margin-top: 12px;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .hero-store-btn-name {
+      display: block;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    .hero-store-btn-arrow {
+      margin-left: auto;
+      font-size: 20px;
+      color: var(--orange);
     }
 
     /* ─── SECTION ─── */
@@ -758,7 +708,7 @@
 
     <div class="hero-badge">
       <div class="hero-badge-dot"></div>
-      🎉 Chegando em São José dos Campos
+      Disponível agora em São José dos Campos
     </div>
 
     <h1 class="hero-title">
@@ -769,39 +719,24 @@
       Conectamos você a profissionais verificados para limpeza e serviços domésticos — de forma rápida, segura e acessível.
     </p>
 
-    <!-- CAPTURE -->
-    <div class="capture-card">
-      <div id="form-area">
-        <p class="capture-title">🚀 Seja o primeiro a saber!</p>
-        <p class="capture-sub">Cadastre seu e-mail e receba acesso antecipado quando chegarmos em SJC.</p>
-        <form class="capture-form" id="captureForm" onsubmit="handleCapture(event)">
-          <input
-            class="capture-input"
-            type="text"
-            name="name"
-            placeholder="Seu nome"
-            required
-            autocomplete="name"
-          />
-          <input
-            class="capture-input"
-            type="email"
-            name="email"
-            placeholder="seu@email.com"
-            required
-            autocomplete="email"
-          />
-          <button class="capture-btn" type="submit" id="captureBtn">
-            Quero ser avisado →
-          </button>
-        </form>
-        <p class="capture-privacy">🔒 Sem spam. Prometemos. Só novidades importantes.</p>
-      </div>
-      <div class="capture-success" id="captureSuccess">
-        <div class="capture-success-icon">✅</div>
-        <h3>Você está na lista!</h3>
-        <p>Assim que chegarmos em São José dos Campos, você será o primeiro a saber. Obrigado!</p>
-      </div>
+    <!-- STORE BUTTONS -->
+    <div class="hero-store-buttons">
+      <a class="hero-store-btn" href="https://play.google.com/store/apps/details?id=com.ja.app" target="_blank" rel="noopener">
+        <div class="hero-store-btn-icon">🤖</div>
+        <div class="hero-store-btn-text">
+          <span class="hero-store-btn-sub">Disponível na</span>
+          <span class="hero-store-btn-name">Google Play</span>
+        </div>
+        <span class="hero-store-btn-arrow">→</span>
+      </a>
+      <a class="hero-store-btn" href="https://apps.apple.com/br/app/j%C3%A1/id6771898396" target="_blank" rel="noopener">
+        <div class="hero-store-btn-icon">🍎</div>
+        <div class="hero-store-btn-text">
+          <span class="hero-store-btn-sub">Disponível na</span>
+          <span class="hero-store-btn-name">App Store</span>
+        </div>
+        <span class="hero-store-btn-arrow">→</span>
+      </a>
     </div>
   </div>
 
@@ -1007,30 +942,6 @@
       { threshold: 0.12 }
     );
     reveals.forEach((el) => observer.observe(el));
-
-    // ── Email capture ──
-    async function handleCapture(e) {
-      e.preventDefault();
-      const btn = document.getElementById('captureBtn');
-      const form = document.getElementById('captureForm');
-      const formData = new FormData(form);
-      const name = formData.get('name');
-      const email = formData.get('email');
-
-      btn.textContent = 'Enviando...';
-      btn.disabled = true;
-
-      try {
-        await fetch('/api/landing/waitlist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email }),
-        });
-      } catch (_) { /* ignora erros de rede — mostra sucesso mesmo assim */ }
-
-      document.getElementById('form-area').style.display = 'none';
-      document.getElementById('captureSuccess').style.display = 'block';
-    }
   </script>
 </body>
 </html>
