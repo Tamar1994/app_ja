@@ -26,11 +26,6 @@
     "scheme": "ja-admin",
     "plugins": [
       "expo-font"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "fbebee6b-64e1-48f0-bc40-67bbec6ab531"
-      }
-    }
+    ]
   }
 }
