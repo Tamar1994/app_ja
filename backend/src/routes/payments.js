@@ -8,11 +8,13 @@ const ServiceRequest = require('../models/ServiceRequest');
 const Coupon = require('../models/Coupon');
 const CouponRedemption = require('../models/CouponRedemption');
 const AsaasPayment = require('../models/AsaasPayment');
+const WithdrawalRequest = require('../models/WithdrawalRequest');
 const ClientWalletTransaction = require('../models/ClientWalletTransaction');
 const { dispatchToNextProfessional } = require('../utils/requestQueue');
 const { resolveCouponsForCheckout } = require('../services/couponService');
 const { calculateCheckoutPricing } = require('../services/dynamicCheckoutService');
 const asaas = require('../services/asaasService');
+const { logAudit } = require('../utils/auditLog');
 
 const router = express.Router();
 
@@ -734,10 +736,115 @@ router.get('/webhook/info', adminAuth, requireRole('super_admin', 'admin'), (req
   const base = process.env.PUBLIC_BASE_URL || `${proto}://${host}`;
   return res.json({
     webhookUrl: `${base}/api/payments/webhook`,
+    transferValidateUrl: `${base}/api/payments/transfer-validate`,
     events: ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED'],
     note: 'Configure no painel Asaas → Integrações → Webhooks. Defina o token em ASAAS_WEBHOOK_TOKEN no Render.',
+    transferNote: 'Validação de saque: Asaas → Integrações → Mecanismos de segurança → Validação de saque via Webhook. Defina ASAAS_TRANSFER_WEBHOOK_TOKEN no Render.',
     authHeader: 'asaas-access-token',
   });
+});
+
+// POST /api/payments/transfer-validate
+// Webhook especial do Asaas para validação de saque (Mecanismos de segurança).
+// O Asaas envia POST 5s após criar a transferência e aguarda { status: "APPROVED" | "REFUSED" }.
+// Configurado em: Asaas → Integrações → Mecanismos de segurança → Validação de saque via Webhook
+router.post('/transfer-validate', async (req, res) => {
+  // 1. Autenticação: validar token no header asaas-access-token
+  if (!asaas.verifyTransferWebhookToken(req)) {
+    console.warn('[transfer-validate] Token inválido — requisição recusada');
+    return res.status(200).json({ status: 'REFUSED', refuseReason: 'Token de autenticação inválido' });
+  }
+
+  let event;
+  try {
+    event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  } catch {
+    console.error('[transfer-validate] Body inválido');
+    return res.status(200).json({ status: 'REFUSED', refuseReason: 'Payload inválido' });
+  }
+
+  const eventType = event?.type || '';
+  console.info(`[transfer-validate] Evento recebido: ${eventType}`);
+
+  // 2. Tratar apenas transferências (TRANSFER). Outros tipos (BILL, PIX_QR_CODE, etc.) aprovamos
+  //    somente se forem estornos Pix habilitados — por ora aprovamos tudo que não for TRANSFER.
+  if (eventType !== 'TRANSFER') {
+    console.info(`[transfer-validate] Tipo ${eventType} não é TRANSFER — aprovando automaticamente`);
+    return res.status(200).json({ status: 'APPROVED' });
+  }
+
+  const transfer = event?.transfer || {};
+  const asaasTransferId = transfer?.id || null;
+  const transferValue = Number(transfer?.value || 0);
+
+  if (!asaasTransferId) {
+    console.warn('[transfer-validate] ID da transferência ausente no payload');
+    return res.status(200).json({ status: 'REFUSED', refuseReason: 'ID da transferência ausente no payload' });
+  }
+
+  try {
+    // 3. Buscar o saque correspondente em nossa base pelo asaasTransferId
+    const withdrawal = await WithdrawalRequest.findOne({ asaasTransferId }).lean();
+
+    if (!withdrawal) {
+      // Transferência não reconhecida em nossa base — recusar
+      console.warn(`[transfer-validate] Transferência ${asaasTransferId} não encontrada na base de dados`);
+      await logAudit({
+        module: 'wallet',
+        action: 'transfer_validate_refused',
+        severity: 'high',
+        actorType: 'system',
+        message: `Transferência Asaas ${asaasTransferId} recusada: não encontrada na base`,
+        metadata: { asaasTransferId, transferValue },
+      });
+      return res.status(200).json({ status: 'REFUSED', refuseReason: 'Transferência não encontrada em nossa base de dados' });
+    }
+
+    // 4. Validar que o valor bate (tolerância de R$ 0,02 para arredondamentos)
+    const expectedValue = Number(withdrawal.amount);
+    if (Math.abs(transferValue - expectedValue) > 0.02) {
+      console.warn(`[transfer-validate] Valor divergente: esperado R$ ${expectedValue}, recebido R$ ${transferValue}`);
+      await WithdrawalRequest.findByIdAndUpdate(withdrawal._id, {
+        asaasTransferStatus: 'REFUSED',
+        internalNote: `Valor divergente: esperado R$ ${expectedValue}, Asaas enviou R$ ${transferValue}`,
+        status: 'cancelled',
+      });
+      await logAudit({
+        module: 'wallet',
+        action: 'transfer_validate_refused',
+        severity: 'critical',
+        actorType: 'system',
+        message: `Transferência ${asaasTransferId} recusada: valor divergente`,
+        metadata: { asaasTransferId, expectedValue, transferValue },
+      });
+      return res.status(200).json({ status: 'REFUSED', refuseReason: `Valor divergente: esperado R$ ${expectedValue.toFixed(2)}, recebido R$ ${transferValue.toFixed(2)}` });
+    }
+
+    // 5. Tudo ok — aprovar e marcar como completed
+    await WithdrawalRequest.findByIdAndUpdate(withdrawal._id, {
+      asaasTransferStatus: 'APPROVED',
+      status: 'completed',
+      processedAt: new Date(),
+      completedAt: new Date(),
+      internalNote: `Aprovado via webhook de validação. Asaas transfer id: ${asaasTransferId}`,
+    });
+
+    console.info(`[transfer-validate] Transferência ${asaasTransferId} aprovada — R$ ${transferValue}`);
+    await logAudit({
+      module: 'wallet',
+      action: 'transfer_validate_approved',
+      severity: 'info',
+      actorType: 'system',
+      message: `Saque ${asaasTransferId} aprovado via webhook. R$ ${transferValue}`,
+      metadata: { asaasTransferId, transferValue, withdrawalId: withdrawal._id },
+    });
+
+    return res.status(200).json({ status: 'APPROVED' });
+  } catch (err) {
+    console.error('[transfer-validate] Erro ao processar validação:', err.message);
+    // Em caso de erro interno, recusamos para não deixar saque não validado passar
+    return res.status(200).json({ status: 'REFUSED', refuseReason: 'Erro interno ao validar transferência' });
+  }
 });
 
 module.exports = router;

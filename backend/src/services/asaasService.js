@@ -313,6 +313,22 @@ async function transferToBankAccount({ value, bank, accountType, account, accoun
   });
 }
 
+/**
+ * Verifica o token do webhook de validação de saque.
+ * O Asaas envia o token configurado no header `asaas-access-token`.
+ * Token configurado em: ASAAS_TRANSFER_WEBHOOK_TOKEN (separado do webhook de cobranças).
+ * Se não configurado, aceita (modo dev).
+ */
+function verifyTransferWebhookToken(req) {
+  const expected = (process.env.ASAAS_TRANSFER_WEBHOOK_TOKEN || '').trim();
+  if (!expected) {
+    console.warn('[asaas] ASAAS_TRANSFER_WEBHOOK_TOKEN não configurado — validação de token ignorada');
+    return true;
+  }
+  const received = (req.headers['asaas-access-token'] || '').trim();
+  return received === expected;
+}
+
 // ── Exports ───────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -320,6 +336,7 @@ module.exports = {
   getApiKey,
   isConfigured,
   verifyWebhookToken,
+  verifyTransferWebhookToken,
   findOrCreateCustomer,
   createPixPayment,
   createCreditCardPayment,

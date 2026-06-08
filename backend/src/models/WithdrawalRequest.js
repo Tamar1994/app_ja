@@ -57,6 +57,19 @@ const withdrawalRequestSchema = new mongoose.Schema({
     ref: 'AdminUser',
     default: null,
   },
+  // ID da transferência criada no Asaas (trs_xxx) — usado para validar o webhook de saque
+  asaasTransferId: {
+    type: String,
+    default: null,
+    index: true,
+    sparse: true,
+  },
+  // Resultado da validação do webhook de saque
+  asaasTransferStatus: {
+    type: String,
+    enum: ['PENDING', 'APPROVED', 'REFUSED', 'CANCELLED', null],
+    default: null,
+  },
 }, { timestamps: true });
 
 withdrawalRequestSchema.index({ professional: 1, requestedAt: -1 });

@@ -363,15 +363,15 @@ router.post('/withdrawals/request', auth, async (req, res) => {
       }
 
       await WithdrawalRequest.findByIdAndUpdate(createdWithdrawal._id, {
-        status: 'completed',
-        processedAt: new Date(),
-        completedAt: new Date(),
-        internalNote: `Asaas transfer id: ${transfer?.id || 'n/a'}`,
+        status: 'processing',
+        asaasTransferId: transfer?.id || null,
+        asaasTransferStatus: 'PENDING',
+        internalNote: `Asaas transfer id: ${transfer?.id || 'n/a'} — aguardando validação via webhook`,
       });
 
       return res.status(201).json({
-        message: 'Saque realizado! O valor será depositado na sua chave PIX (CPF) em instantes.',
-        withdrawal: { ...createdWithdrawal.toObject(), status: 'completed' },
+        message: 'Saque solicitado! O valor será depositado na sua chave PIX (CPF) após validação (geralmente em instantes).',
+        withdrawal: { ...createdWithdrawal.toObject(), status: 'processing' },
         walletBalance: updatedUser.wallet?.balance || 0,
         availableBalance: Math.max(0, availableBalance - amount),
         nextAllowedAt: computeNextWithdrawalAt(createdWithdrawal.requestedAt),
