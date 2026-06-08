@@ -1062,7 +1062,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
       }, { new: true });
 
       // Determinar quando o saldo fica disponível para saque, baseado no paidAt real da Asaas
-      // PIX: D+1 após o pagamento (clearing padrão)
+      // PIX: imediato (liquidação instantânea)
       // Cartão de crédito: D+2 após o pagamento (liquidação padrão 1x)
       // Wallet-only: imediato (não passa pela Asaas)
       const asaasPayment = await AsaasPayment.findOne({ serviceRequest: request._id, status: 'paid' })
@@ -1073,10 +1073,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
       let availableAt;
       if (paymentMethod === 'credit_card') {
         availableAt = new Date(paidAt.getTime() + 2 * 24 * 60 * 60 * 1000); // D+2
-      } else if (paymentMethod === 'pix') {
-        availableAt = new Date(paidAt.getTime() + 1 * 24 * 60 * 60 * 1000); // D+1
       } else {
-        availableAt = new Date(); // wallet: imediato
+        availableAt = new Date(); // PIX e wallet: imediato
       }
 
       await Transaction.create({
