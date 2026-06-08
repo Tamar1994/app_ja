@@ -153,13 +153,19 @@ export default function ProfileScreen({ navigation }) {
     { icon: 'help-circle-outline', label: 'Central de ajuda', color: '#F3E8FD', onPress: () => navigation.navigate('HelpCenter') },
     { icon: 'document-text-outline', label: 'Termos de uso', color: '#E8F5E9', onPress: () => navigation.navigate('Terms') },
     { icon: 'star-outline', label: 'Avaliar o app', color: '#FFF8E1', onPress: () => {
-      const url = Platform.OS === 'ios'
+      const storeUrl = Platform.OS === 'ios'
         ? 'https://apps.apple.com/br/app/j%C3%A1/id6771898396'
-        : 'market://details?id=com.ja.app';
-      Linking.canOpenURL(url).then(supported => {
-        if (supported) Linking.openURL(url);
-        else Alert.alert('Erro', 'N\u00e3o foi poss\u00edvel abrir a loja.');
-      });
+        : 'https://play.google.com/store/apps/details?id=com.ja.app';
+      const marketUrl = 'market://details?id=com.ja.app';
+      const tryOpen = (url, fallback) => {
+        Linking.canOpenURL(url).then(supported => {
+          if (supported) Linking.openURL(url);
+          else if (fallback) tryOpen(fallback, null);
+          else Alert.alert('Erro', 'Não foi possível abrir a loja.');
+        });
+      };
+      if (Platform.OS === 'android') tryOpen(marketUrl, storeUrl);
+      else tryOpen(storeUrl, null);
     }},
     { icon: 'trash-outline', label: 'Excluir conta', color: '#FFEBEE', onPress: handleDeleteAccount, danger: true },
   ];
