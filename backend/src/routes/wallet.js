@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
-const WITHDRAWAL_MIN_AMOUNT = 50;
+const WITHDRAWAL_MIN_AMOUNT = 30;
 const WITHDRAWAL_COOLDOWN_DAYS = 1;
 
 const isProfessionalProfile = (user) => user?.activeProfile === 'professional' || user?.userType === 'professional';
