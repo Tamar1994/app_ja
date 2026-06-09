@@ -635,16 +635,10 @@ router.patch('/withdrawals/:id/status', adminAuth, requirePermission(ADMIN_PERMI
             { session }
           );
 
-          await Transaction.create([{
-            professional: withdrawal.professional,
-            withdrawalRequest: withdrawal._id,
-            type: 'earning',
-            grossAmount: Number(withdrawal.amount || 0),
-            platformFee: 0,
-            amount: Number(withdrawal.amount || 0),
-            status: 'available',
-            description: 'Estorno de saque cancelado pelo admin',
-          }], { session });
+          // Remover a transaction de withdrawal — os earnings originais (com availableAt correto)
+          // voltam a contar automaticamente no cálculo de saldo disponível.
+          // NÃO criar nova transaction de earning: isso ignoraria o availableAt do cartão.
+          await Transaction.deleteOne({ withdrawalRequest: withdrawal._id, type: 'withdrawal' }, { session });
         });
       } finally {
         await session.endSession();
