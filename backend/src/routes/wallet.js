@@ -11,7 +11,7 @@ const logger = require('../utils/logger');
 const router = express.Router();
 
 const WITHDRAWAL_MIN_AMOUNT = 50;
-const WITHDRAWAL_COOLDOWN_DAYS = 7;
+const WITHDRAWAL_COOLDOWN_DAYS = 1;
 
 const isProfessionalProfile = (user) => user?.activeProfile === 'professional' || user?.userType === 'professional';
 
@@ -35,7 +35,7 @@ router.get('/summary', auth, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(10)
         .populate('serviceRequest', 'details.scheduledDate'),
-      WithdrawalRequest.findOne({ professional: req.user._id })
+      WithdrawalRequest.findOne({ professional: req.user._id, status: 'completed' })
         .sort({ requestedAt: -1 })
         .select('requestedAt status amount'),
       // Agrega ganhos liberados vs bloqueados de uma só vez
@@ -258,14 +258,14 @@ router.post('/withdrawals/request', auth, async (req, res) => {
   }
 
   try {
-    // Verificar cooldown de 7 dias
-    const lastWithdrawal = await WithdrawalRequest.findOne({ professional: req.user._id })
+    // Verificar cooldown de 7 dias (apenas saques concluídos contam — cancelados não bloqueiam)
+    const lastWithdrawal = await WithdrawalRequest.findOne({ professional: req.user._id, status: 'completed' })
       .sort({ requestedAt: -1 })
       .select('requestedAt');
     const nextAllowedAt = computeNextWithdrawalAt(lastWithdrawal?.requestedAt);
     if (nextAllowedAt && new Date() < nextAllowedAt) {
       return res.status(400).json({
-        message: 'Você já solicitou saque nos últimos 7 dias.',
+        message: 'Você já realizou um saque hoje. Tente novamente amanhã.',
         nextAllowedAt,
       });
     }
