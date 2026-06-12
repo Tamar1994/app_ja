@@ -104,8 +104,8 @@ export default function SupportChatScreen({ navigation }) {
       if (String(data.chatId) !== String(chatId)) return;
       setOperatorName(data.operatorName || null);
       setQueuePosition(null);
+      // pollChatStatus busca mensagens frescas e já faz setPhase('chat') — não duplicar
       pollChatStatus(chatId);
-      setPhase('chat');
     });
     // Operador ficou offline: voltar para fila
     const unsubUnassigned = on('chat_unassigned', (data) => {
@@ -184,17 +184,29 @@ export default function SupportChatScreen({ navigation }) {
         }
       }
       const res = await supportChatAPI.create(subject.trim(), extra);
-      const { chatId: id, status, priority: createdPriority, queuePosition: initialQueue } = res.data;
+      const { chatId: id, status, priority: createdPriority, queuePosition: initialQueue, assignedTo } = res.data;
       setChatId(id);
       setChatPriority(createdPriority || priority);
       if (status === 'assigned') {
+        if (assignedTo) setOperatorName(assignedTo);
         setPhase('chat');
       } else {
         setPhase('waiting');
         if (initialQueue) setQueuePosition(initialQueue);
       }
     } catch (err) {
-      Alert.alert('Erro', err.response?.data?.message || 'Não foi possível iniciar o atendimento.');
+      const errData = err.response?.data;
+      // Se já tem um chat ativo, navegar diretamente para ele
+      if (errData?.chatId) {
+        const existingId = errData.chatId;
+        setChatId(existingId);
+        setChatPriority(errData.priority || 'normal');
+        setSubject(errData.subject || subject);
+        if (errData.status === 'assigned') setPhase('chat');
+        else setPhase('waiting');
+      } else {
+        Alert.alert('Erro', errData?.message || 'Não foi possível iniciar o atendimento.');
+      }
     } finally {
       setCreating(false);
     }
@@ -263,7 +275,9 @@ export default function SupportChatScreen({ navigation }) {
   };
 
   const fmtTime = (d) => {
+    if (!d) return '';
     const date = new Date(d);
+    if (Number.isNaN(date.getTime())) return '';
     return `${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
   };
 
@@ -286,7 +300,7 @@ export default function SupportChatScreen({ navigation }) {
           <Text style={styles.headerTitle}>Falar com Suporte</Text>
           <View style={{ width: 24 }} />
         </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.formHero}>
             <Text style={styles.heroEmoji}>🎧</Text>
             <Text style={styles.heroTitle}>Precisamos te ajudar!</Text>
@@ -323,10 +337,20 @@ export default function SupportChatScreen({ navigation }) {
 
   // ── WAITING PHASE ─────────────────────────────────────────────────
   if (phase === 'waiting') {
+    const handleBackFromQueue = () => {
+      Alert.alert(
+        'Sair da fila?',
+        'Você ainda está na fila de atendimento. Ao sair, seu chamado continua ativo e você pode voltar por aqui.',
+        [
+          { text: 'Ficar', style: 'cancel' },
+          { text: 'Sair', style: 'destructive', onPress: () => navigation.goBack() },
+        ]
+      );
+    };
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity onPress={handleBackFromQueue}>
             <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Aguardando</Text>
@@ -415,7 +439,7 @@ export default function SupportChatScreen({ navigation }) {
         <FlatList
           ref={flatListRef}
           data={messages}
-          keyExtractor={(_, i) => String(i)}
+          keyExtractor={(item, i) => item._id ? String(item._id) : `msg-${i}`}
           contentContainerStyle={styles.msgList}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
@@ -525,7 +549,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, textAlign: 'center' },
   headerSubj: { fontSize: 11, color: colors.textLight, marginTop: 2, textAlign: 'center' },
   // Form
-  formContainer: { flex: 1, paddingHorizontal: 20, paddingTop: 32 },
+  formContainer: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 32, paddingBottom: 32 },
   formHero: { alignItems: 'center', marginBottom: 32 },
   heroEmoji: { fontSize: 56, marginBottom: 12 },
   heroTitle: { fontSize: 22, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },

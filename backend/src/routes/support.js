@@ -100,6 +100,7 @@ router.post('/chats', auth, async (req, res) => {
         message: 'Você já tem um atendimento em aberto',
         chatId: existing._id,
         status: existing.status,
+        subject: existing.subject,
         priority: existing.priority || 'normal',
       });
     }
@@ -203,9 +204,9 @@ router.post('/chats/:id/message', auth, upload.single('image'), async (req, res)
     const chat = await SupportChat.findOne({
       _id: req.params.id,
       userId: req.user._id,
-      status: { $in: ['waiting', 'assigned'] },
+      status: 'assigned', // só permite mensagem quando há operador atribuído
     });
-    if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
+    if (!chat) return res.status(400).json({ message: 'Atendimento ainda em fila ou não encontrado — aguarde ser atribuído a um atendente.' });
 
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
     chat.messages.push({

@@ -194,6 +194,10 @@ async function reassignChatsFrom(operatorId, io) {
     // Atualizar posições para todos na fila
     await broadcastQueuePositions(io);
 
+    // Pequena pausa para garantir que o evento chat_unassigned chegue ao cliente
+    // antes de um possível chat_assigned imediato (evita flash de UI)
+    await new Promise(resolve => setTimeout(resolve, 300));
+
     // Tentar redistribuir os chats para outros operadores disponíveis
     for (const chat of chats) {
       await tryAssignChat(chat._id, io);
