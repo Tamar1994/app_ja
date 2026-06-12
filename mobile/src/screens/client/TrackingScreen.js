@@ -513,7 +513,7 @@ export default function TrackingScreen({ navigation, route }) {
                   <Ionicons name={row.icon} size={18} color={colors.primary} />
                 </View>
                 <Text style={styles.detailLabel}>{row.label}</Text>
-                <Text style={[styles.detailValue, row.highlight && styles.detailValueHighlight]}>
+                <Text style={[styles.detailValue, row.highlight && styles.detailValueHighlight]} numberOfLines={2} adjustsFontSizeToFit={false}>
                   {row.value}
                 </Text>
               </View>
@@ -876,9 +876,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  detailLabel: { flex: 1, fontSize: typography.fontSizes.md, color: colors.textSecondary },
-  detailValue: { fontSize: typography.fontSizes.md, fontWeight: '600', color: colors.textPrimary },
-  detailValueHighlight: { color: colors.primary, fontSize: typography.fontSizes.lg, fontWeight: '800' },
+  detailLabel: { flexShrink: 0, fontSize: typography.fontSizes.md, color: colors.textSecondary, marginRight: 4 },
+  detailValue: { flex: 1, fontSize: typography.fontSizes.md, fontWeight: '600', color: colors.textPrimary, textAlign: 'right', flexWrap: 'wrap' },
+  detailValueHighlight: { color: colors.primary, fontSize: typography.fontSizes.lg, fontWeight: '800', textAlign: 'right' },
   cancelBtn: {
     flexDirection: 'row',
     alignItems: 'center',

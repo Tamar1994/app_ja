@@ -237,6 +237,8 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     alignItems: 'center',
     marginTop: -24,
+    alignSelf: 'stretch',
+    overflow: 'hidden',
     ...shadows.lg,
   },
   askText: {
@@ -341,9 +343,13 @@ const styles = StyleSheet.create({
   npsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'nowrap',
+    gap: 2,
   },
   npsBtn: {
-    width: 28,
+    flex: 1,
+    minWidth: 22,
+    maxWidth: 34,
     height: 28,
     borderRadius: 6,
     alignItems: 'center',
