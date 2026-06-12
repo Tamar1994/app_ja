@@ -2,7 +2,7 @@ const express = require('express');
 const SupportChat = require('../models/SupportChat');
 const auth = require('../middleware/auth');
 const upload = require('../config/multer');
-const { tryAssignChat } = require('../utils/supportQueue');
+const { tryAssignChat, broadcastQueuePositions, getQueuePosition } = require('../utils/supportQueue');
 const { logAudit } = require('../utils/auditLog');
 
 const router = express.Router();
@@ -120,6 +120,12 @@ router.post('/chats', auth, async (req, res) => {
     const operator = await tryAssignChat(chat._id, io);
     emitP1Alert(io, chat, req.user);
 
+    // Se ainda na fila, emitir posições para todos os usuários esperando
+    const updatedChat = await SupportChat.findById(chat._id);
+    if (updatedChat.status === 'waiting') {
+      await broadcastQueuePositions(io);
+    }
+
     if (chat.priority === 'p1') {
       await logAudit({
         module: 'support',
@@ -138,11 +144,13 @@ router.post('/chats', auth, async (req, res) => {
       });
     }
 
-    const updated = await SupportChat.findById(chat._id);
+    const updated = await SupportChat.findById(chat._id).populate('assignedTo', 'name');
+    const queuePosition = await getQueuePosition(updated);
     res.status(201).json({
       chatId: updated._id,
       status: updated.status,
       priority: updated.priority,
+      queuePosition,
       assignedTo: operator ? operator.name : null,
       message: operator
         ? 'Atendente disponível! Você será atendido em instantes.'
@@ -163,8 +171,9 @@ router.get('/chats/my', auth, async (req, res) => {
       userId: req.user._id,
       status: { $in: ['waiting', 'assigned'] },
     }).populate('assignedTo', 'name');
-    if (!chat) return res.json({ chat: null });
-    res.json({ chat });
+    if (!chat) return res.json({ chat: null, queuePosition: null });
+    const queuePosition = await getQueuePosition(chat);
+    res.json({ chat, queuePosition });
   } catch {
     res.status(500).json({ message: 'Erro ao buscar chamado' });
   }
@@ -178,7 +187,8 @@ router.get('/chats/:id', auth, async (req, res) => {
       userId: req.user._id,
     }).populate('assignedTo', 'name');
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
-    res.json({ chat });
+    const queuePosition = await getQueuePosition(chat);
+    res.json({ chat, queuePosition });
   } catch {
     res.status(500).json({ message: 'Erro ao buscar chat' });
   }

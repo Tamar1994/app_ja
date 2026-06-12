@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const AdminUser = require('../models/AdminUser');
 const { hasPermission, ADMIN_PERMISSIONS } = require('../middleware/adminAuth');
+const { reassignChatsFrom } = require('../utils/supportQueue');
 
 const initSocket = (server) => {
   const io = new Server(server, {
@@ -41,7 +42,17 @@ const initSocket = (server) => {
         socket.join('support_ops');
       }
 
-      socket.on('disconnect', () => {
+      socket.on('disconnect', async () => {
+        // Quando operador de suporte desconecta (fecha aba, perde conexão, faz logout),
+        // marcar offline e redistribuir chats atribuídos para a fila.
+        try {
+          const admin = await AdminUser.findById(socket.admin._id).select('supportStatus role');
+          if (admin && admin.supportStatus !== 'offline') {
+            await reassignChatsFrom(String(socket.admin._id), io);
+          }
+        } catch (err) {
+          console.error('[socket] Erro ao redistribuir chats do operador:', err.message);
+        }
       });
       return;
     }

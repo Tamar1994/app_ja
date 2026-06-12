@@ -33,6 +33,8 @@ export default function SupportChatScreen({ navigation }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [chatPriority, setChatPriority] = useState('normal');
+  const [queuePosition, setQueuePosition] = useState(null); // { position, total }
+  const [operatorName, setOperatorName] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -53,14 +55,17 @@ export default function SupportChatScreen({ navigation }) {
       const chat = res.data.chat;
       if (chat.status === 'assigned') {
         setMessages(chat.messages || []);
+        setOperatorName(chat.assignedTo?.name || null);
+        setQueuePosition(null);
         setPhase('chat');
       } else if (chat.status === 'closed') {
         setMessages(chat.messages || []);
         setPhase('closed');
         clearInterval(pollingTimer.current);
       } else {
-        // still waiting — refresh messages anyway
+        // still waiting
         setMessages(chat.messages || []);
+        if (res.data.queuePosition) setQueuePosition(res.data.queuePosition);
       }
     } catch {}
   }, []);
@@ -94,9 +99,33 @@ export default function SupportChatScreen({ navigation }) {
       setPhase('closed');
       clearInterval(pollingTimer.current);
     });
+    // Operador atribuído: buscar mensagens frescas (inclui mensagem de sistema "X entrou na conversa")
+    const unsubAssigned = on('chat_assigned', (data) => {
+      if (String(data.chatId) !== String(chatId)) return;
+      setOperatorName(data.operatorName || null);
+      setQueuePosition(null);
+      pollChatStatus(chatId);
+      setPhase('chat');
+    });
+    // Operador ficou offline: voltar para fila
+    const unsubUnassigned = on('chat_unassigned', (data) => {
+      if (String(data.chatId) !== String(chatId)) return;
+      setPhase('waiting');
+      setOperatorName(null);
+      setQueuePosition(null);
+      pollChatStatus(chatId);
+    });
+    // Posição na fila atualizada
+    const unsubQueue = on('queue_position_update', (data) => {
+      if (String(data.chatId) !== String(chatId)) return;
+      setQueuePosition({ position: data.position, total: data.total });
+    });
     return () => {
       if (unsubMsg) unsubMsg();
       if (unsubClose) unsubClose();
+      if (unsubAssigned) unsubAssigned();
+      if (unsubUnassigned) unsubUnassigned();
+      if (unsubQueue) unsubQueue();
     };
   }, [chatId, on]);
 
@@ -119,9 +148,15 @@ export default function SupportChatScreen({ navigation }) {
           setSubject(chat.subject || '');
           setChatPriority(chat.priority || 'normal');
           setMessages(chat.messages || []);
-          if (chat.status === 'assigned') setPhase('chat');
-          else if (chat.status === 'closed') setPhase('closed');
-          else setPhase('waiting');
+          if (chat.status === 'assigned') {
+            setOperatorName(chat.assignedTo?.name || null);
+            setPhase('chat');
+          } else if (chat.status === 'closed') {
+            setPhase('closed');
+          } else {
+            setPhase('waiting');
+            if (res.data.queuePosition) setQueuePosition(res.data.queuePosition);
+          }
         }
       } catch {
         // no active chat — stay on form
@@ -149,11 +184,15 @@ export default function SupportChatScreen({ navigation }) {
         }
       }
       const res = await supportChatAPI.create(subject.trim(), extra);
-      const { chatId: id, status, priority: createdPriority } = res.data;
+      const { chatId: id, status, priority: createdPriority, queuePosition: initialQueue } = res.data;
       setChatId(id);
       setChatPriority(createdPriority || priority);
-      if (status === 'assigned') setPhase('chat');
-      else setPhase('waiting');
+      if (status === 'assigned') {
+        setPhase('chat');
+      } else {
+        setPhase('waiting');
+        if (initialQueue) setQueuePosition(initialQueue);
+      }
     } catch (err) {
       Alert.alert('Erro', err.response?.data?.message || 'Não foi possível iniciar o atendimento.');
     } finally {
@@ -301,6 +340,21 @@ export default function SupportChatScreen({ navigation }) {
             {chatPriority === 'p1' ? (
               <Text style={styles.waitingPriority}>Prioridade 1 enviada para toda a equipe de suporte.</Text>
             ) : null}
+
+            {/* Posição na fila */}
+            {queuePosition && (
+              <View style={styles.queueCard}>
+                <Text style={styles.queueEmoji}>🎟️</Text>
+                <Text style={styles.queueNumber}>{queuePosition.position}°</Text>
+                <Text style={styles.queueLabel}>na fila de atendimento</Text>
+                <Text style={styles.queueTotal}>
+                  {queuePosition.total === 1
+                    ? 'Você é o único na fila'
+                    : `${queuePosition.total} pessoas aguardando`}
+                </Text>
+              </View>
+            )}
+
             <Text style={styles.waitingNote}>
               Você será atendido em breve. Por favor, aguarde enquanto conectamos com um de nossos especialistas.
             </Text>
@@ -346,7 +400,9 @@ export default function SupportChatScreen({ navigation }) {
         <View style={{ width: 24 }} />
         <View style={{ flex: 1, alignItems: 'center' }}>
           <Text style={styles.headerTitle}>Suporte ao Vivo</Text>
-          <Text style={styles.headerSubj} numberOfLines={1}>{subject || 'Atendimento ativo'}</Text>
+          <Text style={styles.headerSubj} numberOfLines={1}>
+            {operatorName ? `Com ${operatorName}` : (subject || 'Atendimento ativo')}
+          </Text>
         </View>
         <View style={{ width: 24 }} />
       </View>
@@ -368,7 +424,18 @@ export default function SupportChatScreen({ navigation }) {
               <Text style={styles.emptyMsgText}>Nenhuma mensagem ainda. Diga olá! 👋</Text>
             </View>
           }
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            // Mensagens de sistema: centralizadas, estilo pill
+            if (item.sender === 'system') {
+              return (
+                <View style={styles.sysMsgRow}>
+                  <View style={styles.sysMsgPill}>
+                    <Text style={styles.sysMsgText}>{item.text}</Text>
+                  </View>
+                </View>
+              );
+            }
+            return (
             <View style={[styles.msgWrapper, item.sender === 'user' ? styles.msgWrapperUser : styles.msgWrapperSupport]}>
               {item.sender !== 'user' && (
                 <View style={styles.msgAvatar}><Text style={{ fontSize: 12 }}>🎧</Text></View>
@@ -389,7 +456,8 @@ export default function SupportChatScreen({ navigation }) {
                 </Text>
               </View>
             </View>
-          )}
+            );
+          }}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
         />
 
@@ -518,6 +586,32 @@ const styles = StyleSheet.create({
   waitingNote: { fontSize: 13, color: colors.textLight, textAlign: 'center', lineHeight: 20 },
   waitingDivider: { height: 1, backgroundColor: '#E8ECF4', width: '80%', marginVertical: 16 },
   waitingPoll: { fontSize: 11, color: colors.textLight },
+  // Queue position
+  queueCard: {
+    backgroundColor: `${colors.primary}10`,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: `${colors.primary}30`,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    marginVertical: 16,
+    width: '100%',
+  },
+  queueEmoji: { fontSize: 28, marginBottom: 6 },
+  queueNumber: { fontSize: 36, fontWeight: '800', color: colors.primary, lineHeight: 40 },
+  queueLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
+  queueTotal: { fontSize: 11, color: colors.textLight, marginTop: 4 },
+  // System messages
+  sysMsgRow: { alignItems: 'center', marginVertical: 10, paddingHorizontal: 12 },
+  sysMsgPill: {
+    backgroundColor: '#EEEEF4',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    maxWidth: '85%',
+  },
+  sysMsgText: { fontSize: 12, color: '#666', textAlign: 'center', fontStyle: 'italic', lineHeight: 18 },
   // Closed
   closedContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   closedEmoji: { fontSize: 64, marginBottom: 16 },

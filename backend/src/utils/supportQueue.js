@@ -19,6 +19,48 @@ async function findBestOperator() {
 }
 
 /**
+ * Recalcula as posições de todos os chats em espera e emite
+ * um evento `queue_position_update` para cada usuário na fila.
+ */
+async function broadcastQueuePositions(io) {
+  if (!io) return;
+  try {
+    const waitingChats = await SupportChat.find({ status: 'waiting' })
+      .sort({ priorityLevel: -1, queuedAt: 1 })
+      .select('_id userId');
+    const total = waitingChats.length;
+    waitingChats.forEach((chat, index) => {
+      io.to(`user_${chat.userId}`).emit('queue_position_update', {
+        chatId: String(chat._id),
+        position: index + 1,
+        total,
+      });
+    });
+  } catch (err) {
+    console.error('[supportQueue] broadcastQueuePositions error:', err.message);
+  }
+}
+
+/**
+ * Computa a posição de um chat específico na fila de espera.
+ * Retorna { position, total } ou null se o chat não estiver esperando.
+ */
+async function getQueuePosition(chat) {
+  if (!chat || chat.status !== 'waiting') return null;
+  const [ahead, total] = await Promise.all([
+    SupportChat.countDocuments({
+      status: 'waiting',
+      $or: [
+        { priorityLevel: { $gt: chat.priorityLevel || 0 } },
+        { priorityLevel: chat.priorityLevel || 0, queuedAt: { $lt: chat.queuedAt } },
+      ],
+    }),
+    SupportChat.countDocuments({ status: 'waiting' }),
+  ]);
+  return { position: ahead + 1, total };
+}
+
+/**
  * Tenta atribuir um chat (waiting) ao melhor operador disponível.
  * Usa update atômico para evitar race condition.
  * Retorna o operador atribuído ou null se não houver.
@@ -33,21 +75,31 @@ async function tryAssignChat(chatId, io) {
       status: 'assigned',
       assignedTo: operator._id,
       assignedAt: new Date(),
+      // Mensagem de sistema: atendente entrou na conversa
+      $push: {
+        messages: {
+          sender: 'system',
+          text: `${operator.name} entrou na conversa.`,
+          createdAt: new Date(),
+        },
+      },
     },
     { new: true }
   );
-  if (!assigned) return null; // já foi atribuído
+  if (!assigned) return null; // já foi atribuído (race condition)
 
   await AdminUser.findByIdAndUpdate(operator._id, {
     $inc: { activeSupportChats: 1 },
   });
 
-  // Notificar cliente via socket
   if (io) {
+    // Notificar cliente: foi atribuído
     io.to(`user_${assigned.userId}`).emit('chat_assigned', {
-      chatId: assigned._id,
+      chatId: String(assigned._id),
       operatorName: operator.name,
     });
+    // Atualizar posições dos demais usuários em espera
+    await broadcastQueuePositions(io);
   }
 
   return operator;
@@ -60,7 +112,6 @@ async function tryAssignChat(chatId, io) {
 async function onChatClosed(operatorId, io) {
   if (!operatorId) return;
 
-  // Garantir que não fique negativo
   await AdminUser.findByIdAndUpdate(operatorId, {
     $inc: { activeSupportChats: -1 },
   });
@@ -92,4 +143,64 @@ async function onChatClosed(operatorId, io) {
   await tryAssignChat(nextChat._id, io);
 }
 
-module.exports = { tryAssignChat, onChatClosed, findBestOperator };
+/**
+ * Chamado quando um operador fica offline (logout, fechar aba, perda de conexão).
+ * Move todos os chats atribuídos de volta para a fila e tenta redistribuir.
+ */
+async function reassignChatsFrom(operatorId, io) {
+  try {
+    const opId = String(operatorId);
+
+    // Marcar operador offline e zerar contador
+    await AdminUser.findByIdAndUpdate(opId, {
+      supportStatus: 'offline',
+      activeSupportChats: 0,
+    });
+
+    // Buscar chats atribuídos a esse operador
+    const chats = await SupportChat.find({ assignedTo: opId, status: 'assigned' }).select('_id userId');
+    if (!chats.length) return;
+
+    // Mover de volta para a fila com mensagem de sistema
+    await SupportChat.updateMany(
+      { assignedTo: opId, status: 'assigned' },
+      {
+        status: 'waiting',
+        assignedTo: null,
+        assignedAt: null,
+      }
+    );
+
+    // Inserir mensagem de sistema em cada chat e notificar o usuário
+    for (const chat of chats) {
+      await SupportChat.findByIdAndUpdate(chat._id, {
+        $push: {
+          messages: {
+            sender: 'system',
+            text: 'O atendente ficou indisponível. Você voltou para a fila — um novo atendente será atribuído em breve.',
+            createdAt: new Date(),
+          },
+        },
+      });
+
+      if (io) {
+        io.to(`user_${chat.userId}`).emit('chat_unassigned', {
+          chatId: String(chat._id),
+          reason: 'operator_offline',
+        });
+      }
+    }
+
+    // Atualizar posições para todos na fila
+    await broadcastQueuePositions(io);
+
+    // Tentar redistribuir os chats para outros operadores disponíveis
+    for (const chat of chats) {
+      await tryAssignChat(chat._id, io);
+    }
+  } catch (err) {
+    console.error('[supportQueue] reassignChatsFrom error:', err.message);
+  }
+}
+
+module.exports = { tryAssignChat, onChatClosed, findBestOperator, broadcastQueuePositions, getQueuePosition, reassignChatsFrom };

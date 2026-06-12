@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-  sender: { type: String, enum: ['user', 'support'], required: true },
+  sender: { type: String, enum: ['user', 'support', 'system'], required: true },
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminUser', default: null },
   text: { type: String, default: '' },
   imageUrl: { type: String, default: null },

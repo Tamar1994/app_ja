@@ -43,7 +43,7 @@ const {
 } = require('../middleware/adminAuth');
 const { sendApprovalEmail, sendRejectionEmail, sendAddressUpdateApprovedEmail } = require('../services/emailService');
 const whatsapp = require('../services/whatsappService');
-const { tryAssignChat, onChatClosed, findBestOperator } = require('../utils/supportQueue');
+const { tryAssignChat, onChatClosed, findBestOperator, reassignChatsFrom } = require('../utils/supportQueue');
 const { clearRequestTimer, sendExpoPush } = require('../utils/requestQueue');
 const PushNotification = require('../models/PushNotification');
 const { normalizeCouponCode, generateCouponCode } = require('../services/couponService');
@@ -1372,6 +1372,7 @@ router.patch('/chats/:id/close', adminAuth, requirePermission(ADMIN_PERMISSIONS.
 router.patch('/support/toggle-status', adminAuth, requirePermission(ADMIN_PERMISSIONS.SUPPORT_CHAT), async (req, res) => {
   try {
     const admin = await AdminUser.findById(req.admin._id);
+    const io = req.app.get('io');
     if (admin.supportStatus === 'offline') {
       // Sincroniza contador ao ficar online
       const activeCount = await SupportChat.countDocuments({
@@ -1384,19 +1385,18 @@ router.patch('/support/toggle-status', adminAuth, requirePermission(ADMIN_PERMIS
       await admin.save();
 
       // Puxar da fila até completar 5 chats
-      const io = req.app.get('io');
       while (admin.activeSupportChats < 5) {
         const next = await SupportChat.findOne({ status: 'waiting' }).sort({ priorityLevel: -1, queuedAt: 1 });
         if (!next) break;
         const result = await tryAssignChat(next._id, io);
-        if (!result) continue;
+        if (!result) break;
         admin.activeSupportChats++;
       }
 
       res.json({ supportStatus: 'online', message: 'Você está online e recebendo atendimentos' });
     } else {
-      admin.supportStatus = 'offline';
-      await admin.save();
+      // Redistribuir chats antes de ficar offline
+      await reassignChatsFrom(String(admin._id), io);
       res.json({ supportStatus: 'offline', message: 'Você está offline' });
     }
   } catch (err) {
