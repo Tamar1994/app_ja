@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image,
+  FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Image, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -247,7 +247,7 @@ export default function SupportChatScreen({ navigation }) {
           <Text style={styles.headerTitle}>Falar com Suporte</Text>
           <View style={{ width: 24 }} />
         </View>
-        <View style={styles.formContainer}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
           <View style={styles.formHero}>
             <Text style={styles.heroEmoji}>🎧</Text>
             <Text style={styles.heroTitle}>Precisamos te ajudar!</Text>
@@ -267,31 +267,6 @@ export default function SupportChatScreen({ navigation }) {
             maxLength={200}
           />
           <Text style={styles.charCount}>{subject.length}/200</Text>
-          {isProfessional ? (
-            <View style={styles.emergencyCard}>
-              <Text style={styles.emergencyTitle}>Prioridade 1 para emergência</Text>
-              <Text style={styles.emergencySub}>Use quando houver risco real, por exemplo cliente acidentado durante o serviço.</Text>
-              <TextInput
-                style={styles.emergencyInput}
-                placeholder="ID do serviço contratado (opcional)"
-                placeholderTextColor={colors.textLight}
-                value={relatedServiceRequestId}
-                onChangeText={setRelatedServiceRequestId}
-                autoCapitalize="none"
-                maxLength={36}
-              />
-              <TextInput
-                style={[styles.input, { minHeight: 70, marginTop: 10 }]}
-                placeholder="Contexto rápido da emergência (opcional)"
-                placeholderTextColor={colors.textLight}
-                value={emergencyContext}
-                onChangeText={setEmergencyContext}
-                multiline
-                numberOfLines={2}
-                maxLength={250}
-              />
-            </View>
-          ) : null}
           <TouchableOpacity
             style={[styles.startBtn, creating && { opacity: 0.7 }]}
             onPress={() => handleCreate('normal')}
@@ -302,17 +277,7 @@ export default function SupportChatScreen({ navigation }) {
               ? <ActivityIndicator color="#fff" />
               : <Text style={styles.startBtnText}>🎧 Iniciar Atendimento</Text>}
           </TouchableOpacity>
-          {isProfessional ? (
-            <TouchableOpacity
-              style={[styles.p1Btn, creating && { opacity: 0.7 }]}
-              onPress={() => handleCreate('p1')}
-              disabled={creating}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.p1BtnText}>🚨 Abrir Chamado Prioridade 1</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -388,8 +353,8 @@ export default function SupportChatScreen({ navigation }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0}
       >
         <FlatList
           ref={flatListRef}

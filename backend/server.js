@@ -5,6 +5,7 @@ const connectDB = require('./src/config/database');
 const initSocket = require('./src/socket');
 const logger = require('./src/utils/logger');
 const { startReminderScheduler } = require('./src/utils/scheduledReminders');
+const { startAutoTransferScheduler } = require('./src/utils/autoTransferJob');
 
 // Sobrescreve console.error/warn/log para que todo o código legado
 // também emita JSON estruturado com timestamp no Render
@@ -42,6 +43,9 @@ connectDB().then(() => {
 
   // Inicia o job de lembretes WhatsApp para serviços agendados
   startReminderScheduler();
+
+  // Inicia o job de repasse automático para conta Cora (a cada 3h)
+  startAutoTransferScheduler();
 }).catch((err) => {
   logger.error('[server] Falha crítica ao iniciar servidor', { err: err.message });
   process.exit(1);

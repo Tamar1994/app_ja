@@ -109,7 +109,8 @@ export default function ServiceChatScreen({ navigation, route }) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'android' ? 30 : 0}
       >
         <FlatList
           ref={flatListRef}

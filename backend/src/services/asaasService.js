@@ -293,6 +293,26 @@ async function transferToPixKey(pixKey, value, description = 'Saque profissional
 }
 
 /**
+ * Transfere valor para qualquer tipo de chave PIX.
+ * @param {string} pixKey      - Chave PIX (CNPJ, CPF, e-mail, chave aleatória)
+ * @param {string} pixKeyType  - CNPJ | CPF | EMAIL | EVP
+ * @param {number} value       - Valor em R$
+ * @param {string} description
+ */
+async function transferToPixKeyTyped(pixKey, pixKeyType, value, description = 'Repasse') {
+  // Para CNPJ/CPF remove não-dígitos; para EMAIL/EVP mantém o valor como está
+  const normalizedKey = ['CNPJ', 'CPF'].includes(String(pixKeyType).toUpperCase())
+    ? pixKey.replace(/\D/g, '')
+    : pixKey.trim();
+  return apiRequest('POST', '/transfers', {
+    value: Number(value.toFixed(2)),
+    pixAddressKey: normalizedKey,
+    pixAddressKeyType: String(pixKeyType).toUpperCase(),
+    description,
+  });
+}
+
+/**
  * Transfere via conta bancária (TED/PIX por dados bancários).
  */
 async function transferToBankAccount({ value, bank, accountType, account, accountDigit, agency, agencyDigit, cpf, name, description }) {
@@ -346,5 +366,6 @@ module.exports = {
   refundPayment,
   getAccountBalance,
   transferToPixKey,
+  transferToPixKeyTyped,
   transferToBankAccount,
 };

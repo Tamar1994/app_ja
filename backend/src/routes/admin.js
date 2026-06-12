@@ -1317,7 +1317,7 @@ router.post('/chats/:id/message', adminAuth, requirePermission(ADMIN_PERMISSIONS
         assignedTo: req.admin._id,
       },
       { new: true }
-    ).populate('userId', 'name');
+    ).populate('userId', 'name pushToken');
     if (!chat) return res.status(404).json({ message: 'Chat não encontrado' });
 
     // Notificar usuário via socket
@@ -1329,6 +1329,19 @@ router.post('/chats/:id/message', adminAuth, requirePermission(ADMIN_PERMISSIONS
         sender: 'support',
         adminName: req.admin.name,
       });
+    }
+
+    // Push notification para quando o usuário não está com o chat aberto
+    const userPushToken = chat.userId?.pushToken;
+    if (userPushToken) {
+      const trimmedText = text.trim();
+      const pushBody = trimmedText.length > 100 ? trimmedText.slice(0, 100) + '…' : trimmedText;
+      sendExpoPush(
+        userPushToken,
+        '💬 Suporte ao Vivo',
+        pushBody,
+        { type: 'support_message', chatId: String(chat._id), screen: 'SupportChat' }
+      );
     }
 
     res.json({ message: 'Mensagem enviada', chat });

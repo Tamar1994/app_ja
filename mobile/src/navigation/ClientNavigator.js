@@ -75,6 +75,7 @@ function ProfileStack() {
       <Stack.Screen name="Terms" component={TermsScreen} />
       <Stack.Screen name="CouponWallet" component={CouponWalletScreen} />
       <Stack.Screen name="HelpCenter" component={HelpCenterScreen} />
+      <Stack.Screen name="SupportChat" component={SupportChatScreen} />
       <Stack.Screen name="ResidenceProofUpload" component={ResidenceProofUploadScreen} />
       <Stack.Screen name="ProfessionalUpgrade" component={ProfessionalUpgradeScreen} />
       <Stack.Screen name="ProfessionalAddress" component={ProfessionalAddressScreen} />
