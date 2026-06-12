@@ -1314,7 +1314,8 @@ router.post('/chats/:id/message', adminAuth, requirePermission(ADMIN_PERMISSIONS
       req.params.id,
       {
         $push: { messages: { sender: 'support', adminId: req.admin._id, text: text.trim() } },
-        assignedTo: req.admin._id,
+        // Não sobrescreve assignedTo se já houver operador atribuído
+        $set: { status: 'assigned' },
       },
       { new: true }
     ).populate('userId', 'name pushToken');
@@ -1465,7 +1466,8 @@ router.post('/support/chats/:id/message', adminAuth, requirePermission(ADMIN_PER
       req.params.id,
       {
         $push: { messages: { sender: 'support', adminId: req.admin._id, text: text.trim() } },
-        $set: { status: 'assigned', assignedTo: req.admin._id },
+        // Não sobrescreve assignedTo se já houver um operador — apenas garante 'assigned'
+        $set: { status: 'assigned' },
       },
       { new: true }
     ).populate('userId', 'name pushToken');

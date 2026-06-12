@@ -5,6 +5,10 @@ const AdminUser = require('../models/AdminUser');
 const { hasPermission, ADMIN_PERMISSIONS } = require('../middleware/adminAuth');
 const { reassignChatsFrom } = require('../utils/supportQueue');
 
+// Mapa de timers de "grace period" para operadores desconectados.
+// Grace period: 30s — se o operador reconectar antes disso, cancela o offline.
+const operatorDisconnectTimers = new Map();
+
 const initSocket = (server) => {
   const io = new Server(server, {
     cors: { origin: '*' },
@@ -42,17 +46,37 @@ const initSocket = (server) => {
         socket.join('support_ops');
       }
 
+      // Se havia um timer de grace period pendente para este operador,
+      // cancelar — ele reconectou a tempo.
+      if (operatorDisconnectTimers.has(adminId)) {
+        clearTimeout(operatorDisconnectTimers.get(adminId));
+        operatorDisconnectTimers.delete(adminId);
+      }
+
       socket.on('disconnect', async () => {
-        // Quando operador de suporte desconecta (fecha aba, perde conexão, faz logout),
-        // marcar offline e redistribuir chats atribuídos para a fila.
-        try {
-          const admin = await AdminUser.findById(socket.admin._id).select('supportStatus role');
-          if (admin && admin.supportStatus !== 'offline') {
-            await reassignChatsFrom(String(socket.admin._id), io);
-          }
-        } catch (err) {
-          console.error('[socket] Erro ao redistribuir chats do operador:', err.message);
+        // Grace period de 30s antes de marcar offline.
+        // Cobre: troca de aba no browser, reload de página, navegação no app mobile.
+        // NÃO cobre: logout explícito (que chama PATCH /support/toggle-status antes de desconectar).
+        const GRACE_MS = 30_000;
+
+        // Cancelar timer anterior se houver (múltiplas conexões do mesmo admin)
+        if (operatorDisconnectTimers.has(adminId)) {
+          clearTimeout(operatorDisconnectTimers.get(adminId));
         }
+
+        const timer = setTimeout(async () => {
+          operatorDisconnectTimers.delete(adminId);
+          try {
+            const admin = await AdminUser.findById(adminId).select('supportStatus');
+            if (admin && admin.supportStatus !== 'offline') {
+              await reassignChatsFrom(adminId, io);
+            }
+          } catch (err) {
+            console.error('[socket] Erro ao redistribuir chats do operador:', err.message);
+          }
+        }, GRACE_MS);
+
+        operatorDisconnectTimers.set(adminId, timer);
       });
       return;
     }

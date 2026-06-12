@@ -106,15 +106,15 @@ export default function ChatListScreen({ navigation }) {
     const socket = connectAdminSocket(token);
 
     socket.on('chat_assigned', () => fetchData(true));
-    socket.on('support_p1_alert', () => {
-      fetchData(true);
-    });
+    socket.on('support_p1_alert', () => fetchData(true));
     socket.on('support_message', () => fetchData(true));
+    socket.on('user_message', () => fetchData(true)); // mensagem enviada pelo usuário
 
     return () => {
       socket.off('chat_assigned');
       socket.off('support_p1_alert');
       socket.off('support_message');
+      socket.off('user_message');
     };
   }, [token, fetchData]);
 

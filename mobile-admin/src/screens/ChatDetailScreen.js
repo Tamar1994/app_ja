@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   FlatList, ActivityIndicator, Alert, KeyboardAvoidingView,
-  Platform, StatusBar,
+  Platform, StatusBar, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,14 +13,34 @@ import { colors, spacing, borderRadius, typography } from '../theme';
 
 const POLL_MS = 6000;
 
+const API_BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://ja-backend-gpow.onrender.com/api').replace(/\/api\/?$/, '');
+
+function buildImageUrl(path) {
+  if (!path) return null;
+  if (String(path).startsWith('http://') || String(path).startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 function formatTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-function Bubble({ msg, adminId }) {
+function Bubble({ msg }) {
+  // Mensagens de sistema: pill centralizada
+  if (msg.sender === 'system') {
+    return (
+      <View style={styles.sysMsgRow}>
+        <View style={styles.sysMsgPill}>
+          <Text style={styles.sysMsgText}>{msg.text}</Text>
+        </View>
+      </View>
+    );
+  }
   const isMe = msg.sender === 'support';
+  const imgUri = buildImageUrl(msg.imageUrl);
   return (
     <View style={[styles.bubbleRow, isMe ? styles.bubbleRowMe : styles.bubbleRowUser]}>
       {!isMe && (
@@ -31,6 +51,13 @@ function Bubble({ msg, adminId }) {
       <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleUser]}>
         {msg.text ? (
           <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{msg.text}</Text>
+        ) : null}
+        {imgUri ? (
+          <Image
+            source={{ uri: imgUri }}
+            style={styles.bubbleImage}
+            resizeMode="cover"
+          />
         ) : null}
         <Text style={[styles.bubbleTime, isMe && styles.bubbleTimeMe]}>
           {formatTime(msg.createdAt)}
@@ -413,6 +440,29 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   bubbleTimeMe: { color: 'rgba(255,255,255,0.65)' },
+  bubbleImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: colors.border,
+  },
+  // Mensagens de sistema
+  sysMsgRow: { alignItems: 'center', marginVertical: 8, paddingHorizontal: 12 },
+  sysMsgPill: {
+    backgroundColor: '#EEEEF4',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    maxWidth: '85%',
+  },
+  sysMsgText: {
+    fontSize: 11,
+    color: '#666',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    lineHeight: 17,
+  },
 
   inputBar: {
     flexDirection: 'row',

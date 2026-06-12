@@ -136,10 +136,24 @@ export const supportChatAPI = {
   getMy: () => api.get('/support/chats/my'),
   getById: (id) => api.get(`/support/chats/${id}`),
   sendMessage: (id, text) => api.post(`/support/chats/${id}/message`, { text }),
-  sendImage: (id, formData) =>
-    api.post(`/support/chats/${id}/message`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+  // FormData com imagem: NÃO define Content-Type manualmente.
+  // React Native define o boundary correto automaticamente via XMLHttpRequest.
+  sendImage: async (id, formData) => {
+    const token = await SecureStore.getItemAsync('token');
+    return fetch(`${BASE_URL}/support/chats/${id}/message`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // Content-Type NÃO é definido — o fetch nativo do RN injeta 
+        // "multipart/form-data; boundary=..." com o boundary correto.
+      },
+      body: formData,
+    }).then(async (r) => {
+      const data = await r.json();
+      if (!r.ok) throw { response: { data, status: r.status } };
+      return { data };
+    });
+  },
 };
 
 export const serviceChatAPI = {

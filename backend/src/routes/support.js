@@ -196,43 +196,66 @@ router.get('/chats/:id', auth, async (req, res) => {
 });
 
 // POST /api/support/chats/:id/message — usuário envia mensagem
-router.post('/chats/:id/message', auth, upload.single('image'), async (req, res) => {
-  const text = String(req.body.text || '').trim();
-  const hasImage = !!req.file;
-  if (!text && !hasImage) return res.status(400).json({ message: 'Mensagem vazia' });
+// Nota: multer roda DEPOIS da validação de auth/status para evitar arquivos órfãos.
+router.post('/chats/:id/message', auth, async (req, res) => {
+  // Validar status do chat ANTES de processar upload (evita arquivos órfãos)
+  let chat;
   try {
-    const chat = await SupportChat.findOne({
+    chat = await SupportChat.findOne({
       _id: req.params.id,
       userId: req.user._id,
       status: 'assigned', // só permite mensagem quando há operador atribuído
     });
-    if (!chat) return res.status(400).json({ message: 'Atendimento ainda em fila ou não encontrado — aguarde ser atribuído a um atendente.' });
+    if (!chat) {
+      return res.status(400).json({ message: 'Atendimento ainda em fila ou não encontrado — aguarde ser atribuído a um atendente.' });
+    }
+  } catch {
+    return res.status(500).json({ message: 'Erro ao verificar atendimento' });
+  }
 
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-    chat.messages.push({
-      sender: 'user',
-      text,
-      imageUrl,
-      imageMimeType: req.file?.mimetype || null,
-    });
-    await chat.save();
-
-    // Notificar operador via socket (sala do operador)
-    const io = req.app.get('io');
-    if (io && chat.assignedTo) {
-      io.to(`admin_${chat.assignedTo}`).emit('user_message', {
-        chatId: chat._id,
-        text,
-        imageUrl,
-        userName: req.user.name,
-        userId: req.user._id,
-      });
+  // Chat validado — agora processar upload
+  upload.single('image')(req, res, async (uploadErr) => {
+    if (uploadErr) {
+      return res.status(400).json({ message: uploadErr.message || 'Erro no upload da imagem' });
     }
 
-    res.json({ message: 'Mensagem enviada', chat });
-  } catch {
-    res.status(500).json({ message: 'Erro ao enviar mensagem' });
-  }
+    const text = String(req.body.text || '').trim();
+    const hasImage = !!req.file;
+    if (!text && !hasImage) return res.status(400).json({ message: 'Mensagem vazia' });
+
+    try {
+      // Re-buscar para garantir documento fresco após o upload
+      const freshChat = await SupportChat.findById(chat._id);
+      if (!freshChat || freshChat.status !== 'assigned') {
+        return res.status(400).json({ message: 'Atendimento foi encerrado durante o envio.' });
+      }
+
+      const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+      freshChat.messages.push({
+        sender: 'user',
+        text,
+        imageUrl,
+        imageMimeType: req.file?.mimetype || null,
+      });
+      await freshChat.save();
+
+      // Notificar operador via socket
+      const io = req.app.get('io');
+      if (io && freshChat.assignedTo) {
+        io.to(`admin_${freshChat.assignedTo}`).emit('user_message', {
+          chatId: freshChat._id,
+          text,
+          imageUrl,
+          userName: req.user.name,
+          userId: req.user._id,
+        });
+      }
+
+      res.json({ message: 'Mensagem enviada', chat: freshChat });
+    } catch {
+      res.status(500).json({ message: 'Erro ao enviar mensagem' });
+    }
+  });
 });
 
 module.exports = router;
