@@ -279,7 +279,19 @@ router.post('/withdrawals/request', auth, async (req, res) => {
         $group: {
           _id: null,
           availableEarned: {
-            $sum: { $cond: [{ $lte: ['$availableAt', now] }, '$amount', 0] },
+            $sum: {
+              $cond: [
+                {
+                  // null = transação legada (antes da migração) → considera disponível
+                  $or: [
+                    { $eq: ['$availableAt', null] },
+                    { $lte: ['$availableAt', now] },
+                  ],
+                },
+                '$amount',
+                0,
+              ],
+            },
           },
         },
       },

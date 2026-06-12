@@ -77,7 +77,7 @@ export default function ReviewScreen({ navigation, route }) {
       </LinearGradient>
 
       <View style={styles.card}>
-        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView style={{ width: '100%' }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={styles.askText}>
           Como foi o serviço de{'\n'}
           <Text style={styles.proName}>{professionalName || 'seu profissional'}?</Text>
